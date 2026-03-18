@@ -19,7 +19,7 @@ import { initializeTools } from '../tools/index';
 import { setDefaultProvider } from '../agents/runtime';
 import { ChannelManager } from '../channels/manager';
 
-const PORT = parseInt(process.env.FOXFANG_GATEWAY_PORT || '3001', 10);
+const PORT = parseInt(process.env.FOXFANG_GATEWAY_PORT || '8787', 10);
 const CHANNELS = (process.env.FOXFANG_CHANNELS || '').split(',').filter(Boolean);
 
 interface ClientConnection {

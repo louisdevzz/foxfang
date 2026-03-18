@@ -19,7 +19,7 @@ export async function registerDaemonCommand(program: Command): Promise<void> {
   daemonCmd
     .command('install')
     .description('Install gateway as a system service')
-    .option('-p, --port <port>', 'Port to run gateway on', '3001')
+    .option('-p, --port <port>', 'Port to run gateway on', '8787')
     .option('-c, --channels <channels>', 'Comma-separated list of channels to enable')
     .action(async (options) => {
       try {
@@ -159,7 +159,7 @@ export async function registerDaemonCommand(program: Command): Promise<void> {
   daemonCmd
     .command('run')
     .description('Run gateway server in foreground (not as service)')
-    .option('-p, --port <port>', 'Port to run on', '3001')
+    .option('-p, --port <port>', 'Port to run on', '8787')
     .option('-c, --channels <channels>', 'Comma-separated list of channels (default: all enabled)')
     .option('--all-channels', 'Enable all configured channels')
     .action(async (options) => {
