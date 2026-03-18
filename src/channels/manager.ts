@@ -12,7 +12,6 @@ import { DiscordAdapter } from './adapters/discord';
 import { SlackAdapter } from './adapters/slack';
 import type { ChannelAdapter, ChannelMessage, ChannelResponse } from './types';
 import type { AgentOrchestrator } from '../agents/orchestrator';
-import { formatForChannel } from './formatters';
 
 export class ChannelManager {
   private adapters: Map<string, ChannelAdapter> = new Map();
@@ -168,11 +167,9 @@ export class ChannelManager {
           }
         }
         
-        // Format content for the specific channel
-        const formattedContent = formatForChannel(result.content, msg.channel);
-        
         // Send complete response
-        await adapter.send(msg.from, formattedContent);
+        // Note: Each adapter handles its own formatting since they know their channel best
+        await adapter.send(msg.from, result.content);
         console.log(`[ChannelManager] 📤 Sent to ${msg.from.split(' ')[0]}`);
 
         return {
