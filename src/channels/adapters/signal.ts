@@ -11,7 +11,7 @@
 import { spawn, exec } from 'child_process';
 import { promisify } from 'util';
 import type { ChannelAdapter, ChannelMessage, ChannelResponse } from '../types';
-import { getCredential } from '../../credentials';
+import { loadConfig } from '../../config';
 
 const execAsync = promisify(exec);
 
@@ -26,13 +26,15 @@ export class SignalAdapter implements ChannelAdapter {
   constructor() {}
 
   async connect(): Promise<void> {
-    // Load credentials from keychain
-    const cred = await getCredential('channel:signal');
-    if (!cred?.apiKey) {
-      throw new Error('Signal credentials not found. Run: foxfang channel setup signal');
+    // Load config
+    const config = await loadConfig();
+    const signalConfig = config.channels?.signal;
+    
+    if (!signalConfig?.enabled || !signalConfig?.phoneNumber) {
+      throw new Error('Signal not configured. Run: foxfang channel setup signal');
     }
 
-    this.phoneNumber = cred.apiKey;
+    this.phoneNumber = signalConfig.phoneNumber;
     
     // Check signal-cli is available
     try {
