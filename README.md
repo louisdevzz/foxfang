@@ -63,7 +63,7 @@ pnpm foxfang daemon logs                 # View service logs
 pnpm foxfang daemon uninstall            # Remove service
 
 # Run daemon in foreground (for development)
-pnpm foxfang daemon run --port 3001 --channels signal,telegram
+pnpm foxfang daemon run
 
 # Check system status
 pnpm foxfang status
@@ -319,28 +319,6 @@ All data is stored in `~/.foxfang/foxfang.json` — no environment variables nee
 | `pnpm foxfang wizard setup` | Run setup wizard |
 | `pnpm foxfang status` | Show system status |
 | `pnpm foxfang config edit` | Edit configuration |
-
----
-
-## Tech Stack
-
-| Component | Technology |
-|-----------|------------|
-| Runtime | Node.js 18+ |
-| Language | TypeScript |
-| CLI Framework | Commander.js |
-| AI Providers | OpenAI, Anthropic, Kimi |
-| Storage | Local JSON files |
-| Gateway | Express (optional) |
-
----
-
-## Why FoxFang?
-
-**Fox** 🦊 — Clever, adaptable, learns quickly  
-**Fang** 🦷 — Sharp, precise, makes an impact
-
-FoxFang is your personal marketing companion — not a complex platform to manage, but a helpful assistant that works the way you do.
 
 ---
 
