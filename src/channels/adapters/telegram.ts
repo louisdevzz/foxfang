@@ -17,6 +17,7 @@
 
 import type { ChannelAdapter, ChannelMessage, ChannelResponse } from '../types';
 import { loadConfig } from '../../config';
+import { markdownToTelegramHtml } from '../formatters';
 
 interface TelegramUpdate {
   update_id: number;
@@ -169,7 +170,6 @@ export class TelegramAdapter implements ChannelAdapter {
 
   async send(to: string, content: string, options?: { 
     replyToId?: string; 
-    parseMode?: 'Markdown' | 'HTML';
     threadId?: string;
   }): Promise<void> {
     if (!this.connected) {
@@ -179,14 +179,15 @@ export class TelegramAdapter implements ChannelAdapter {
     const chatId = this.parseChatId(to);
 
     try {
+      // Convert markdown to HTML for Telegram
+      const htmlContent = markdownToTelegramHtml(content);
+
       const params: Record<string, any> = {
         chat_id: chatId,
-        text: content,
+        text: htmlContent,
+        parse_mode: 'HTML',
       };
 
-      if (options?.parseMode) {
-        params.parse_mode = options.parseMode;
-      }
       if (options?.replyToId) {
         params.reply_to_message_id = parseInt(options.replyToId, 10);
       }

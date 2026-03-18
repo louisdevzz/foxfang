@@ -19,6 +19,7 @@
 
 import type { ChannelAdapter, ChannelMessage, ChannelResponse } from '../types';
 import { loadConfig } from '../../config';
+import { markdownToSlackMrkdwn } from '../formatters';
 
 // Slack Event Types
 interface SlackEvent {
@@ -156,9 +157,13 @@ export class SlackAdapter implements ChannelAdapter {
     }
 
     try {
+      // Convert markdown to Slack mrkdwn format
+      const mrkdwnContent = markdownToSlackMrkdwn(content);
+
       const body: Record<string, any> = {
         channel: to,
-        text: content,
+        text: mrkdwnContent,
+        mrkdwn: true,
       };
 
       if (options?.threadTs) {
