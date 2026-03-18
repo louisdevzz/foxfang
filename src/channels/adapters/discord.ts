@@ -186,6 +186,29 @@ export class DiscordAdapter implements ChannelAdapter {
     }
   }
 
+  async reactToMessage(messageId: string, emoji: string, channelId?: string): Promise<void> {
+    if (!this.connected || !channelId) return;
+
+    try {
+      // Discord emoji format: url encode for custom emojis (name:id), plain for unicode
+      const encodedEmoji = encodeURIComponent(emoji);
+      await this.apiCall(`channels/${channelId}/messages/${messageId}/reactions/${encodedEmoji}/@me`, 'PUT');
+    } catch {
+      // Ignore reaction errors
+    }
+  }
+
+  async removeReaction(messageId: string, channelId?: string): Promise<void> {
+    if (!this.connected || !channelId) return;
+
+    try {
+      // Remove all reactions by the bot user
+      await this.apiCall(`channels/${channelId}/messages/${messageId}/reactions/@me`, 'DELETE');
+    } catch {
+      // Ignore removal errors
+    }
+  }
+
   onMessage(handler: (msg: ChannelMessage) => Promise<ChannelResponse | void>): void {
     this.messageHandler = handler;
   }

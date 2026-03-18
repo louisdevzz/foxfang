@@ -124,6 +124,15 @@ export class ChannelManager {
     const adapter = this.adapters.get(msg.channel);
     if (!adapter) return;
 
+    // Add "eyes" reaction to acknowledge receipt (👀 = "I'm looking at this")
+    if (adapter.reactToMessage) {
+      try {
+        await adapter.reactToMessage(msg.id, '👀', msg.metadata?.chatId);
+      } catch {
+        // Ignore reaction errors
+      }
+    }
+
     // Start typing indicator (if supported)
     const typingKey = `${msg.channel}:${msg.from}`;
     await this.startTypingIndicator(adapter, msg.from, typingKey, msg.metadata?.threadId);
@@ -153,6 +162,15 @@ export class ChannelManager {
         const responsePreview = result.content.substring(0, 50).replace(/\n/g, ' ');
         console.log(`[ChannelManager] 🤖 ${responsePreview}${result.content.length > 50 ? '...' : ''}`);
         
+        // Remove the "eyes" reaction before sending reply
+        if (adapter.removeReaction) {
+          try {
+            await adapter.removeReaction(msg.id, msg.metadata?.chatId);
+          } catch {
+            // Ignore removal errors
+          }
+        }
+        
         // Send complete response
         await adapter.send(msg.from, result.content);
         console.log(`[ChannelManager] 📤 Sent to ${msg.from.split(' ')[0]}`);
@@ -165,6 +183,15 @@ export class ChannelManager {
     } catch (error) {
       // Stop typing indicator on error
       this.stopTypingIndicator(typingKey);
+      
+      // Remove the "eyes" reaction on error
+      if (adapter.removeReaction) {
+        try {
+          await adapter.removeReaction(msg.id, msg.metadata?.chatId);
+        } catch {
+          // Ignore removal errors
+        }
+      }
       
       console.error('[ChannelManager] Error processing message:', error);
       const errorMsg = 'Sorry, I encountered an error processing your message.';

@@ -235,6 +235,34 @@ export class TelegramAdapter implements ChannelAdapter {
     }
   }
 
+  async reactToMessage(messageId: string, emoji: string, chatId?: string): Promise<void> {
+    if (!this.connected || !chatId) return;
+
+    try {
+      await this.apiCall('setMessageReaction', {
+        chat_id: this.parseChatId(chatId),
+        message_id: parseInt(messageId, 10),
+        reaction: [{ type: 'emoji', emoji }],
+      });
+    } catch {
+      // Ignore reaction errors (API might not support it or message too old)
+    }
+  }
+
+  async removeReaction(messageId: string, chatId?: string): Promise<void> {
+    if (!this.connected || !chatId) return;
+
+    try {
+      await this.apiCall('setMessageReaction', {
+        chat_id: this.parseChatId(chatId),
+        message_id: parseInt(messageId, 10),
+        reaction: [], // Empty array removes all reactions
+      });
+    } catch {
+      // Ignore reaction errors
+    }
+  }
+
   onMessage(handler: (msg: ChannelMessage) => Promise<ChannelResponse | void>): void {
     this.messageHandler = handler;
   }
