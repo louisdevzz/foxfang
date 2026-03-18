@@ -6,7 +6,7 @@
  */
 
 import { SignalAdapter } from './adapters/signal';
-import type { ChannelAdapter, ChannelMessage, ChannelResponse } from './types';
+import type { ChannelAdapter, ChannelMessage, ChannelResponse, StreamChunk } from './types';
 import type { AgentOrchestrator } from '../agents/orchestrator';
 
 export class ChannelManager {
@@ -97,7 +97,7 @@ export class ChannelManager {
   }
 
   private async handleChannelMessage(msg: ChannelMessage): Promise<ChannelResponse | void> {
-    console.log(`[ChannelManager] Message from ${msg.channel}:${msg.from}: ${msg.content.substring(0, 50)}...`);
+    console.log(`[ChannelManager] 📩 ${msg.channel}:${msg.from.split(' ')[0]}: ${msg.content.substring(0, 40)}${msg.content.length > 40 ? '...' : ''}`);
 
     if (!this.orchestrator) {
       console.error('[ChannelManager] No orchestrator set');
@@ -105,15 +105,19 @@ export class ChannelManager {
     }
 
     try {
-      // Process through agent
+      // Process through agent with streaming
       const result = await this.orchestrator.run({
         sessionId: `channel-${msg.channel}-${msg.from}`,
         agentId: 'orchestrator',
         message: `[From ${msg.channel}:${msg.from}] ${msg.content}`,
-        stream: false,
+        stream: true,
       });
 
-      if (result.content) {
+      if (result.stream) {
+        // Stream response back to channel
+        return this.streamResponse(msg, result.stream);
+      } else if (result.content) {
+        // Fallback to non-streaming
         return {
           messageId: msg.id,
           content: result.content,
@@ -126,5 +130,76 @@ export class ChannelManager {
         content: 'Sorry, I encountered an error processing your message.',
       };
     }
+  }
+
+  private async streamResponse(
+    msg: ChannelMessage, 
+    stream: AsyncIterable<{ type: 'text' | 'done' | 'tool_call'; content?: string }>
+  ): Promise<ChannelResponse | void> {
+    const adapter = this.adapters.get(msg.channel);
+    if (!adapter) return;
+
+    // Collect chunks and send in blocks (similar to OpenClaw's block streaming)
+    const chunks: string[] = [];
+    const MIN_BLOCK_SIZE = 200;  // Minimum chars before sending
+    const MAX_BLOCK_SIZE = 2000; // Maximum chars per message
+    let buffer = '';
+
+    for await (const chunk of stream) {
+      // Skip tool calls for channel streaming
+      if (chunk.type === 'tool_call') continue;
+      
+      if (chunk.type === 'text' && chunk.content) {
+        chunks.push(chunk.content);
+        buffer += chunk.content;
+
+        // Send block if we have enough content
+        if (buffer.length >= MIN_BLOCK_SIZE) {
+          // Try to break at sentence boundary
+          const breakPoint = this.findBreakPoint(buffer, MAX_BLOCK_SIZE);
+          const toSend = buffer.slice(0, breakPoint).trim();
+          buffer = buffer.slice(breakPoint).trim();
+
+          if (toSend) {
+            console.log(`[ChannelManager] 📤 Streaming block (${toSend.length} chars)`);
+            await adapter.send(msg.from, toSend);
+          }
+        }
+      }
+    }
+
+    // Send remaining buffer
+    if (buffer.trim()) {
+      await adapter.send(msg.from, buffer.trim());
+    }
+
+    const fullContent = chunks.join('');
+    return {
+      messageId: msg.id,
+      content: fullContent,
+    };
+  }
+
+  private findBreakPoint(text: string, maxChars: number): number {
+    // Prefer breaking at paragraph, then sentence, then word boundary
+    if (text.length <= maxChars) return text.length;
+
+    // Look for paragraph break
+    const paraIndex = text.lastIndexOf('\n\n', maxChars);
+    if (paraIndex > maxChars * 0.5) return paraIndex + 2;
+
+    // Look for sentence break
+    const sentenceMatch = text.slice(0, maxChars).match(/[.!?]\s+/g);
+    if (sentenceMatch) {
+      const lastSentence = text.lastIndexOf(sentenceMatch[sentenceMatch.length - 1], maxChars);
+      if (lastSentence > maxChars * 0.5) return lastSentence + 2;
+    }
+
+    // Look for word break
+    const spaceIndex = text.lastIndexOf(' ', maxChars);
+    if (spaceIndex > maxChars * 0.5) return spaceIndex + 1;
+
+    // Hard break at max
+    return maxChars;
   }
 }
