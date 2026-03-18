@@ -53,8 +53,17 @@ pnpm foxfang chat
 # Run a single task
 pnpm foxfang run "Create a LinkedIn post about AI trends"
 
-# Start the daemon for background processing
-pnpm foxfang daemon start
+# Manage the daemon (background service)
+pnpm foxfang daemon install              # Install as system service
+pnpm foxfang daemon start                # Start service
+pnpm foxfang daemon stop                 # Stop service
+pnpm foxfang daemon restart              # Restart service
+pnpm foxfang daemon status               # Check service status
+pnpm foxfang daemon logs                 # View service logs
+pnpm foxfang daemon uninstall            # Remove service
+
+# Run daemon in foreground (for development)
+pnpm foxfang daemon run --port 3001 --channels signal,telegram
 
 # Check system status
 pnpm foxfang status
@@ -93,17 +102,116 @@ $ pnpm foxfang chat
 
 ### 📱 Channel Integration
 
-Connect to your communication tools:
+Connect FoxFang to messaging platforms to receive and respond to messages directly from chat apps.
 
+**How it works:**
+1. You run the messaging service (e.g., signal-cli) separately
+2. FoxFang Gateway connects to the service's HTTP API
+3. Incoming messages are routed to AI agents
+4. Agent responses are sent back to the chat
+
+**Quick Setup:**
 ```bash
-# Enable Telegram bot
-pnpm foxfang channels enable telegram
+# Setup channel (interactive wizard)
+pnpm foxfang channel setup signal
 
-# Enable Discord webhook
-pnpm foxfang channels enable discord
+# Run gateway with all configured channels
+pnpm foxfang daemon run
 
-# Send a message
-pnpm foxfang channels telegram send "Hello from FoxFang!"
+# Or specify channels explicitly
+pnpm foxfang daemon run --channels signal,telegram
+```
+
+**Supported Channels:**
+
+| Channel | Service Required | Status |
+|---------|------------------|--------|
+| Signal | signal-cli | ✅ Available |
+| Telegram | Coming soon | ⏳ Planned |
+| Discord | Coming soon | ⏳ Planned |
+| Slack | Coming soon | ⏳ Planned |
+
+#### Signal Setup (Full Guide)
+
+**Step 1: Install signal-cli**
+```bash
+# macOS
+brew install signal-cli
+
+# Linux (Ubuntu/Debian)
+sudo apt install signal-cli
+
+# Or download binary:
+# https://github.com/AsamK/signal-cli/releases
+```
+
+**Step 2: Register your phone number**
+```bash
+# Link to existing Signal app (recommended)
+signal-cli -a +84912345678 link
+# Then scan QR code with Signal app
+
+# Or register new (will receive SMS code)
+signal-cli -a +84912345678 register
+signal-cli -a +84912345678 verify CODE
+```
+
+**Step 3: Run signal-cli daemon**
+```bash
+# Terminal 1: Keep this running
+signal-cli -a +84912345678 daemon --http 127.0.0.1:8686
+```
+
+**Step 4: Configure FoxFang**
+```bash
+# Terminal 2: Run setup wizard
+pnpm foxfang channel setup signal
+# Enter phone: +84912345678
+# Enter URL: http://127.0.0.1:8686
+```
+
+**Step 5: Run FoxFang Gateway**
+```bash
+# Terminal 3: Start gateway
+pnpm foxfang daemon run
+
+# You should see:
+# [Signal] Connected to http://127.0.0.1:8686 for +84912345678
+```
+
+**Step 6: Test it!**
+Send a message to your Signal number from another phone. FoxFang will:
+1. Receive the message via signal-cli
+2. Process it through the AI agent
+3. Send a reply back automatically
+
+```
+[Signal] 📩 Message from John: Hello!
+[Signal] 🤖 Agent thinking...
+[Signal] 📤 Sending reply to +84123456789...
+```
+
+**Troubleshooting:**
+
+| Issue | Solution |
+|-------|----------|
+| "Cannot connect to signal-cli" | Make sure daemon is running on correct port |
+| "Not receiving messages" | Check `signal-cli receive` works manually |
+| "Permission denied" | Run with `--config` flag to specify config location |
+
+**Install as System Service (auto-start):**
+```bash
+# Install daemon with Signal support
+pnpm foxfang daemon install --channels signal
+
+# Start the service
+pnpm foxfang daemon start
+
+# Check logs
+pnpm foxfang daemon logs
+
+# View status
+pnpm foxfang daemon status
 ```
 
 ### 🧠 Memory
@@ -122,12 +230,13 @@ pnpm foxfang memory search "brand voice"
 
 ## Architecture
 
-FoxFang follows a modular agent architecture:
+FoxFang follows a modular agent architecture with optional gateway daemon:
 
+**Local Mode:**
 ```
 ┌─────────────────────────────────────┐
 │           FoxFang CLI               │
-│  (chat | run | daemon | channels)   │
+│  (chat | run | status | wizard)     │
 └─────────────┬───────────────────────┘
               │
 ┌─────────────▼───────────────────────┐
@@ -140,13 +249,24 @@ FoxFang follows a modular agent architecture:
 ┌───────┐ ┌───────┐ ┌───────┐
 │Content│ │Strategy│ │Growth │
 │Agent  │ │ Agent  │ │Agent  │
-└───┬───┘ └───┬───┘ └───┬───┘
-    │         │         │
-    └─────────┼─────────┘
-              ▼
+└───────┘ └───────┘ └───────┘
+```
+
+**Daemon Mode (with Channels):**
+```
+┌──────────┐  ┌──────────┐  ┌──────────┐
+│ Signal   │  │Telegram  │  │ Discord  │
+└────┬─────┘  └────┬─────┘  └────┬─────┘
+     │             │             │
+     └─────────────┼─────────────┘
+                   ▼
 ┌─────────────────────────────────────┐
-│         Tool Registry               │
-│  (search | memory | channels | ...) │
+│      FoxFang Gateway (Daemon)       │
+│   (WebSocket + Channel Adapters)    │
+└─────────────┬───────────────────────┘
+              │
+┌─────────────▼───────────────────────┐
+│        Agent Orchestrator           │
 └─────────────────────────────────────┘
 ```
 

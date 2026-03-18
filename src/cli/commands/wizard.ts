@@ -829,6 +829,12 @@ function printSetupTips(providerIds: string[]) {
   console.log(chalk.dim('  Check status:'));
   console.log(chalk.green('    pnpm foxfang status\n'));
   
+  console.log(chalk.dim('  Start daemon (for channels):'));
+  console.log(chalk.green('    pnpm foxfang daemon run\n'));
+  
+  console.log(chalk.dim('  Install daemon as service:'));
+  console.log(chalk.green('    pnpm foxfang daemon install\n'));
+  
   // Provider-specific tips
   if (providerIds.length > 0) {
     console.log(chalk.bold('🤖 Your AI Providers:\n'));
