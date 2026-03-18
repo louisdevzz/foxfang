@@ -158,7 +158,12 @@ export class ChannelManager {
         const responsePreview = result.content.substring(0, 50).replace(/\n/g, ' ');
         console.log(`[ChannelManager] 🤖 ${responsePreview}${result.content.length > 50 ? '...' : ''}`);
         
-        // Remove the "eyes" reaction before sending reply
+        // Send complete response FIRST
+        // Note: Each adapter handles its own formatting since they know their channel best
+        await adapter.send(msg.from, result.content);
+        console.log(`[ChannelManager] 📤 Sent to ${msg.from.split(' ')[0]}`);
+        
+        // THEN remove the "eyes" reaction after reply is sent
         if (adapter.removeReaction) {
           try {
             await adapter.removeReaction(msg.id, msg.metadata?.chatId);
@@ -166,11 +171,6 @@ export class ChannelManager {
             // Ignore removal errors
           }
         }
-        
-        // Send complete response
-        // Note: Each adapter handles its own formatting since they know their channel best
-        await adapter.send(msg.from, result.content);
-        console.log(`[ChannelManager] 📤 Sent to ${msg.from.split(' ')[0]}`);
 
         return {
           messageId: msg.id,
@@ -181,7 +181,13 @@ export class ChannelManager {
       // Stop typing indicator on error
       this.stopTypingIndicator(typingKey);
       
-      // Remove the "eyes" reaction on error
+      console.error('[ChannelManager] Error processing message:', error);
+      const errorMsg = 'Sorry, I encountered an error processing your message.';
+      
+      // Send error message FIRST
+      await adapter.send(msg.from, errorMsg);
+      
+      // THEN remove the "eyes" reaction after error message is sent
       if (adapter.removeReaction) {
         try {
           await adapter.removeReaction(msg.id, msg.metadata?.chatId);
@@ -189,10 +195,6 @@ export class ChannelManager {
           // Ignore removal errors
         }
       }
-      
-      console.error('[ChannelManager] Error processing message:', error);
-      const errorMsg = 'Sorry, I encountered an error processing your message.';
-      await adapter.send(msg.from, errorMsg);
       
       return {
         messageId: msg.id,
