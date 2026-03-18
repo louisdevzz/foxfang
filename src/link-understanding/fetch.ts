@@ -2,7 +2,7 @@
  * Link Fetcher
  * 
  * Fetch and extract content from URLs.
- * Uses Firecrawl for reliable web scraping.
+ * Tries Firecrawl first (if configured), falls back to native fetch.
  */
 
 import { readFileSync } from 'fs';
@@ -47,73 +47,186 @@ async function scrapeFirecrawl(url: string): Promise<FirecrawlScrapeResult> {
     return { success: false, error: 'Firecrawl API key not configured' };
   }
 
-  const response = await fetch(`${baseUrl}/v1/scrape`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      url,
-      formats: ['markdown'],
-      onlyMainContent: true,
-    }),
-  });
+  try {
+    const response = await fetch(`${baseUrl}/v1/scrape`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        url,
+        formats: ['markdown'],
+        onlyMainContent: true,
+      }),
+    });
 
-  if (!response.ok) {
-    const error = await response.text();
-    return { success: false, error: `HTTP ${response.status}: ${error}` };
+    if (!response.ok) {
+      const error = await response.text();
+      return { success: false, error: `HTTP ${response.status}: ${error}` };
+    }
+
+    const result = await response.json() as { success: boolean; error?: string; data?: { markdown?: string; metadata?: { title?: string; description?: string } } };
+    
+    if (!result.success) {
+      return { success: false, error: result.error || 'Scrape failed' };
+    }
+
+    return {
+      success: true,
+      markdown: result.data?.markdown,
+      metadata: result.data?.metadata,
+    };
+  } catch (error) {
+    return { 
+      success: false, 
+      error: error instanceof Error ? error.message : String(error) 
+    };
   }
+}
 
-  const result = await response.json() as { success: boolean; error?: string; data?: { markdown?: string; metadata?: { title?: string; description?: string } } };
+/**
+ * Simple HTML to text conversion (fallback when Firecrawl unavailable)
+ */
+function htmlToText(html: string): string {
+  // Remove script and style tags with content
+  let text = html.replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '');
+  text = text.replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '');
   
-  if (!result.success) {
-    return { success: false, error: result.error || 'Scrape failed' };
-  }
+  // Replace common block elements with newlines
+  text = text.replace(/<\/(div|p|section|article|header|footer|li|tr)>/gi, '\n');
+  text = text.replace(/<(br|hr)\s*\/?>/gi, '\n');
+  
+  // Remove all remaining HTML tags
+  text = text.replace(/<[^>]+>/g, '');
+  
+  // Decode common HTML entities
+  text = text.replace(/&amp;/g, '&');
+  text = text.replace(/&lt;/g, '<');
+  text = text.replace(/&gt;/g, '>');
+  text = text.replace(/&quot;/g, '"');
+  text = text.replace(/&#39;/g, "'");
+  text = text.replace(/&nbsp;/g, ' ');
+  
+  // Clean up whitespace
+  text = text.replace(/\n{3,}/g, '\n\n');
+  text = text.trim();
+  
+  return text;
+}
 
-  return {
-    success: true,
-    markdown: result.data?.markdown,
-    metadata: result.data?.metadata,
-  };
+/**
+ * Extract title from HTML
+ */
+function extractTitle(html: string): string | undefined {
+  const titleMatch = html.match(/<title[^>]*>([^<]*)<\/title>/i);
+  if (titleMatch) return titleMatch[1].trim();
+  
+  const h1Match = html.match(/<h1[^>]*>([^<]*)<\/h1>/i);
+  if (h1Match) return h1Match[1].trim();
+  
+  return undefined;
+}
+
+/**
+ * Extract description from HTML meta tags
+ */
+function extractDescription(html: string): string | undefined {
+  const metaDesc = html.match(/<meta[^>]*name=["']description["'][^>]*content=["']([^"']*)["']/i) 
+                  || html.match(/<meta[^>]*content=["']([^"']*)["'][^>]*name=["']description["']/i)
+                  || html.match(/<meta[^>]*property=["']og:description["'][^>]*content=["']([^"']*)["']/i);
+  
+  if (metaDesc) return metaDesc[1].trim();
+  
+  return undefined;
+}
+
+/**
+ * Native fetch fallback (no API key required)
+ */
+async function fetchNative(url: string): Promise<FirecrawlScrapeResult> {
+  try {
+    const response = await fetch(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+      },
+      redirect: 'follow',
+    });
+
+    if (!response.ok) {
+      return { success: false, error: `HTTP ${response.status}` };
+    }
+
+    const contentType = response.headers.get('content-type') || '';
+    
+    // Only process HTML content
+    if (!contentType.includes('text/html')) {
+      return { 
+        success: true, 
+        markdown: `[Non-HTML content: ${contentType}]`,
+        metadata: { title: url }
+      };
+    }
+
+    const html = await response.text();
+    const text = htmlToText(html);
+    const title = extractTitle(html);
+    const description = extractDescription(html);
+
+    return {
+      success: true,
+      markdown: text,
+      metadata: { title, description },
+    };
+  } catch (error) {
+    return { 
+      success: false, 
+      error: error instanceof Error ? error.message : String(error) 
+    };
+  }
 }
 
 /**
  * Fetch content from a single URL
+ * Tries Firecrawl first, falls back to native fetch
  */
 export async function fetchLinkContent(url: string): Promise<LinkContent> {
-  try {
-    const result = await scrapeFirecrawl(url);
-    
-    if (!result.success) {
-      return {
-        url,
-        error: result.error || 'Failed to fetch content',
-        content: '',
-      };
-    }
-
-    // Extract title from markdown (first # heading) or metadata
-    const titleMatch = result.markdown?.match(/^#\s+(.+)$/m);
-    const title = titleMatch?.[1] || result.metadata?.title;
-    
-    // Get description from meta or first paragraph
-    const description = result.metadata?.description || 
-                       result.markdown?.split('\n\n')[1]?.slice(0, 200);
+  // Try Firecrawl first (if configured)
+  const firecrawlResult = await scrapeFirecrawl(url);
+  
+  if (firecrawlResult.success) {
+    const titleMatch = firecrawlResult.markdown?.match(/^#\s+(.+)$/m);
+    const title = titleMatch?.[1] || firecrawlResult.metadata?.title;
+    const description = firecrawlResult.metadata?.description || 
+                       firecrawlResult.markdown?.split('\n\n')[1]?.slice(0, 200);
 
     return {
       url,
       title,
       description,
-      content: result.markdown || '',
-    };
-  } catch (error) {
-    return {
-      url,
-      error: error instanceof Error ? error.message : String(error),
-      content: '',
+      content: firecrawlResult.markdown || '',
     };
   }
+
+  // Firecrawl failed or not configured - try native fetch
+  const nativeResult = await fetchNative(url);
+  
+  if (nativeResult.success) {
+    return {
+      url,
+      title: nativeResult.metadata?.title,
+      description: nativeResult.metadata?.description,
+      content: nativeResult.markdown || '',
+    };
+  }
+
+  // Both failed
+  return {
+    url,
+    error: `Firecrawl: ${firecrawlResult.error}, Native: ${nativeResult.error}`,
+    content: '',
+  };
 }
 
 /**
