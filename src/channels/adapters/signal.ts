@@ -1,27 +1,28 @@
 /**
- * Signal Channel Adapter using signal-cli
+ * Signal Channel Adapter using signal-cli HTTP API
  * 
- * Requires signal-cli to be installed:
- *   brew install signal-cli  (macOS)
- *   apt install signal-cli   (Ubuntu/Debian)
+ * Requires signal-cli daemon running:
+ *   signal-cli -a +YOUR_NUMBER daemon --http 127.0.0.1:8686
  * 
- * Or download from: https://github.com/AsamK/signal-cli/releases
+ * Or use systemd/launchd to run signal-cli daemon automatically.
  */
 
-import { spawn, exec } from 'child_process';
-import { promisify } from 'util';
 import type { ChannelAdapter, ChannelMessage, ChannelResponse } from '../types';
 import { loadConfig } from '../../config';
 
-const execAsync = promisify(exec);
+interface SignalSseEvent {
+  event?: string;
+  data?: string;
+  id?: string;
+}
 
 export class SignalAdapter implements ChannelAdapter {
   readonly name = 'signal';
   connected = false;
   private phoneNumber: string = '';
-  private signalCliPath: string = 'signal-cli';
+  private httpUrl: string = 'http://127.0.0.1:8686';
   private messageHandler?: (msg: ChannelMessage) => Promise<ChannelResponse | void>;
-  private receiveProcess?: ReturnType<typeof spawn>;
+  private abortController?: AbortController;
 
   constructor() {}
 
@@ -35,42 +36,34 @@ export class SignalAdapter implements ChannelAdapter {
     }
 
     this.phoneNumber = signalConfig.phoneNumber;
-    
-    // Check signal-cli is available
-    try {
-      await execAsync(`${this.signalCliPath} --version`);
-    } catch {
-      throw new Error(
-        'signal-cli not found. Install with:\n' +
-        '  macOS: brew install signal-cli\n' +
-        '  Or download: https://github.com/AsamK/signal-cli/releases'
-      );
-    }
+    this.httpUrl = signalConfig.httpUrl || 'http://127.0.0.1:8686';
 
-    // Check if registered
+    // Check signal-cli HTTP API is accessible
     try {
-      await execAsync(`${this.signalCliPath} -a ${this.phoneNumber} receive --timeout 1`);
-    } catch {
+      const response = await fetch(`${this.httpUrl}/api/v1/accounts`);
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+      const accounts = await response.json();
+      console.log(`[Signal] Available accounts:`, accounts);
+    } catch (error) {
       throw new Error(
-        `Signal not registered for ${this.phoneNumber}.\n` +
-        'Register with: signal-cli -a YOUR_NUMBER register'
+        `Cannot connect to signal-cli daemon at ${this.httpUrl}.\n` +
+        `Start signal-cli with:\n` +
+        `  signal-cli -a ${this.phoneNumber} daemon --http 127.0.0.1:8686`
       );
     }
 
     this.connected = true;
+    console.log(`[Signal] Connected to ${this.httpUrl} for ${this.phoneNumber}`);
     
-    // Start listening for messages
-    this.startReceiving();
-    
-    console.log(`[Signal] Connected as ${this.phoneNumber}`);
+    // Start SSE loop
+    this.startSseLoop();
   }
 
   async disconnect(): Promise<void> {
     this.connected = false;
-    if (this.receiveProcess) {
-      this.receiveProcess.kill();
-      this.receiveProcess = undefined;
-    }
+    this.abortController?.abort();
     console.log('[Signal] Disconnected');
   }
 
@@ -80,9 +73,18 @@ export class SignalAdapter implements ChannelAdapter {
     }
 
     try {
-      await execAsync(
-        `${this.signalCliPath} -a ${this.phoneNumber} send -m "${content.replace(/"/g, '\\"')}" ${to}`
+      const response = await fetch(
+        `${this.httpUrl}/api/v1/messages/${encodeURIComponent(to)}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ message: content }),
+        }
       );
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
     } catch (error) {
       console.error('[Signal] Failed to send message:', error);
       throw error;
@@ -93,85 +95,126 @@ export class SignalAdapter implements ChannelAdapter {
     this.messageHandler = handler;
   }
 
-  private startReceiving(): void {
-    // signal-cli receive -t 5 (poll every 5 seconds)
-    // Note: --json flag may not be available in all versions
-    this.receiveProcess = spawn(this.signalCliPath, [
-      '-a', this.phoneNumber,
-      'receive',
-      '-t', '5'
-    ]);
+  private startSseLoop(): void {
+    this.abortController = new AbortController();
+    const { signal } = this.abortController;
 
-    let buffer = '';
+    const runLoop = async () => {
+      let reconnectDelay = 1000;
 
-    this.receiveProcess.stdout?.on('data', (data: Buffer) => {
-      buffer += data.toString();
-      
-      // Process text format (not JSON)
-      // Split by "Envelope from:" to get individual messages
-      const parts = buffer.split('Envelope from:');
-      buffer = parts.pop() || ''; // Keep incomplete message in buffer
-      
-      for (const part of parts) {
-        if (part.trim()) {
-          this.handleTextMessage('Envelope from:' + part);
+      while (this.connected && !signal.aborted) {
+        try {
+          await this.streamEvents(signal);
+          reconnectDelay = 1000; // Reset on success
+        } catch (error) {
+          if (signal.aborted) return;
+          
+          console.log(`[Signal] Connection lost, reconnecting in ${reconnectDelay}ms...`);
+          await this.sleep(reconnectDelay, signal);
+          reconnectDelay = Math.min(reconnectDelay * 2, 30000); // Exponential backoff
         }
       }
-    });
+    };
 
-    this.receiveProcess.stderr?.on('data', (data: Buffer) => {
-      const error = data.toString();
-      if (!error.includes('INFO') && !error.includes('WARN')) {
-        console.error('[Signal] Error:', error);
-      }
-    });
-
-    this.receiveProcess.on('exit', (code) => {
-      if (this.connected && code !== 0) {
-        console.log('[Signal] Receive process exited, reconnecting...');
-        setTimeout(() => this.startReceiving(), 5000);
-      }
-    });
+    runLoop();
   }
 
-  private async handleTextMessage(text: string): Promise<void> {
+  private async streamEvents(abortSignal: AbortSignal): Promise<void> {
+    const url = new URL(`${this.httpUrl}/api/v1/events`);
+    url.searchParams.set('account', this.phoneNumber);
+
+    const response = await fetch(url.toString(), {
+      signal: abortSignal,
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+
+    const reader = response.body?.getReader();
+    if (!reader) throw new Error('No response body');
+
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+
+      let currentEvent: SignalSseEvent = {};
+
+      for (const line of lines) {
+        if (line.startsWith('event:')) {
+          currentEvent.event = line.slice(6).trim();
+        } else if (line.startsWith('data:')) {
+          currentEvent.data = line.slice(5).trim();
+        } else if (line.startsWith('id:')) {
+          currentEvent.id = line.slice(3).trim();
+        } else if (line === '' && currentEvent.data) {
+          // Event complete
+          this.handleSseEvent(currentEvent);
+          currentEvent = {};
+        }
+      }
+    }
+  }
+
+  private handleSseEvent(event: SignalSseEvent): void {
+    if (!event.data) return;
+
     try {
-      // Parse text format:
-      // Envelope from: "Name" +NUMBER (device: 1) to +NUMBER
-      // ...
-      // Body: message content
+      const data = JSON.parse(event.data);
       
-      const fromMatch = text.match(/from: ["']([^"']+)["']\s+(\+\d+)/);
-      const bodyMatch = text.match(/Body: (.+?)(?:\n|$)/);
-      const timestampMatch = text.match(/Timestamp:\s+(\d+)/);
-      
-      if (fromMatch && bodyMatch && this.messageHandler) {
-        const name = fromMatch[1];
-        const phone = fromMatch[2];
-        const content = bodyMatch[1].trim();
-        const timestamp = timestampMatch ? timestampMatch[1] : Date.now().toString();
+      // Check if it's a message event
+      if (data.envelope?.dataMessage) {
+        const msg = data.envelope.dataMessage;
+        const source = data.envelope.source;
+        const sourceName = data.envelope.sourceName || source;
         
-        if (content) {
+        if (msg.message && this.messageHandler) {
           const channelMsg: ChannelMessage = {
-            id: timestamp,
+            id: data.envelope.timestamp.toString(),
             channel: 'signal',
-            from: `${name} (${phone})`,
-            content: content,
-            timestamp: new Date(),
+            from: `${sourceName} (${source})`,
+            content: msg.message,
+            timestamp: new Date(data.envelope.timestamp),
+            threadId: msg.groupInfo?.groupId,
           };
 
-          console.log(`[Signal] Received from ${name}: ${content.substring(0, 50)}...`);
+          console.log(`[Signal] 📩 Message from ${sourceName}: ${msg.message.substring(0, 50)}...`);
 
-          const response = await this.messageHandler(channelMsg);
-          
-          if (response) {
-            // Send response back
-            await this.send(phone, response.content);
-          }
+          // Handle async
+          this.messageHandler(channelMsg).then(async (response) => {
+            if (response) {
+              console.log(`[Signal] 📤 Sending reply to ${source}...`);
+              await this.send(source, response.content);
+            }
+          }).catch(err => {
+            console.error('[Signal] Error handling message:', err);
+          });
         }
       }
     } catch (error) {
       // Ignore parse errors
     }
+  }
+
+  private sleep(ms: number, abortSignal: AbortSignal): Promise<void> {
+    return new Promise((resolve, reject) => {
+      if (abortSignal.aborted) {
+        reject(new Error('Aborted'));
+        return;
+      }
+
+      const timeout = setTimeout(resolve, ms);
+      abortSignal.addEventListener('abort', () => {
+        clearTimeout(timeout);
+        reject(new Error('Aborted'));
+      }, { once: true });
+    });
   }
 }
