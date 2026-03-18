@@ -27,8 +27,11 @@ export interface ChannelAdapter {
   /** Disconnect from channel */
   disconnect(): Promise<void>;
   
-  /** Send message to channel */
-  send(to: string, content: string): Promise<void>;
+  /** 
+   * Send message to channel
+   * Options can include replyToMessageId and threadId for channels that support them
+   */
+  send(to: string, content: string, options?: { replyToMessageId?: string; threadId?: string }): Promise<void>;
   
   /** 
    * Show typing indicator (if supported by channel)

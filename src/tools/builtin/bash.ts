@@ -2,7 +2,6 @@
  * Bash/Shell Execution Tools
  * 
  * Execute shell commands with safety controls, timeouts, and background process support.
- * Inspired by OpenClaw's bash-tools.
  */
 
 import { spawn, SpawnOptionsWithoutStdio } from 'child_process';

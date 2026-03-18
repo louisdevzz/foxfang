@@ -151,7 +151,7 @@ export class SlackAdapter implements ChannelAdapter {
     console.log('[Slack] Disconnected');
   }
 
-  async send(to: string, content: string, options?: { threadTs?: string }): Promise<void> {
+  async send(to: string, content: string, options?: { replyToMessageId?: string; threadId?: string }): Promise<void> {
     if (!this.connected) {
       throw new Error('Slack not connected');
     }
@@ -166,8 +166,9 @@ export class SlackAdapter implements ChannelAdapter {
         mrkdwn: true,
       };
 
-      if (options?.threadTs) {
-        body.thread_ts = options.threadTs;
+      // Slack uses thread_ts for threading; replyToMessageId is treated as thread_ts
+      if (options?.replyToMessageId || options?.threadId) {
+        body.thread_ts = options?.replyToMessageId || options?.threadId;
       }
 
       await this.apiCall('chat.postMessage', body, this.botToken);

@@ -4,6 +4,10 @@
  * Manages all channel connections and routes messages between
  * channels and the agent orchestrator.
  * 
+ * Features:
+ * - Reply dispatcher with queue management
+ * - Typing controller with TTL
+ * - Command registry for slash commands
  */
 
 import { SignalAdapter } from './adapters/signal';
@@ -12,19 +16,71 @@ import { DiscordAdapter } from './adapters/discord';
 import { SlackAdapter } from './adapters/slack';
 import type { ChannelAdapter, ChannelMessage, ChannelResponse } from './types';
 import type { AgentOrchestrator } from '../agents/orchestrator';
+import type { WorkspaceManager } from '../workspace/manager';
+import { AutoReplyHandler, IncomingMessage } from '../auto-reply';
+
+export interface ChannelManagerConfig {
+  /** Auto-reply configuration */
+  autoReply: {
+    enabled: boolean;
+    defaultAgent: string;
+    /** Require mention in groups */
+    requireMention?: boolean;
+    /** Reply to message (quote) */
+    replyToMessage?: boolean;
+  };
+  /** Typing indicator interval (seconds) */
+  typingIntervalSeconds?: number;
+  /** Human delay between blocks (ms) */
+  humanDelayMs?: number;
+}
 
 export class ChannelManager {
   private adapters: Map<string, ChannelAdapter> = new Map();
   private orchestrator: AgentOrchestrator | null = null;
+  private workspaceManager?: WorkspaceManager;
+  private autoReplyHandler?: AutoReplyHandler;
   private enabledChannels: string[] = [];
-  private typingIntervals: Map<string, NodeJS.Timeout> = new Map();
+  private config: ChannelManagerConfig;
 
-  constructor(channels: string[] = []) {
+  constructor(channels: string[] = [], config?: Partial<ChannelManagerConfig>) {
     this.enabledChannels = channels;
+    this.config = {
+      autoReply: {
+        enabled: true,
+        defaultAgent: 'orchestrator',
+        requireMention: true,
+        replyToMessage: true,
+        ...config?.autoReply,
+      },
+      typingIntervalSeconds: 6,
+      humanDelayMs: 800,
+      ...config,
+    };
   }
 
   setOrchestrator(orchestrator: AgentOrchestrator): void {
     this.orchestrator = orchestrator;
+    
+    // Initialize auto-reply handler
+    if (this.config.autoReply.enabled) {
+      this.autoReplyHandler = new AutoReplyHandler(orchestrator, {
+        enabled: true,
+        allowedChannels: this.enabledChannels,
+        defaultAgent: this.config.autoReply.defaultAgent,
+        requireMention: this.config.autoReply.requireMention,
+        replyToMessage: this.config.autoReply.replyToMessage,
+        typingIntervalSeconds: this.config.typingIntervalSeconds,
+        humanDelayMs: this.config.humanDelayMs,
+      });
+    }
+  }
+
+  setWorkspaceManager(workspaceManager: WorkspaceManager): void {
+    this.workspaceManager = workspaceManager;
+    if (this.orchestrator) {
+      this.orchestrator.setWorkspaceManager(workspaceManager);
+    }
   }
 
   async connectAll(): Promise<void> {
@@ -59,13 +115,6 @@ export class ChannelManager {
   }
 
   async disconnectAll(): Promise<void> {
-    // Clear all typing intervals
-    for (const [key, interval] of this.typingIntervals) {
-      clearInterval(interval);
-      console.log(`[ChannelManager] Stopped typing indicator for ${key}`);
-    }
-    this.typingIntervals.clear();
-
     for (const [name, adapter] of this.adapters) {
       try {
         await adapter.disconnect();
@@ -93,6 +142,17 @@ export class ChannelManager {
     return this.adapters.has(name);
   }
 
+  /**
+   * Register a custom slash command
+   */
+  registerCommand(
+    name: string,
+    description: string,
+    handler: (ctx: { message: IncomingMessage; args: string[]; sessionId: string }) => Promise<{ text?: string } | null>
+  ): void {
+    this.autoReplyHandler?.registerCommand(name, description, handler);
+  }
+
   private createAdapter(name: string): ChannelAdapter | null {
     switch (name) {
       case 'signal':
@@ -112,7 +172,7 @@ export class ChannelManager {
     const preview = msg.content.substring(0, 40);
     console.log(`[ChannelManager] 📩 ${msg.channel}:${msg.from.split(' ')[0]}: ${preview}${msg.content.length > 40 ? '...' : ''}`);
 
-    if (!this.orchestrator) {
+    if (!this.orchestrator || !this.autoReplyHandler) {
       console.error('[ChannelManager] No orchestrator set');
       return;
     }
@@ -120,7 +180,7 @@ export class ChannelManager {
     const adapter = this.adapters.get(msg.channel);
     if (!adapter) return;
 
-    // Add "eyes" reaction to acknowledge receipt (👀 = "I'm looking at this")
+    // Add "eyes" reaction to acknowledge receipt
     if (adapter.reactToMessage) {
       try {
         await adapter.reactToMessage(msg.id, '👀', msg.metadata?.chatId);
@@ -129,26 +189,50 @@ export class ChannelManager {
       }
     }
 
-    // Start typing indicator (if supported)
-    const typingKey = `${msg.channel}:${msg.from}`;
-    await this.startTypingIndicator(adapter, msg.from, typingKey, msg.metadata?.threadId);
+    // Convert to IncomingMessage format
+    const incomingMessage: IncomingMessage = {
+      id: msg.id,
+      channel: msg.channel,
+      from: {
+        id: msg.from,
+        name: msg.from,
+      },
+      chat: msg.metadata?.chatId ? {
+        id: msg.metadata.chatId,
+        type: 'private',
+      } : undefined,
+      text: msg.content,
+      replyToMessageId: msg.metadata?.replyToMessageId,
+      threadId: msg.metadata?.threadId,
+      timestamp: new Date(),
+      wasMentioned: msg.metadata?.wasMentioned,
+    };
 
     try {
-      // Process through agent (NON-STREAMING - wait for complete response)
-      const result = await this.orchestrator.run({
-        sessionId: `channel-${msg.channel}-${msg.from}`,
-        agentId: 'orchestrator',
-        message: `[From ${msg.channel}:${msg.from}] ${msg.content}`,
-        stream: false,
-      });
-
-      // Stop typing indicator
-      this.stopTypingIndicator(typingKey);
+      // Use new auto-reply handler
+      const result = await this.autoReplyHandler.handleMessage(
+        incomingMessage,
+        // Send typing callback
+        async () => {
+          if (adapter.sendTyping) {
+            await adapter.sendTyping(msg.from, msg.metadata?.threadId);
+          }
+        },
+        // Send reply callback
+        async (payload) => {
+          await adapter.send(msg.from, payload.text || '', {
+            replyToMessageId: payload.replyToMessageId ?? (this.config.autoReply.replyToMessage ? msg.id : undefined),
+            threadId: payload.threadId ?? msg.metadata?.threadId,
+          });
+        },
+        // Bot username (for mention checking)
+        undefined // TODO: Get bot username from adapter
+      );
 
       // Log tool calls if any
       if (result.toolCalls && result.toolCalls.length > 0) {
         for (const tc of result.toolCalls) {
-          const args = JSON.stringify(tc.arguments).substring(0, 80);
+          const args = JSON.stringify(tc.args).substring(0, 80);
           console.log(`[ChannelManager] 🔧 Tool: ${tc.name}(${args}${args.length > 80 ? '...' : ''})`);
         }
       }
@@ -157,13 +241,9 @@ export class ChannelManager {
         // Show agent response preview
         const responsePreview = result.content.substring(0, 50).replace(/\n/g, ' ');
         console.log(`[ChannelManager] 🤖 ${responsePreview}${result.content.length > 50 ? '...' : ''}`);
-        
-        // Send complete response FIRST
-        // Note: Each adapter handles its own formatting since they know their channel best
-        await adapter.send(msg.from, result.content);
         console.log(`[ChannelManager] 📤 Sent to ${msg.from.split(' ')[0]}`);
         
-        // THEN remove the "eyes" reaction after reply is sent
+        // Remove the "eyes" reaction after reply is sent
         if (adapter.removeReaction) {
           try {
             await adapter.removeReaction(msg.id, msg.metadata?.chatId);
@@ -178,16 +258,13 @@ export class ChannelManager {
         };
       }
     } catch (error) {
-      // Stop typing indicator on error
-      this.stopTypingIndicator(typingKey);
-      
       console.error('[ChannelManager] Error processing message:', error);
-      const errorMsg = 'Sorry, I encountered an error processing your message.';
+      const errorMsg = '❌ Sorry, I encountered an error processing your message.';
       
-      // Send error message FIRST
+      // Send error message
       await adapter.send(msg.from, errorMsg);
       
-      // THEN remove the "eyes" reaction after error message is sent
+      // Remove the "eyes" reaction after error message
       if (adapter.removeReaction) {
         try {
           await adapter.removeReaction(msg.id, msg.metadata?.chatId);
@@ -200,51 +277,6 @@ export class ChannelManager {
         messageId: msg.id,
         content: errorMsg,
       };
-    }
-  }
-
-  /**
-   * Start typing indicator for a recipient
-   * Typing indicators expire after a few seconds, so we need to repeat them
-   */
-  private async startTypingIndicator(
-    adapter: ChannelAdapter, 
-    recipient: string, 
-    key: string,
-    threadId?: string
-  ): Promise<void> {
-    if (!adapter.sendTyping) {
-      // Channel doesn't support typing indicators
-      return;
-    }
-
-    // Send immediately
-    try {
-      await adapter.sendTyping(recipient, threadId);
-    } catch {
-      // Ignore errors for typing indicators
-    }
-
-    // Repeat every 4 seconds (typing indicators usually expire after ~5s)
-    const interval = setInterval(async () => {
-      try {
-        await adapter.sendTyping!(recipient, threadId);
-      } catch {
-        // Ignore errors
-      }
-    }, 4000);
-
-    this.typingIntervals.set(key, interval);
-  }
-
-  /**
-   * Stop typing indicator for a recipient
-   */
-  private stopTypingIndicator(key: string): void {
-    const interval = this.typingIntervals.get(key);
-    if (interval) {
-      clearInterval(interval);
-      this.typingIntervals.delete(key);
     }
   }
 }

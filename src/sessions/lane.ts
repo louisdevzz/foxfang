@@ -1,6 +1,5 @@
 // src/sessions/lane.ts
 // Lane-based session concurrency — ensures one agent turn at a time per session.
-// Inspired by OpenClaw's session-lanes pattern.
 
 interface QueuedTask<T> {
   execute: () => Promise<T>;

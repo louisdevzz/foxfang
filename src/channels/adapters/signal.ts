@@ -64,7 +64,7 @@ export class SignalAdapter implements ChannelAdapter {
     console.log('[Signal] Disconnected');
   }
 
-  async send(to: string, content: string): Promise<void> {
+  async send(to: string, content: string, _options?: { replyToMessageId?: string; threadId?: string }): Promise<void> {
     if (!this.connected) {
       throw new Error('Signal not connected');
     }

@@ -1,7 +1,5 @@
 /**
  * Daemon Command - Manage FoxFang Gateway daemon
- * 
- * Similar to OpenClaw's daemon management
  */
 
 import { Command } from 'commander';

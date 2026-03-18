@@ -3,7 +3,7 @@
  * 
  * Level 3 Security: Store API keys in OS keychain instead of plain JSON
  * 
- * Inspired by OpenClaw's auth-profiles system:
+ * Supported platforms:
  * - macOS: Keychain (security command)
  * - Linux: libsecret (secret-tool)
  * - Windows: Windows Credential Manager (vault/cmdkey)

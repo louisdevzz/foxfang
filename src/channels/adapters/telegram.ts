@@ -169,7 +169,7 @@ export class TelegramAdapter implements ChannelAdapter {
   }
 
   async send(to: string, content: string, options?: { 
-    replyToId?: string; 
+    replyToMessageId?: string; 
     threadId?: string;
   }): Promise<void> {
     if (!this.connected) {
@@ -188,8 +188,8 @@ export class TelegramAdapter implements ChannelAdapter {
         parse_mode: 'HTML',
       };
 
-      if (options?.replyToId) {
-        params.reply_to_message_id = parseInt(options.replyToId, 10);
+      if (options?.replyToMessageId) {
+        params.reply_to_message_id = parseInt(options.replyToMessageId, 10);
       }
       if (options?.threadId) {
         params.message_thread_id = parseInt(options.threadId, 10);

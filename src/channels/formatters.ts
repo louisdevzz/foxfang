@@ -3,7 +3,7 @@
  * 
  * Converts markdown content to channel-specific formats.
  * 
- * Inspired by OpenClaw's approach:
+ * Approach:
  * 1. Parse markdown to tokens
  * 2. Render tokens to channel-specific format
  * 

@@ -155,7 +155,7 @@ export class DiscordAdapter implements ChannelAdapter {
     console.log('[Discord] Disconnected');
   }
 
-  async send(to: string, content: string, options?: { replyToId?: string }): Promise<void> {
+  async send(to: string, content: string, options?: { replyToMessageId?: string; threadId?: string }): Promise<void> {
     if (!this.connected) {
       throw new Error('Discord not connected');
     }
@@ -163,13 +163,15 @@ export class DiscordAdapter implements ChannelAdapter {
     try {
       const body: Record<string, any> = { content };
       
-      if (options?.replyToId) {
+      if (options?.replyToMessageId) {
         body.message_reference = {
-          message_id: options.replyToId,
+          message_id: options.replyToMessageId,
         };
       }
 
-      await this.apiCall(`channels/${to}/messages`, 'POST', body);
+      // Use thread ID as the endpoint if provided
+      const channelId = options?.threadId || to;
+      await this.apiCall(`channels/${channelId}/messages`, 'POST', body);
     } catch (error) {
       console.error('[Discord] Failed to send message:', error);
       throw error;
