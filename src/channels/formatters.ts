@@ -1,20 +1,477 @@
 /**
  * Channel Text Formatters
  * 
- * Converts markdown content to channel-specific formats:
- * - Telegram: HTML
- * - Slack: mrkdwn  
- * - Discord: Native markdown (with enhancements)
- * - Signal: Plain text (strip markdown)
+ * Converts markdown content to channel-specific formats.
  * 
- * Inspired by OpenClaw's approach: parse once, render per-channel
+ * Inspired by OpenClaw's approach:
+ * 1. Parse markdown to tokens
+ * 2. Render tokens to channel-specific format
+ * 
+ * This handles nesting correctly (bold inside links, etc.)
  */
 
 export type ChannelFormat = 'html' | 'mrkdwn' | 'markdown' | 'plain';
 
+// ============================================================================
+// Token Types
+// ============================================================================
+
+type TokenType = 
+  | 'text' 
+  | 'bold' 
+  | 'italic' 
+  | 'strikethrough'
+  | 'underline'
+  | 'code'
+  | 'codeblock'
+  | 'link'
+  | 'spoiler'
+  | 'blockquote'
+  | 'heading'
+  | 'list_item'
+  | 'line_break';
+
+interface Token {
+  type: TokenType;
+  content: string;
+  children?: Token[];
+  language?: string; // for code blocks
+  url?: string; // for links
+  level?: number; // for headings
+}
+
+// ============================================================================
+// Markdown Parser
+// ============================================================================
+
 /**
- * Format text for a specific channel
+ * Parse markdown into tokens
+ * Handles nesting by processing in correct order
  */
+function parseMarkdown(text: string): Token[] {
+  if (!text) return [];
+  
+  const tokens: Token[] = [];
+  const lines = text.split('\n');
+  let i = 0;
+  
+  while (i < lines.length) {
+    const line = lines[i];
+    
+    // Code blocks (must be before other processing)
+    if (line.startsWith('```')) {
+      const lang = line.slice(3).trim();
+      const codeLines: string[] = [];
+      i++;
+      while (i < lines.length && !lines[i].startsWith('```')) {
+        codeLines.push(lines[i]);
+        i++;
+      }
+      tokens.push({
+        type: 'codeblock',
+        content: codeLines.join('\n'),
+        language: lang || undefined
+      });
+      i++;
+      continue;
+    }
+    
+    // Blockquote
+    if (line.startsWith('>')) {
+      const quoteLines: string[] = [];
+      while (i < lines.length && lines[i].startsWith('>')) {
+        quoteLines.push(lines[i].slice(1).trim());
+        i++;
+      }
+      tokens.push({
+        type: 'blockquote',
+        content: quoteLines.join('\n'),
+        children: parseInline(quoteLines.join('\n'))
+      });
+      continue;
+    }
+    
+    // Heading
+    const headingMatch = line.match(/^(#{1,6})\s+(.+)$/);
+    if (headingMatch) {
+      tokens.push({
+        type: 'heading',
+        content: headingMatch[2],
+        level: headingMatch[1].length,
+        children: parseInline(headingMatch[2])
+      });
+      i++;
+      continue;
+    }
+    
+    // List item
+    const listMatch = line.match(/^(\s*)[-*]\s+(.+)$/);
+    if (listMatch) {
+      tokens.push({
+        type: 'list_item',
+        content: listMatch[2],
+        children: parseInline(listMatch[2])
+      });
+      i++;
+      continue;
+    }
+    
+    // Empty line (paragraph break)
+    if (line.trim() === '') {
+      tokens.push({ type: 'line_break', content: '' });
+      i++;
+      continue;
+    }
+    
+    // Regular paragraph with inline formatting
+    tokens.push({
+      type: 'text',
+      content: line,
+      children: parseInline(line)
+    });
+    i++;
+  }
+  
+  return tokens;
+}
+
+/**
+ * Parse inline markdown (bold, italic, code, links, etc.)
+ * Uses a stack-based approach to handle nesting
+ */
+function parseInline(text: string): Token[] {
+  const tokens: Token[] = [];
+  let pos = 0;
+  
+  // Patterns for inline elements (order matters - longer patterns first)
+  const patterns = [
+    { type: 'spoiler' as TokenType, regex: /^\|\|(.+?)\|\|/ },
+    { type: 'bold' as TokenType, regex: /^\*\*(.+?)\*\*/ },
+    { type: 'bold' as TokenType, regex: /^__(.+?)__/ },
+    { type: 'code' as TokenType, regex: /^`([^`]+)`/ },
+    { type: 'strikethrough' as TokenType, regex: /^~~(.+?)~~/ },
+    { type: 'underline' as TokenType, regex: /^_(.+?)_/ },
+    { type: 'italic' as TokenType, regex: /^\*(.+?)\*/ },
+    { type: 'link' as TokenType, regex: /^\[([^\]]+)\]\(([^)]+)\)/ },
+  ];
+  
+  while (pos < text.length) {
+    let matched = false;
+    
+    // Try each pattern
+    for (const pattern of patterns) {
+      const substr = text.slice(pos);
+      const match = substr.match(pattern.regex);
+      
+      if (match) {
+        const token: Token = {
+          type: pattern.type,
+          content: match[1],
+        };
+        
+        if (pattern.type === 'link') {
+          token.url = match[2];
+          // Parse nested content inside link text
+          token.children = parseInline(match[1]);
+        } else {
+          // Parse nested content for other inline elements
+          token.children = parseInline(match[1]);
+        }
+        
+        tokens.push(token);
+        pos += match[0].length;
+        matched = true;
+        break;
+      }
+    }
+    
+    if (!matched) {
+      // No pattern matched, consume one character as text
+      const char = text[pos];
+      const lastToken = tokens[tokens.length - 1];
+      
+      if (lastToken?.type === 'text') {
+        lastToken.content += char;
+      } else {
+        tokens.push({ type: 'text', content: char });
+      }
+      pos++;
+    }
+  }
+  
+  return tokens;
+}
+
+// ============================================================================
+// Telegram HTML Renderer
+// ============================================================================
+
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
+function escapeHtmlAttr(text: string): string {
+  return escapeHtml(text).replace(/"/g, '&quot;');
+}
+
+function renderTelegramToken(token: Token): string {
+  switch (token.type) {
+    case 'text':
+      return escapeHtml(token.content);
+    
+    case 'bold':
+      return `<b>${token.children?.map(renderTelegramToken).join('') || escapeHtml(token.content)}</b>`;
+    
+    case 'italic':
+      return `<i>${token.children?.map(renderTelegramToken).join('') || escapeHtml(token.content)}</i>`;
+    
+    case 'underline':
+      // Telegram uses <u> or <i> for underline (using <i> for compatibility)
+      return `<i>${token.children?.map(renderTelegramToken).join('') || escapeHtml(token.content)}</i>`;
+    
+    case 'strikethrough':
+      return `<s>${token.children?.map(renderTelegramToken).join('') || escapeHtml(token.content)}</s>`;
+    
+    case 'spoiler':
+      return `<tg-spoiler>${token.children?.map(renderTelegramToken).join('') || escapeHtml(token.content)}</tg-spoiler>`;
+    
+    case 'code':
+      return `<code>${escapeHtml(token.content)}</code>`;
+    
+    case 'codeblock':
+      if (token.language) {
+        return `<pre><code class="language-${token.language}">${escapeHtml(token.content)}</code></pre>`;
+      }
+      return `<pre>${escapeHtml(token.content)}</pre>`;
+    
+    case 'link':
+      const linkContent = token.children?.map(renderTelegramToken).join('') || escapeHtml(token.content);
+      return `<a href="${escapeHtmlAttr(token.url || '')}">${linkContent}</a>`;
+    
+    case 'blockquote':
+      return `<blockquote>${token.children?.map(renderTelegramToken).join('') || escapeHtml(token.content)}</blockquote>`;
+    
+    case 'heading':
+      // Telegram doesn't support headings, use bold
+      return `<b>${token.children?.map(renderTelegramToken).join('') || escapeHtml(token.content)}</b>`;
+    
+    case 'list_item':
+      return `• ${token.children?.map(renderTelegramToken).join('') || escapeHtml(token.content)}`;
+    
+    case 'line_break':
+      return '\n';
+    
+    default:
+      return escapeHtml(token.content);
+  }
+}
+
+export function markdownToTelegramHtml(text: string): string {
+  const tokens = parseMarkdown(text);
+  return tokens.map(renderTelegramToken).join('\n').replace(/\n{3,}/g, '\n\n');
+}
+
+// ============================================================================
+// Slack mrkdwn Renderer
+// ============================================================================
+
+function escapeSlackText(text: string): string {
+  // Preserve valid Slack tokens: <@user>, <#channel>, <!command>, <url>, <url|label>
+  const ANGLE_TOKEN_RE = /<[^>\n]+>/g;
+  let result = '';
+  let lastIndex = 0;
+  
+  for (const match of text.matchAll(ANGLE_TOKEN_RE)) {
+    const matchIndex = match.index ?? 0;
+    const token = match[0];
+    const inner = token.slice(1, -1);
+    
+    // Escape text before token
+    result += text.slice(lastIndex, matchIndex).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    
+    // Check if valid Slack token
+    const isValid = inner.startsWith('@') || inner.startsWith('#') || inner.startsWith('!') ||
+                   inner.startsWith('mailto:') || inner.startsWith('tel:') ||
+                   inner.startsWith('http://') || inner.startsWith('https://') ||
+                   inner.startsWith('slack://') || inner.includes('|');
+    
+    if (isValid) {
+      result += token;
+    } else {
+      result += token.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+    
+    lastIndex = matchIndex + token.length;
+  }
+  
+  result += text.slice(lastIndex).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  return result;
+}
+
+function renderSlackToken(token: Token): string {
+  switch (token.type) {
+    case 'text':
+      return token.content;
+    
+    case 'bold':
+      return `*${token.children?.map(renderSlackToken).join('') || token.content}*`;
+    
+    case 'italic':
+    case 'underline':
+      return `_${token.children?.map(renderSlackToken).join('') || token.content}_`;
+    
+    case 'strikethrough':
+    case 'spoiler':
+      return `~${token.children?.map(renderSlackToken).join('') || token.content}~`;
+    
+    case 'code':
+      return `\`${token.content}\``;
+    
+    case 'codeblock':
+      return `\`\`\`${token.language || ''}\n${token.content}\`\`\``;
+    
+    case 'link':
+      const linkContent = token.children?.map(renderSlackToken).join('') || token.content;
+      return `<${token.url}|${linkContent.replace(/\|/g, '\\|')}>`;
+    
+    case 'blockquote':
+      return `> ${token.content.split('\n').join('\n> ')}`;
+    
+    case 'heading':
+      return `*${token.children?.map(renderSlackToken).join('') || token.content}*`;
+    
+    case 'list_item':
+      return `• ${token.children?.map(renderSlackToken).join('') || token.content}`;
+    
+    case 'line_break':
+      return '\n';
+    
+    default:
+      return token.content;
+  }
+}
+
+export function markdownToSlackMrkdwn(text: string): string {
+  const tokens = parseMarkdown(text);
+  const result = tokens.map(renderSlackToken).join('\n').replace(/\n{3,}/g, '\n\n');
+  return escapeSlackText(result);
+}
+
+// ============================================================================
+// Discord Renderer
+// ============================================================================
+
+function renderDiscordToken(token: Token): string {
+  switch (token.type) {
+    case 'text':
+      return token.content;
+    
+    case 'bold':
+      return `**${token.children?.map(renderDiscordToken).join('') || token.content}**`;
+    
+    case 'italic':
+      return `*${token.children?.map(renderDiscordToken).join('') || token.content}*`;
+    
+    case 'underline':
+      return `__${token.children?.map(renderDiscordToken).join('') || token.content}__`;
+    
+    case 'strikethrough':
+      return `~~${token.children?.map(renderDiscordToken).join('') || token.content}~~`;
+    
+    case 'spoiler':
+      return `||${token.children?.map(renderDiscordToken).join('') || token.content}||`;
+    
+    case 'code':
+      return `\`${token.content}\``;
+    
+    case 'codeblock':
+      return `\`\`\`${token.language || ''}\n${token.content}\`\`\``;
+    
+    case 'link':
+      const linkContent = token.children?.map(renderDiscordToken).join('') || token.content;
+      return `[${linkContent}](${token.url})`;
+    
+    case 'blockquote':
+      return `> ${token.content.split('\n').join('\n> ')}`;
+    
+    case 'heading':
+      // Discord supports # ## ### for headers
+      if (token.level && token.level <= 3) {
+        return `${'#'.repeat(token.level)} ${token.children?.map(renderDiscordToken).join('') || token.content}`;
+      }
+      return `**${token.children?.map(renderDiscordToken).join('') || token.content}**`;
+    
+    case 'list_item':
+      return `• ${token.children?.map(renderDiscordToken).join('') || token.content}`;
+    
+    case 'line_break':
+      return '\n';
+    
+    default:
+      return token.content;
+  }
+}
+
+function formatForDiscord(text: string): string {
+  const tokens = parseMarkdown(text);
+  return tokens.map(renderDiscordToken).join('\n').replace(/\n{4,}/g, '\n\n\n');
+}
+
+// ============================================================================
+// Plain Text Renderer (Signal, etc.)
+// ============================================================================
+
+function renderPlainToken(token: Token): string {
+  switch (token.type) {
+    case 'text':
+      return token.content;
+    
+    case 'bold':
+    case 'italic':
+    case 'underline':
+    case 'strikethrough':
+    case 'spoiler':
+      return token.children?.map(renderPlainToken).join('') || token.content;
+    
+    case 'code':
+      return token.content;
+    
+    case 'codeblock':
+      return token.content;
+    
+    case 'link':
+      const linkContent = token.children?.map(renderPlainToken).join('') || token.content;
+      return `${linkContent} (${token.url})`;
+    
+    case 'blockquote':
+      return token.content;
+    
+    case 'heading':
+      return token.children?.map(renderPlainToken).join('') || token.content;
+    
+    case 'list_item':
+      return `• ${token.children?.map(renderPlainToken).join('') || token.content}`;
+    
+    case 'line_break':
+      return '\n';
+    
+    default:
+      return token.content;
+  }
+}
+
+export function stripMarkdown(text: string): string {
+  const tokens = parseMarkdown(text);
+  return tokens.map(renderPlainToken).join('\n').replace(/\n{3,}/g, '\n\n').trim();
+}
+
+// ============================================================================
+// Main Export
+// ============================================================================
+
 export function formatForChannel(text: string, channel: string): string {
   switch (channel) {
     case 'telegram':
@@ -31,345 +488,46 @@ export function formatForChannel(text: string, channel: string): string {
 }
 
 // ============================================================================
-// Telegram HTML Formatter
+// Utilities
 // ============================================================================
 
-/**
- * Convert markdown to Telegram HTML
- * Telegram supports: <b>, <i>, <s>, <u>, <code>, <pre>, <a>, <tg-spoiler>, <blockquote>
- */
-export function markdownToTelegramHtml(text: string): string {
-  if (!text) return '';
-
-  // Process in order: code blocks → inline code → links → formatting
-  let html = text;
-
-  // 1. Code blocks first (before inline code)
-  html = html.replace(/```(\w+)?\n?([\s\S]*?)```/g, (match, lang, code) => {
-    const escapedCode = escapeHtml(code.trim());
-    if (lang) {
-      return `<pre><code class="language-${lang}">${escapedCode}</code></pre>`;
-    }
-    return `<pre>${escapedCode}</pre>`;
-  });
-
-  // 2. Inline code (after code blocks)
-  html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
-
-  // 3. Links (before formatting to avoid conflicts)
-  html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (match, label, url) => {
-    return `<a href="${escapeHtmlAttr(url)}">${escapeHtml(label)}</a>`;
-  });
-
-  // 4. Bold: **text** → <b>text</b>
-  html = html.replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>');
-
-  // 5. Italic: *text* or _text_ → <i>text</i>
-  // Must avoid matching inside HTML tags we already created
-  html = html.replace(/(^|[^*])\*([^*]+)\*(?![*])/g, '$1<i>$2</i>');
-  html = html.replace(/(^|[^_])_([^_]+)_(?!_)/g, '$1<i>$2</i>');
-
-  // 6. Strikethrough: ~~text~~ → <s>text</s>
-  html = html.replace(/~~([^~]+)~~/g, '<s>$1</s>');
-
-  // 7. Spoiler: ||text|| → <tg-spoiler>text</tg-spoiler>
-  html = html.replace(/\|\|([^|]+)\|\|/g, '<tg-spoiler>$1</tg-spoiler>');
-
-  // 8. Underline: __text__ (if not already processed as bold) → <u>text</u>
-  // Note: __ is already handled as bold, so we skip this or use alternative syntax
-
-  // 9. Headers: ### Title → <b>Title</b>
-  html = html.replace(/^#{1,6}\s+(.+)$/gm, '<b>$1</b>');
-
-  // 10. Blockquote: > text → <blockquote>text</blockquote>
-  // Handle multi-line by joining consecutive lines
-  const lines = html.split('\n');
-  const result: string[] = [];
-  let inBlockquote = false;
-
-  for (const line of lines) {
-    const blockquoteMatch = line.match(/^(\s*)>&gt;\s?(.*)$/);
-    if (blockquoteMatch) {
-      if (!inBlockquote) {
-        result.push('<blockquote>');
-        inBlockquote = true;
-      }
-      result.push(blockquoteMatch[2]);
-    } else {
-      if (inBlockquote) {
-        result.push('</blockquote>');
-        inBlockquote = false;
-      }
-      result.push(line);
-    }
-  }
-  if (inBlockquote) {
-    result.push('</blockquote>');
-  }
-  html = result.join('\n');
-
-  // Clean up: remove excessive newlines
-  html = html.replace(/\n{3,}/g, '\n\n');
-
-  return html;
-}
-
-// ============================================================================
-// Slack mrkdwn Formatter  
-// ============================================================================
-
-/**
- * Convert markdown to Slack mrkdwn format
- * Slack uses: *bold*, _italic_, ~strikethrough~, `code`, ```code```, <url|label>
- */
-export function markdownToSlackMrkdwn(text: string): string {
-  if (!text) return '';
-
-  let mrkdwn = text;
-
-  // 1. Code blocks first
-  mrkdwn = mrkdwn.replace(/```(\w+)?\n?([\s\S]*?)```/g, '```$2```');
-
-  // 2. Inline code (preserve as-is)
-  // mrkdwn uses `code` same as markdown
-
-  // 3. Links: [text](url) → <url|text>
-  mrkdwn = mrkdwn.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (match, label, url) => {
-    // Escape | in label to avoid breaking Slack link format
-    const safeLabel = label.replace(/\|/g, '\\|');
-    return `<${url}|${safeLabel}>`;
-  });
-
-  // 4. Bold: **text** → *text* (Slack uses single asterisk)
-  mrkdwn = mrkdwn.replace(/\*\*([^*]+)\*\*/g, '*$1*');
-
-  // 5. Italic: *text* or _text_ → _text_ (Slack uses underscore)
-  // Convert single asterisks to underscores
-  mrkdwn = mrkdwn.replace(/(?<![*])\*(?![*])([^*]+)(?<![*])\*(?![*])/g, '_$1_');
-
-  // 6. Strikethrough: ~~text~~ → ~text~
-  mrkdwn = mrkdwn.replace(/~~([^~]+)~~/g, '~$1~');
-
-  // 7. Spoiler: ||text|| → _text_ (Slack doesn't have spoiler)
-  mrkdwn = mrkdwn.replace(/\|\|([^|]+)\|\|/g, '_$1_');
-
-  // 8. Headers: ### Title → *Title*
-  mrkdwn = mrkdwn.replace(/^#{1,6}\s+(.+)$/gm, '*$1*');
-
-  // 9. Lists: convert - or * to proper Slack bullets
-  mrkdwn = mrkdwn.replace(/^(\s*)[-*]\s(.+)$/gm, '$1• $2');
-
-  // 10. Escape special characters (&, <, >) outside of valid tokens
-  mrkdwn = escapeSlackMrkdwn(mrkdwn);
-
-  return mrkdwn;
-}
-
-/**
- * Escape Slack mrkdwn special characters while preserving valid tokens
- */
-function escapeSlackMrkdwn(text: string): string {
-  // Valid Slack angle-bracket tokens: <@user>, <#channel>, <!command>, <url>, <url|label>
-  const ANGLE_TOKEN_RE = /<[^>\n]+>/g;
-
-  let result = '';
-  let lastIndex = 0;
-
-  for (const match of text.matchAll(ANGLE_TOKEN_RE)) {
-    const matchIndex = match.index ?? 0;
-    const token = match[0];
-
-    // Escape text before the token
-    result += escapeSlackSegment(text.slice(lastIndex, matchIndex));
-
-    // Check if it's a valid Slack token
-    if (isValidSlackToken(token)) {
-      result += token;
-    } else {
-      result += escapeSlackSegment(token);
-    }
-
-    lastIndex = matchIndex + token.length;
-  }
-
-  // Escape remaining text
-  result += escapeSlackSegment(text.slice(lastIndex));
-
-  return result;
-}
-
-function escapeSlackSegment(text: string): string {
-  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-}
-
-function isValidSlackToken(token: string): boolean {
-  if (!token.startsWith('<') || !token.endsWith('>')) return false;
-  const inner = token.slice(1, -1);
-  return (
-    inner.startsWith('@') ||
-    inner.startsWith('#') ||
-    inner.startsWith('!') ||
-    inner.startsWith('mailto:') ||
-    inner.startsWith('tel:') ||
-    inner.startsWith('http://') ||
-    inner.startsWith('https://') ||
-    inner.startsWith('slack://') ||
-    inner.includes('|') // <url|label> format
-  );
-}
-
-// ============================================================================
-// Discord Formatter
-// ============================================================================
-
-/**
- * Format for Discord - mostly native markdown with some enhancements
- * Discord supports: **bold**, *italic*, __underline__, ~~strikethrough~~, 
- * `code`, ```code```, ||spoiler||, > quote, # headers (level 1-3)
- */
-function formatForDiscord(text: string): string {
-  if (!text) return '';
-
-  let discord = text;
-
-  // Discord supports most standard markdown, but we can enhance:
-  
-  // Convert ####+ headers to bold (Discord only supports # ## ###)
-  discord = discord.replace(/^#{4,6}\s+(.+)$/gm, '**$1**');
-
-  // Ensure proper spacing around lists for better rendering
-  discord = discord.replace(/^(\s*)[-*]\s(.+)$/gm, '$1• $2');
-
-  // Clean up excessive newlines
-  discord = discord.replace(/\n{4,}/g, '\n\n\n');
-
-  return discord;
-}
-
-// ============================================================================
-// Plain Text Formatter (Signal, etc.)
-// ============================================================================
-
-/**
- * Strip markdown formatting for plain text output
- */
-export function stripMarkdown(text: string): string {
-  if (!text) return '';
-
-  let plain = text;
-
-  // 1. Remove code blocks first
-  plain = plain.replace(/```(\w+)?\n?([\s\S]*?)```/g, '$2');
-
-  // 2. Remove inline code
-  plain = plain.replace(/`([^`]+)`/g, '$1');
-
-  // 3. Convert links: [text](url) → text (url)
-  plain = plain.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '$1 ($2)');
-
-  // 4. Remove bold: **text**
-  plain = plain.replace(/\*\*([^*]+)\*\*/g, '$1');
-
-  // 5. Remove italic: *text* or _text_
-  plain = plain.replace(/\*([^*]+)\*/g, '$1');
-  plain = plain.replace(/_([^_]+)_/g, '$1');
-
-  // 6. Remove underline: __text__
-  plain = plain.replace(/__([^_]+)__/g, '$1');
-
-  // 7. Remove strikethrough: ~~text~~
-  plain = plain.replace(/~~([^~]+)~~/g, '$1');
-
-  // 8. Remove spoiler: ||text||
-  plain = plain.replace(/\|\|([^|]+)\|\|/g, '$1');
-
-  // 9. Remove headers: ### Title
-  plain = plain.replace(/^#{1,6}\s+(.+)$/gm, '$1');
-
-  // 10. Remove blockquote markers
-  plain = plain.replace(/^>\s?(.*)$/gm, '$1');
-
-  // Clean up whitespace
-  plain = plain.replace(/\n{3,}/g, '\n\n');
-  plain = plain.trim();
-
-  return plain;
-}
-
-// ============================================================================
-// HTML Utilities
-// ============================================================================
-
-function escapeHtml(text: string): string {
-  return text
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;');
-}
-
-function escapeHtmlAttr(text: string): string {
-  return escapeHtml(text).replace(/"/g, '&quot;');
-}
-
-// ============================================================================
-// Smart Format Detection
-// ============================================================================
-
-/**
- * Detect if text contains markdown that needs conversion
- */
 export function containsMarkdown(text: string): boolean {
   const markdownPatterns = [
-    /\*\*[^*]+\*\*/,      // Bold
-    /\*[^*]+\*/,          // Italic
-    /__[^_]+__/,          // Underline/Bold
-    /_[^_]+_/,            // Italic
-    /~~[^~]+~~/,          // Strikethrough
-    /`[^`]+`/,            // Inline code
-    /```[\s\S]*?```/,     // Code block
-    /\[[^\]]+\]\([^)]+\)/, // Links
-    /^#{1,6}\s+/m,        // Headers
-    /^>\s?/m,             // Blockquotes
-    /\|\|[^|]+\|\|/,      // Spoilers
+    /\*\*[^*]+\*\*/, /__[^_]+__/, /\*[^*]+\*/, /_[^_]+_/,
+    /~~[^~]+~~/, /`[^`]+`/, /```[\s\S]*?```/,
+    /\[[^\]]+\]\([^)]+\)/, /^#{1,6}\s+/m, /^>\s?/m, /\|\|[^|]+\|\|/,
   ];
-
-  return markdownPatterns.some(pattern => pattern.test(text));
+  return markdownPatterns.some(p => p.test(text));
 }
 
-/**
- * Chunk text for channel limits
- */
 export function chunkText(text: string, maxLength: number): string[] {
   if (text.length <= maxLength) return [text];
-
+  
   const chunks: string[] = [];
   let remaining = text;
-
+  
   while (remaining.length > 0) {
-    // Find a good break point
     let breakPoint = maxLength;
     
-    // Try to break at newline
+    // Try newline first
     const lastNewline = remaining.lastIndexOf('\n', maxLength);
     if (lastNewline > maxLength * 0.8) {
       breakPoint = lastNewline;
     } else {
-      // Try to break at sentence end
+      // Try sentence end
       const lastSentence = remaining.lastIndexOf('. ', maxLength);
       if (lastSentence > maxLength * 0.7) {
         breakPoint = lastSentence + 1;
       } else {
-        // Break at word boundary
+        // Word boundary
         const lastSpace = remaining.lastIndexOf(' ', maxLength);
-        if (lastSpace > 0) {
-          breakPoint = lastSpace;
-        }
+        if (lastSpace > 0) breakPoint = lastSpace;
       }
     }
-
+    
     chunks.push(remaining.slice(0, breakPoint).trim());
     remaining = remaining.slice(breakPoint).trim();
   }
-
+  
   return chunks;
 }
