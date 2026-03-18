@@ -1,16 +1,76 @@
 /**
  * Wizard Command - Interactive setup wizard
+ * 
+ * Inspired by OpenClaw's auth-choice pattern:
+ * - User selects provider from list first
+ * - Then enters API key for selected provider
+ * - Can add multiple providers
  */
 
 import { Command } from 'commander';
 import chalk from 'chalk';
-import { intro, outro, text, select, confirm, spinner } from '@clack/prompts';
+import { intro, outro, text, select, confirm, spinner, multiselect, isCancel } from '@clack/prompts';
 import { loadConfig, saveConfig } from '../../config/index';
 import { initializeProviders } from '../../providers/index';
 import { bootstrapFoxFang } from '../../wizard/bootstrap';
 import { initDatabase } from '../../database/sqlite';
 import { runMigrations } from '../../compat';
-// import { testProviderConnection } from '../../providers/test';
+
+// Available providers with metadata
+const AVAILABLE_PROVIDERS = [
+  { 
+    id: 'openai', 
+    name: 'OpenAI', 
+    hint: 'GPT-4, GPT-4o, GPT-3.5',
+    apiKeyPlaceholder: 'sk-...',
+    apiKeyPrefix: 'sk-',
+    baseUrl: 'https://api.openai.com/v1',
+    models: ['gpt-4o', 'gpt-4o-mini', 'gpt-4', 'gpt-3.5-turbo']
+  },
+  { 
+    id: 'anthropic', 
+    name: 'Anthropic', 
+    hint: 'Claude 3.5 Sonnet, Opus, Haiku',
+    apiKeyPlaceholder: 'sk-ant-...',
+    apiKeyPrefix: 'sk-ant-',
+    baseUrl: 'https://api.anthropic.com/v1',
+    models: ['claude-3-5-sonnet-latest', 'claude-3-opus-latest', 'claude-3-haiku-latest']
+  },
+  { 
+    id: 'kimi', 
+    name: 'Kimi (Moonshot)', 
+    hint: 'Kimi Coding API - China market',
+    apiKeyPlaceholder: 'sk-...',
+    apiKeyPrefix: 'sk-',
+    baseUrl: 'https://api.moonshot.cn/v1',
+    models: ['moonshot-v1-8k', 'moonshot-v1-32k', 'moonshot-v1-128k']
+  },
+  { 
+    id: 'openrouter', 
+    name: 'OpenRouter', 
+    hint: 'Access 100+ models via unified API',
+    apiKeyPlaceholder: 'sk-or-...',
+    apiKeyPrefix: 'sk-or-',
+    baseUrl: 'https://openrouter.ai/api/v1',
+    models: ['openai/gpt-4o', 'anthropic/claude-3.5-sonnet', 'meta/llama-3.1-405b']
+  },
+  { 
+    id: 'ollama', 
+    name: 'Ollama (Local)', 
+    hint: 'Run models locally - no API key needed',
+    apiKeyPlaceholder: 'not-needed',
+    baseUrl: 'http://localhost:11434/v1',
+    models: ['llama3.1', 'qwen2.5', 'deepseek-coder']
+  },
+  { 
+    id: 'custom', 
+    name: 'Custom/OpenAI-compatible', 
+    hint: 'Any OpenAI-compatible API',
+    apiKeyPlaceholder: 'your-api-key',
+    baseUrl: 'http://localhost:8080/v1',
+    models: ['custom-model']
+  },
+];
 
 export async function registerWizardCommand(program: Command): Promise<void> {
   const wizard = program
@@ -33,35 +93,114 @@ export async function registerWizardCommand(program: Command): Promise<void> {
       
       const config = await loadConfig();
       
-      // API Keys
-      const openaiKey = await text({
-        message: 'OpenAI API Key (optional):',
-        placeholder: 'sk-...',
-        defaultValue: config.providers?.find((p: any) => p.id === 'openai')?.apiKey || '',
-      });
+      // ===== PROVIDER SETUP (OpenClaw-style) =====
+      console.log(chalk.dim('\n📡 AI Provider Setup\n'));
+      console.log(chalk.dim('Select the AI providers you want to use.\n'));
       
-      const anthropicKey = await text({
-        message: 'Anthropic API Key (optional):',
-        placeholder: 'sk-ant-...',
-        defaultValue: config.providers?.find((p: any) => p.id === 'anthropic')?.apiKey || '',
-      });
+      const selectedProviderIds = await multiselect({
+        message: 'Select providers to configure:',
+        options: AVAILABLE_PROVIDERS.map(p => ({
+          value: p.id,
+          label: p.name,
+          hint: p.hint,
+        })),
+        required: true,
+      }) as string[];
       
-      // Default Provider
+      if (isCancel(selectedProviderIds) || selectedProviderIds.length === 0) {
+        outro(chalk.yellow('Setup cancelled. Please select at least one provider.'));
+        return;
+      }
+      
+      // Configure each selected provider
+      const configuredProviders: any[] = [];
+      
+      for (const providerId of selectedProviderIds) {
+        const providerMeta = AVAILABLE_PROVIDERS.find(p => p.id === providerId)!;
+        
+        console.log(chalk.dim(`\n--- ${providerMeta.name} ---`));
+        
+        // For Ollama, no API key needed
+        let apiKey = '';
+        if (providerId !== 'ollama') {
+          const keyResult = await text({
+            message: `${providerMeta.name} API Key:`,
+            placeholder: providerMeta.apiKeyPlaceholder,
+            validate: (value) => {
+              if (!value || value.trim() === '') {
+                return 'API key is required (or press Ctrl+C to skip this provider)';
+              }
+              if (providerMeta.apiKeyPrefix && providerMeta.apiKeyPrefix !== 'not-needed' && 
+                  !value.startsWith(providerMeta.apiKeyPrefix)) {
+                return `API key should start with "${providerMeta.apiKeyPrefix}"`;
+              }
+              return undefined;
+            },
+          });
+          
+          if (isCancel(keyResult)) {
+            console.log(chalk.yellow(`⏭ Skipped ${providerMeta.name}`));
+            continue;
+          }
+          apiKey = keyResult as string;
+        } else {
+          console.log(chalk.dim('✓ No API key needed for Ollama (local)'));
+        }
+        
+        // Ask for custom base URL (optional)
+        let baseUrl = providerMeta.baseUrl;
+        const customBaseUrl = await text({
+          message: `${providerMeta.name} Base URL (optional):`,
+          placeholder: providerMeta.baseUrl,
+          defaultValue: providerMeta.baseUrl,
+        });
+        
+        if (!isCancel(customBaseUrl) && customBaseUrl) {
+          baseUrl = customBaseUrl as string;
+        }
+        
+        // Select default model for this provider
+        const selectedModel = await select({
+          message: `Default model for ${providerMeta.name}:`,
+          options: providerMeta.models.map(m => ({ value: m, label: m })),
+          initialValue: providerMeta.models[0],
+        }) as string;
+        
+        configuredProviders.push({
+          id: providerId,
+          name: providerMeta.name,
+          apiKey: apiKey,
+          baseUrl: baseUrl,
+          defaultModel: selectedModel,
+          enabled: true,
+        });
+        
+        console.log(chalk.green(`✓ ${providerMeta.name} configured`));
+      }
+      
+      if (configuredProviders.length === 0) {
+        outro(chalk.red('No providers configured. Please run setup again.'));
+        return;
+      }
+      
+      // Select default provider
       const defaultProvider = await select({
-        message: 'Select default provider:',
-        options: [
-          { value: 'openai', label: 'OpenAI', hint: 'GPT-4, GPT-4o-mini' },
-          { value: 'anthropic', label: 'Anthropic', hint: 'Claude 3 Sonnet, Opus, Haiku' },
-          { value: 'kimi', label: 'Kimi', hint: 'Kimi Coding API' },
-        ],
-        initialValue: config.defaultProvider || 'openai',
-      });
+        message: 'Select your default provider:',
+        options: configuredProviders.map(p => ({
+          value: p.id,
+          label: p.name,
+          hint: p.defaultModel,
+        })),
+        initialValue: configuredProviders[0].id,
+      }) as string;
       
-      // Default Model
+      const defaultProviderConfig = configuredProviders.find(p => p.id === defaultProvider)!;
+      
+      // Default Model (can override)
       const defaultModel = await text({
-        message: 'Default model:',
-        placeholder: 'gpt-4o',
-        defaultValue: config.defaultModel || 'gpt-4o',
+        message: 'Default model (global):',
+        placeholder: defaultProviderConfig.defaultModel,
+        defaultValue: defaultProviderConfig.defaultModel,
       });
       
       // Workspace
@@ -77,7 +216,7 @@ export async function registerWizardCommand(program: Command): Promise<void> {
         initialValue: true,
       });
       
-      // Optional API Keys for enhanced tools
+      // Optional API Keys for research tools
       console.log(chalk.dim('\n💡 Optional: Add API keys for enhanced research tools\n'));
       console.log(chalk.dim('   Press Enter to skip - these are completely optional.\n'));
       
@@ -103,44 +242,29 @@ export async function registerWizardCommand(program: Command): Promise<void> {
       s2.start('Saving configuration...');
       
       // Update config
-      config.defaultProvider = defaultProvider as string;
-      config.defaultModel = defaultModel as string;
+      config.defaultProvider = defaultProvider;
+      config.defaultModel = (defaultModel as string) || defaultProviderConfig.defaultModel;
       config.workspace = { homeDir: workspaceDir as string };
       config.daemon = { enabled: enableDaemon as boolean, port: 8787, host: '127.0.0.1' };
       
-      // Save optional API keys
-      if (braveApiKey) {
-        config.braveSearch = { apiKey: braveApiKey as string };
-      }
-      if (firecrawlApiKey) {
-        config.firecrawl = { apiKey: firecrawlApiKey as string };
-      }
-      
-      // Update provider API keys
+      // Merge new providers with existing
       if (!config.providers) config.providers = [];
       
-      const openaiProvider = config.providers.find((p: any) => p.id === 'openai');
-      if (openaiProvider) {
-        openaiProvider.apiKey = openaiKey as string;
-      } else if (openaiKey) {
-        config.providers.push({
-          id: 'openai',
-          name: 'OpenAI',
-          apiKey: openaiKey as string,
-          enabled: true,
-        });
+      for (const provider of configuredProviders) {
+        const existingIndex = config.providers.findIndex((p: any) => p.id === provider.id);
+        if (existingIndex >= 0) {
+          config.providers[existingIndex] = provider;
+        } else {
+          config.providers.push(provider);
+        }
       }
       
-      const anthropicProvider = config.providers.find((p: any) => p.id === 'anthropic');
-      if (anthropicProvider) {
-        anthropicProvider.apiKey = anthropicKey as string;
-      } else if (anthropicKey) {
-        config.providers.push({
-          id: 'anthropic',
-          name: 'Anthropic',
-          apiKey: anthropicKey as string,
-          enabled: true,
-        });
+      // Save optional API keys
+      if (braveApiKey && braveApiKey !== 'BS-...') {
+        config.braveSearch = { apiKey: braveApiKey as string };
+      }
+      if (firecrawlApiKey && firecrawlApiKey !== 'fc-...') {
+        config.firecrawl = { apiKey: firecrawlApiKey as string };
       }
       
       await saveConfig(config);
@@ -161,7 +285,47 @@ export async function registerWizardCommand(program: Command): Promise<void> {
         console.log(chalk.yellow('  pnpm foxfang channels setup'));
       }
       
-      outro(chalk.green('Setup complete! 🦊\n\nYour FoxFang is ready at ~/.foxfang/\nRun "pnpm foxfang chat" to start.'));
+      outro(chalk.green(`Setup complete! 🦊
+
+Your FoxFang is ready at ~/.foxfang/
+Configured providers: ${configuredProviders.map(p => p.name).join(', ')}
+Run "pnpm foxfang chat" to start.`));
+    });
+
+  wizard
+    .command('providers')
+    .description('Add or update AI providers')
+    .action(async () => {
+      intro(chalk.cyan('Provider Configuration 🦊'));
+      
+      const config = await loadConfig();
+      
+      const action = await select({
+        message: 'What would you like to do?',
+        options: [
+          { value: 'add', label: 'Add new provider' },
+          { value: 'edit', label: 'Edit existing provider' },
+          { value: 'remove', label: 'Remove provider' },
+          { value: 'test', label: 'Test provider connection' },
+        ],
+      }) as string;
+      
+      switch (action) {
+        case 'add':
+          await addProvider(config);
+          break;
+        case 'edit':
+          await editProvider(config);
+          break;
+        case 'remove':
+          await removeProvider(config);
+          break;
+        case 'test':
+          await testProviders(config);
+          break;
+      }
+      
+      outro(chalk.green('Done!'));
     });
 
   wizard
@@ -197,6 +361,130 @@ export async function registerWizardCommand(program: Command): Promise<void> {
       
       outro(chalk.green(`${channel} configured!`));
     });
+}
+
+async function addProvider(config: any) {
+  // Get existing provider IDs
+  const existingIds = config.providers?.map((p: any) => p.id) || [];
+  const availableProviders = AVAILABLE_PROVIDERS.filter(p => !existingIds.includes(p.id));
+  
+  if (availableProviders.length === 0) {
+    console.log(chalk.yellow('All available providers are already configured!'));
+    return;
+  }
+  
+  const providerId = await select({
+    message: 'Select provider to add:',
+    options: availableProviders.map(p => ({
+      value: p.id,
+      label: p.name,
+      hint: p.hint,
+    })),
+  }) as string;
+  
+  const providerMeta = AVAILABLE_PROVIDERS.find(p => p.id === providerId)!;
+  
+  let apiKey = '';
+  if (providerId !== 'ollama') {
+    apiKey = await text({
+      message: `${providerMeta.name} API Key:`,
+      placeholder: providerMeta.apiKeyPlaceholder,
+    }) as string;
+  }
+  
+  const baseUrl = await text({
+    message: `${providerMeta.name} Base URL (optional):`,
+    placeholder: providerMeta.baseUrl,
+    defaultValue: providerMeta.baseUrl,
+  }) as string;
+  
+  const defaultModel = await select({
+    message: `Default model for ${providerMeta.name}:`,
+    options: providerMeta.models.map(m => ({ value: m, label: m })),
+  }) as string;
+  
+  const newProvider = {
+    id: providerId,
+    name: providerMeta.name,
+    apiKey,
+    baseUrl: baseUrl || providerMeta.baseUrl,
+    defaultModel,
+    enabled: true,
+  };
+  
+  if (!config.providers) config.providers = [];
+  config.providers.push(newProvider);
+  await saveConfig(config);
+  
+  console.log(chalk.green(`✓ ${providerMeta.name} added!`));
+}
+
+async function editProvider(config: any) {
+  if (!config.providers?.length) {
+    console.log(chalk.yellow('No providers configured. Run "pnpm foxfang wizard providers add"'));
+    return;
+  }
+  
+  const providerId = await select({
+    message: 'Select provider to edit:',
+    options: config.providers.map((p: any) => ({
+      value: p.id,
+      label: p.name,
+    })),
+  }) as string;
+  
+  const provider = config.providers.find((p: any) => p.id === providerId);
+  const providerMeta = AVAILABLE_PROVIDERS.find(p => p.id === providerId);
+  
+  const apiKey = await text({
+    message: `${provider.name} API Key:`,
+    placeholder: 'sk-...',
+    defaultValue: provider.apiKey || '',
+  }) as string;
+  
+  const baseUrl = await text({
+    message: `${provider.name} Base URL:`,
+    placeholder: providerMeta?.baseUrl || 'https://api...',
+    defaultValue: provider.baseUrl || providerMeta?.baseUrl,
+  }) as string;
+  
+  provider.apiKey = apiKey;
+  provider.baseUrl = baseUrl;
+  
+  await saveConfig(config);
+  console.log(chalk.green(`✓ ${provider.name} updated!`));
+}
+
+async function removeProvider(config: any) {
+  if (!config.providers?.length) {
+    console.log(chalk.yellow('No providers to remove'));
+    return;
+  }
+  
+  const providerId = await select({
+    message: 'Select provider to remove:',
+    options: config.providers.map((p: any) => ({
+      value: p.id,
+      label: p.name,
+    })),
+  }) as string;
+  
+  config.providers = config.providers.filter((p: any) => p.id !== providerId);
+  await saveConfig(config);
+  
+  console.log(chalk.green('✓ Provider removed'));
+}
+
+async function testProviders(config: any) {
+  console.log(chalk.dim('\nTesting provider connections...\n'));
+  
+  // Initialize providers to test connections
+  try {
+    await initializeProviders(config.providers || []);
+    console.log(chalk.green('✓ Providers initialized successfully'));
+  } catch (error) {
+    console.log(chalk.red('✗ Provider initialization failed:'), error);
+  }
 }
 
 async function setupTelegram() {
