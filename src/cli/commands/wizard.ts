@@ -77,6 +77,22 @@ export async function registerWizardCommand(program: Command): Promise<void> {
         initialValue: true,
       });
       
+      // Optional API Keys for enhanced tools
+      console.log(chalk.dim('\n💡 Optional: Add API keys for enhanced research tools\n'));
+      console.log(chalk.dim('   Press Enter to skip - these are completely optional.\n'));
+      
+      const braveApiKey = await text({
+        message: 'Brave Search API Key (optional - for high-quality search):',
+        placeholder: 'BS-...',
+        defaultValue: config.braveSearch?.apiKey || '',
+      });
+      
+      const firecrawlApiKey = await text({
+        message: 'Firecrawl API Key (optional - for advanced web scraping):',
+        placeholder: 'fc-...',
+        defaultValue: config.firecrawl?.apiKey || '',
+      });
+      
       // Channels
       const setupChannels = await confirm({
         message: 'Setup messaging channels (Telegram, Discord)?',
@@ -91,6 +107,14 @@ export async function registerWizardCommand(program: Command): Promise<void> {
       config.defaultModel = defaultModel as string;
       config.workspace = { homeDir: workspaceDir as string };
       config.daemon = { enabled: enableDaemon as boolean, port: 8787, host: '127.0.0.1' };
+      
+      // Save optional API keys
+      if (braveApiKey) {
+        config.braveSearch = { apiKey: braveApiKey as string };
+      }
+      if (firecrawlApiKey) {
+        config.firecrawl = { apiKey: firecrawlApiKey as string };
+      }
       
       // Update provider API keys
       if (!config.providers) config.providers = [];

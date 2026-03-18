@@ -31,6 +31,9 @@ export interface AppConfig {
   cron: { enabled: boolean; pollIntervalMs: number };
   security: { allowedOrigins: string[] };
   gateway: { port: number; host: string; enableCors: boolean; maxRequestSize: string };
+  // Optional web tool API keys
+  braveSearch?: { apiKey: string };
+  firecrawl?: { apiKey: string; baseUrl?: string };
 }
 
 export interface ProviderConfig {

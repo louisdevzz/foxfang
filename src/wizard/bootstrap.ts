@@ -96,9 +96,16 @@ Edit this to define how your FoxFang communicates:
 
 Your FoxFang can use these tools to help with marketing tasks:
 
-### 🔍 Research
-- \`web_search\` — Search the web for information
-- \`trend_analysis\` — Analyze trending topics
+### 🔍 Research (No API Key Required)
+- \`web_search\` — Search the web using free sources
+- \`fetch_tweet\` — Fetch tweets from X/Twitter by URL
+- \`fetch_user_tweets\` — Get recent tweets from a user
+- \`fetch_url\` — Crawl and extract content from any website
+
+### 🔍 Research (Optional API Keys)
+- \`brave_search\` — High-quality web search (requires Brave API key)
+- \`firecrawl_search\` — AI-powered search with content extraction (requires Firecrawl API key)
+- \`firecrawl_scrape\` — Advanced website scraping (requires Firecrawl API key)
 
 ### 📝 Content
 - \`generate_content\` — Create content in various formats
@@ -114,6 +121,52 @@ Your FoxFang can use these tools to help with marketing tasks:
 
 ### 📊 Analytics
 - \`content_score\` — Score content quality
+
+## Optional API Keys
+
+For enhanced capabilities, you can add these optional API keys during setup or later:
+
+### Option 1: Run Setup Wizard
+\`\`\`bash
+pnpm foxfang wizard setup
+\`\`\`
+
+### Option 2: Edit Config File
+Add to \`~/.foxfang/foxfang.json\`:
+
+**Brave Search** (Free tier: 2,000 queries/month)
+- Get API key: https://brave.com/search/api/
+\`\`\`json
+{
+  "braveSearch": {
+    "apiKey": "BS-your-api-key"
+  }
+}
+\`\`\`
+
+**Firecrawl** (Free tier available)
+- Get API key: https://firecrawl.dev
+\`\`\`json
+{
+  "firecrawl": {
+    "apiKey": "fc-your-api-key"
+  }
+}
+\`\`\`
+
+### Option 3: Environment Variables
+\`\`\`bash
+export BRAVE_API_KEY=your-key
+export FIRECRAWL_API_KEY=your-key
+\`\`\`
+
+### What You Get
+
+| Tool | Without API Key | With API Key |
+|------|----------------|--------------|
+| Web Search | SearX/Bing (basic) | Brave (high-quality) |
+| Content Extraction | Basic HTML parsing | Firecrawl (AI-powered) |
+| Site Crawling | Single page | Full site + structured data |
 
 ## Custom Tools
 

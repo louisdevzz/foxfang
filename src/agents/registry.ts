@@ -40,7 +40,7 @@ Always:
 - Create tasks for content workflow when needed
 
 When content is ready for review, mark it as complete.`,
-    tools: ['web_search', 'memory_recall', 'memory_store', 'create_task', 'list_tasks', 'update_task_status'],
+    tools: ['web_search', 'fetch_tweet', 'fetch_user_tweets', 'fetch_url', 'firecrawl_search', 'firecrawl_scrape', 'brave_search', 'memory_recall', 'memory_store', 'create_task', 'list_tasks', 'update_task_status'],
   },
   {
     id: 'strategy-lead',
@@ -58,7 +58,7 @@ Your responsibilities:
 
 Always ground recommendations in research and data.
 Create tasks to track strategic initiatives.`,
-    tools: ['web_search', 'memory_recall', 'memory_store', 'create_task', 'list_tasks', 'get_project'],
+    tools: ['web_search', 'fetch_tweet', 'fetch_user_tweets', 'fetch_url', 'firecrawl_search', 'firecrawl_scrape', 'brave_search', 'memory_recall', 'memory_store', 'create_task', 'list_tasks', 'get_project'],
   },
   {
     id: 'growth-analyst',
@@ -75,7 +75,7 @@ Evaluate content on:
 
 Provide specific, actionable feedback.
 Track content performance through tasks.`,
-    tools: ['memory_recall', 'memory_store', 'create_task', 'list_tasks', 'update_task_status'],
+    tools: ['web_search', 'fetch_url', 'memory_recall', 'memory_store', 'create_task', 'list_tasks', 'update_task_status'],
   },
 ];
 

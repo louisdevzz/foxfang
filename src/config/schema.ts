@@ -105,6 +105,17 @@ export interface TwitterOAuthConfig {
   callbackUrl: string;
 }
 
+// Firecrawl configuration (optional)
+export interface FirecrawlConfig {
+  apiKey?: string;
+  baseUrl?: string;
+}
+
+// Brave Search configuration (optional)
+export interface BraveSearchConfig {
+  apiKey?: string;
+}
+
 // Main application configuration
 export interface AppConfig {
   // Server settings
@@ -141,6 +152,10 @@ export interface AppConfig {
   
   // Twitter OAuth (optional)
   twitter?: TwitterOAuthConfig;
+
+  // Web tools (optional)
+  firecrawl?: FirecrawlConfig;
+  braveSearch?: BraveSearchConfig;
 
   // Agent defaults
   defaultSystemPrompt?: string;
