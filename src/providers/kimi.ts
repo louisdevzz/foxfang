@@ -84,9 +84,6 @@ export class KimiCodingProvider implements Provider {
       usage?: { input_tokens?: number; output_tokens?: number };
     };
     
-    // Debug: log raw response structure
-    console.error('[KimiCoding] Response:', JSON.stringify(data, null, 2).slice(0, 500));
-    
     const result: ChatResponse = {
       content: data.content?.[0]?.text || data.completion || '',
       usage: {
