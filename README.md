@@ -102,35 +102,116 @@ $ pnpm foxfang chat
 
 ### 📱 Channel Integration
 
-Connect to messaging platforms (requires daemon running):
+Connect FoxFang to messaging platforms to receive and respond to messages directly from chat apps.
 
+**How it works:**
+1. You run the messaging service (e.g., signal-cli) separately
+2. FoxFang Gateway connects to the service's HTTP API
+3. Incoming messages are routed to AI agents
+4. Agent responses are sent back to the chat
+
+**Quick Setup:**
 ```bash
-# Setup channel credentials
-pnpm foxfang channel setup telegram
+# Setup channel (interactive wizard)
 pnpm foxfang channel setup signal
-pnpm foxfang channel setup discord
-pnpm foxfang channel setup slack
 
-# Run daemon with channels enabled
-pnpm foxfang daemon run --channels signal
+# Run gateway with all configured channels
+pnpm foxfang daemon run
 
-# Or install as service with channels
-pnpm foxfang daemon install --channels signal,telegram
+# Or specify channels explicitly
+pnpm foxfang daemon run --channels signal,telegram
 ```
 
-**Signal Setup (Example):**
+**Supported Channels:**
+
+| Channel | Service Required | Status |
+|---------|------------------|--------|
+| Signal | signal-cli | ✅ Available |
+| Telegram | Coming soon | ⏳ Planned |
+| Discord | Coming soon | ⏳ Planned |
+| Slack | Coming soon | ⏳ Planned |
+
+#### Signal Setup (Full Guide)
+
+**Step 1: Install signal-cli**
 ```bash
-# 1. Install signal-cli
+# macOS
 brew install signal-cli
 
-# 2. Register your number
+# Linux (Ubuntu/Debian)
+sudo apt install signal-cli
+
+# Or download binary:
+# https://github.com/AsamK/signal-cli/releases
+```
+
+**Step 2: Register your phone number**
+```bash
+# Link to existing Signal app (recommended)
+signal-cli -a +84912345678 link
+# Then scan QR code with Signal app
+
+# Or register new (will receive SMS code)
 signal-cli -a +84912345678 register
+signal-cli -a +84912345678 verify CODE
+```
 
-# 3. Setup in FoxFang
+**Step 3: Run signal-cli daemon**
+```bash
+# Terminal 1: Keep this running
+signal-cli -a +84912345678 daemon --http 127.0.0.1:8686
+```
+
+**Step 4: Configure FoxFang**
+```bash
+# Terminal 2: Run setup wizard
 pnpm foxfang channel setup signal
+# Enter phone: +84912345678
+# Enter URL: http://127.0.0.1:8686
+```
 
-# 4. Run daemon with Signal
-pnpm foxfang daemon run --channels signal
+**Step 5: Run FoxFang Gateway**
+```bash
+# Terminal 3: Start gateway
+pnpm foxfang daemon run
+
+# You should see:
+# [Signal] Connected to http://127.0.0.1:8686 for +84912345678
+```
+
+**Step 6: Test it!**
+Send a message to your Signal number from another phone. FoxFang will:
+1. Receive the message via signal-cli
+2. Process it through the AI agent
+3. Send a reply back automatically
+
+```
+[Signal] 📩 Message from John: Hello!
+[Signal] 🤖 Agent thinking...
+[Signal] 📤 Sending reply to +84123456789...
+```
+
+**Troubleshooting:**
+
+| Issue | Solution |
+|-------|----------|
+| "Cannot connect to signal-cli" | Make sure daemon is running on correct port |
+| "Not receiving messages" | Check `signal-cli receive` works manually |
+| "Permission denied" | Run with `--config` flag to specify config location |
+
+**Install as System Service (auto-start):**
+```bash
+# Install daemon with Signal support
+pnpm foxfang daemon install --channels signal
+
+# Start the service
+pnpm foxfang daemon start
+
+# Check logs
+pnpm foxfang daemon logs
+
+# View status
+pnpm foxfang daemon status
 ```
 
 ### 🧠 Memory
