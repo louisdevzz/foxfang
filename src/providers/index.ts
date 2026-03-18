@@ -87,6 +87,11 @@ export function initializeProviders(configs: ProviderConfig[]): void {
           const { KimiProvider } = require('./kimi');
           provider = new KimiProvider(config);
           break;
+        case 'kimi-coding':
+          // Kimi Coding uses Anthropic Messages API format
+          const { KimiCodingProvider } = require('./kimi');
+          provider = new KimiCodingProvider(config);
+          break;
         default:
           console.warn(`Unknown provider: ${config.id}`);
           continue;

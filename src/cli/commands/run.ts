@@ -7,9 +7,10 @@ import chalk from 'chalk';
 import ora from 'ora';
 import { AgentOrchestrator } from '../../agents/orchestrator';
 import { SessionManager } from '../../sessions/manager';
-import { loadConfig } from '../../config/index';
+import { loadConfigWithCredentials } from '../../config/index';
 import { initializeProviders } from '../../providers/index';
 import { initializeTools } from '../../tools/index';
+import { setDefaultProvider } from '../../agents/runtime';
 
 export async function registerRunCommand(program: Command): Promise<void> {
   program
@@ -27,11 +28,14 @@ export async function registerRunCommand(program: Command): Promise<void> {
       const spinner = ora('Initializing...').start();
       
       try {
-        // Load configuration
-        const config = await loadConfig();
+        // Load configuration with credentials
+        const config = await loadConfigWithCredentials();
         
         // Initialize providers
         initializeProviders(config.providers);
+        
+        // Set default provider for agents
+        setDefaultProvider(config.defaultProvider);
         
         // Initialize tools
         initializeTools(config.tools?.tools || {});

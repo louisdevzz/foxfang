@@ -4,7 +4,7 @@
 
 import { Command } from 'commander';
 import chalk from 'chalk';
-import { loadConfig } from '../../config/index';
+import { loadConfigWithCredentials } from '../../config/index';
 import { getProviderStatuses } from '../../providers/index';
 import { getDaemonStatus } from '../../daemon/status';
 
@@ -52,7 +52,7 @@ export async function registerStatusCommand(program: Command): Promise<void> {
       console.log();
       
       // Channels status
-      const config = await loadConfig();
+      const config = await loadConfigWithCredentials();
       console.log(chalk.cyan('Channels:'));
       const channels = ['telegram', 'discord', 'slack', 'signal'];
       for (const channelId of channels) {

@@ -13,7 +13,11 @@
     "declaration": true,
     "declarationMap": true,
     "sourceMap": true,
-    "lib": ["ES2022"]
+    "lib": ["ES2022"],
+    "jsx": "react",
+    "jsxFactory": "React.createElement",
+    "jsxFragmentFactory": "React.Fragment",
+    "allowSyntheticDefaultImports": true
   },
   "include": ["src/**/*", "src/types/*.d.ts"],
   "exclude": ["node_modules", "dist", "ui", ".research"]

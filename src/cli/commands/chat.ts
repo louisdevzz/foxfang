@@ -7,26 +7,30 @@ import chalk from 'chalk';
 import { createInterface } from 'readline';
 import { AgentOrchestrator } from '../../agents/orchestrator';
 import { SessionManager } from '../../sessions/manager';
-import { loadConfig } from '../../config/index';
+import { loadConfigWithCredentials } from '../../config/index';
 import { initializeProviders } from '../../providers/index';
 import { initializeTools } from '../../tools/index';
+import { setDefaultProvider } from '../../agents/runtime';
 
 export async function registerChatCommand(program: Command): Promise<void> {
   program
     .command('chat')
     .description('Start an interactive chat session with an agent')
-    .option('-a, --agent <agent>', 'Agent ID to use', 'default')
+    .option('-a, --agent <agent>', 'Agent ID to use', 'orchestrator')
     .option('-p, --project <project>', 'Project ID')
     .option('-s, --session <session>', 'Session ID (creates new if not provided)')
     .option('-m, --model <model>', 'Model to use')
     .option('--provider <provider>', 'Provider to use')
     .option('--system <prompt>', 'System prompt override')
     .action(async (options) => {
-      // Load configuration
-      const config = await loadConfig();
+      // Load configuration with credentials
+      const config = await loadConfigWithCredentials();
       
       // Initialize providers
       initializeProviders(config.providers);
+      
+      // Set default provider for agents
+      setDefaultProvider(config.defaultProvider);
       
       // Initialize tools
       initializeTools(config.tools?.tools || {});
@@ -41,7 +45,7 @@ export async function registerChatCommand(program: Command): Promise<void> {
       const sessionId = options.session || `chat-${Date.now()}`;
       
       console.log(chalk.cyan('╔════════════════════════════════════════╗'));
-      console.log(chalk.cyan('║     FoxFang - Agent Chat Mode      ║'));
+      console.log(chalk.cyan('║     FoxFang - Agent Chat Mode          ║'));
       console.log(chalk.cyan('╚════════════════════════════════════════╝'));
       console.log();
       console.log(chalk.dim(`Session: ${sessionId}`));
@@ -55,6 +59,9 @@ export async function registerChatCommand(program: Command): Promise<void> {
         output: process.stdout,
         prompt: chalk.green('You: '),
       });
+      
+      let isProcessing = false;
+      let shouldExit = false;
       
       rl.prompt();
       
@@ -96,7 +103,7 @@ export async function registerChatCommand(program: Command): Promise<void> {
         
         if (message === '/agents') {
           console.log(chalk.cyan('Available agents:'));
-          console.log('  - default (Strategy Lead)');
+          console.log('  - orchestrator (Routes tasks to specialists)');
           console.log('  - content-specialist');
           console.log('  - growth-analyst');
           console.log();
@@ -122,8 +129,24 @@ export async function registerChatCommand(program: Command): Promise<void> {
           return;
         }
         
+        isProcessing = true;
+        
         try {
+          // Show thinking indicator while waiting for first chunk
+          const spinnerFrames = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+          let spinnerIndex = 0;
+          let hasStarted = false;
+          
+          // Write prefix and start spinner on same line
           process.stdout.write(chalk.blue('\nAgent: '));
+          
+          const spinnerInterval = setInterval(() => {
+            if (!hasStarted) {
+              // Use carriage return to go back to start of line
+              process.stdout.write('\r' + chalk.blue('Agent: ') + chalk.dim(spinnerFrames[spinnerIndex] + ' thinking...'));
+              spinnerIndex = (spinnerIndex + 1) % spinnerFrames.length;
+            }
+          }, 80);
           
           const result = await orchestrator.run({
             sessionId,
@@ -139,24 +162,50 @@ export async function registerChatCommand(program: Command): Promise<void> {
           if (result.stream) {
             for await (const chunk of result.stream) {
               if (chunk.type === 'text' && chunk.content) {
+                if (!hasStarted) {
+                  // First chunk received - clear spinner and start streaming
+                  hasStarted = true;
+                  clearInterval(spinnerInterval);
+                  // Clear the spinner by writing spaces, then reset to start
+                  process.stdout.write('\r' + chalk.blue('Agent: ') + '                    ');
+                  process.stdout.write('\r' + chalk.blue('Agent: '));
+                }
                 process.stdout.write(chunk.content);
               }
             }
           }
           
-          console.log(); // New line
-          console.log();
+          // Clear spinner if stream ended without content
+          if (!hasStarted) {
+            clearInterval(spinnerInterval);
+            process.stdout.write('\r' + chalk.blue('Agent: ') + chalk.dim('(no response)'));
+          }
+          
+          console.log('\n');
           
         } catch (error) {
           console.error(chalk.red('\nError:'), error instanceof Error ? error.message : String(error));
+        }
+        
+        isProcessing = false;
+        
+        // If close was triggered while processing, exit now
+        if (shouldExit) {
+          console.log(chalk.yellow('\nChat ended. Session saved.'));
+          process.exit(0);
         }
         
         rl.prompt();
       });
       
       rl.on('close', () => {
-        console.log(chalk.yellow('\nChat ended. Session saved.'));
-        process.exit(0);
+        if (isProcessing) {
+          // Wait for processing to complete
+          shouldExit = true;
+        } else {
+          console.log(chalk.yellow('\nChat ended. Session saved.'));
+          process.exit(0);
+        }
       });
     });
 }

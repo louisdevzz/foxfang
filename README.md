@@ -32,6 +32,9 @@ cd foxfang
 # Install dependencies
 pnpm install
 
+# Build the project
+npm run build
+
 # Run the setup wizard
 pnpm foxfang wizard setup
 ```

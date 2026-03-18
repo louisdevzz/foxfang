@@ -6,7 +6,7 @@
 
 import { AgentRequest, AgentResponse, RunRequest, RunResponse, AgentContext, AgentMessage, StreamChunk } from './types';
 import { agentRegistry } from './registry';
-import { runAgent, parseDirectives } from './runtime';
+import { runAgent, runAgentStream, parseDirectives } from './runtime';
 import { SessionManager } from '../sessions/manager';
 import { toolRegistry } from '../tools/index';
 import { buildContext } from '../context-engine';
@@ -118,34 +118,13 @@ export class AgentOrchestrator {
     if (!agent) {
       throw new Error(`Agent not found: ${agentId}`);
     }
-    const agentName = agent.name;
 
-    // For now, simulate streaming
-    // In production, this would use the provider's streaming API
-    async function* streamGenerator(): AsyncGenerator<StreamChunk> {
-      yield { type: 'text', content: `🦊 ${agentName} is thinking...\n\n` };
-      
-      // Simulate thinking delay
-      await new Promise(r => setTimeout(r, 500));
-      
-      yield { type: 'text', content: 'Processing your request with context from ' };
-      
-      if (context.brandContext) {
-        yield { type: 'text', content: 'BRAND.md, ' };
-      }
-      
-      if (context.relevantMemories && context.relevantMemories.length > 0) {
-        yield { type: 'text', content: `${context.relevantMemories.length} memories...\n\n` };
-      } else {
-        yield { type: 'text', content: 'no prior memories...\n\n' };
-      }
-      
-      yield { type: 'done' };
-    }
+    // Run agent with streaming
+    const stream = runAgentStream(agentId, context);
 
     return {
       content: '',
-      stream: streamGenerator(),
+      stream,
     };
   }
 
