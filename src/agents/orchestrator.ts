@@ -54,13 +54,19 @@ export class AgentOrchestrator {
       }));
     }
     
-    // Detect and fetch content from any links in the user's message
+    // Detect and fetch content from any links in the user's message (best-effort)
     let enhancedMessage = request.message;
     if (request.message) {
-      const linkResult = await understandLinks(request.message);
-      if (linkResult.hasLinks) {
-        // Append link context to user's message (like OpenClaw does)
-        enhancedMessage = `${request.message}\n\n${linkResult.context}`;
+      try {
+        const linkResult = await understandLinks(request.message);
+        if (linkResult.hasLinks) {
+          // Append link context to user's message (like OpenClaw does)
+          enhancedMessage = `${request.message}\n\n${linkResult.context}`;
+        }
+      } catch {
+        // Link understanding is best-effort — fall back to original message
+        // so a fetch failure never blocks the user's actual request
+        enhancedMessage = request.message;
       }
     }
 
@@ -71,10 +77,10 @@ export class AgentOrchestrator {
         timestamp: new Date(),
       });
       
-      // Also save to session for persistence (store original message)
+      // Save the enhanced message to session so follow-ups retain link context
       await this.sessionManager.addMessage(request.sessionId, {
         role: 'user',
-        content: request.message!, // Store original
+        content: enhancedMessage,
         timestamp: Date.now(),
       });
     }

@@ -8,6 +8,7 @@
 import { readFileSync } from 'fs';
 import { join } from 'path';
 import { homedir } from 'os';
+import { isValidUrl } from './detect';
 
 export interface LinkContent {
   url: string;
@@ -27,18 +28,35 @@ interface FirecrawlScrapeResult {
   error?: string;
 }
 
+// Lazily-cached Firecrawl config to avoid repeated synchronous I/O
+let _firecrawlConfigCache: { apiKey: string; baseUrl: string } | null = null;
+
 function getFirecrawlConfig(): { apiKey: string; baseUrl: string } {
+  if (_firecrawlConfigCache) return _firecrawlConfigCache;
+
+  // Config file takes priority; env vars are the fallback (matching firecrawl.ts tool)
+  let fileApiKey = '';
+  let fileBaseUrl = '';
   try {
     const configPath = join(homedir(), '.foxfang', 'foxfang.json');
     const config = JSON.parse(readFileSync(configPath, 'utf-8'));
-    return {
-      apiKey: config.firecrawl?.apiKey || '',
-      baseUrl: config.firecrawl?.baseUrl || 'https://api.firecrawl.dev',
-    };
+    fileApiKey = config.firecrawl?.apiKey || '';
+    fileBaseUrl = config.firecrawl?.baseUrl || '';
   } catch {
-    return { apiKey: '', baseUrl: 'https://api.firecrawl.dev' };
+    // Config doesn't exist or is invalid — fall through to env vars
   }
+
+  _firecrawlConfigCache = {
+    apiKey: fileApiKey || process.env.FIRECRAWL_API_KEY || '',
+    baseUrl: fileBaseUrl || process.env.FIRECRAWL_BASE_URL || 'https://api.firecrawl.dev',
+  };
+  return _firecrawlConfigCache;
 }
+
+/** Max response body size for native fetch (500 KB) */
+const MAX_NATIVE_BODY_BYTES = 500 * 1024;
+/** Timeout for native fetch requests (10 seconds) */
+const NATIVE_FETCH_TIMEOUT_MS = 10_000;
 
 async function scrapeFirecrawl(url: string): Promise<FirecrawlScrapeResult> {
   const { apiKey, baseUrl } = getFirecrawlConfig();
@@ -142,9 +160,14 @@ function extractDescription(html: string): string | undefined {
 }
 
 /**
- * Native fetch fallback (no API key required)
+ * Native fetch fallback (no API key required).
+ * Enforces a timeout, a maximum response body size, and re-validates
+ * the final URL after any redirects to guard against SSRF.
  */
 async function fetchNative(url: string): Promise<FirecrawlScrapeResult> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), NATIVE_FETCH_TIMEOUT_MS);
+
   try {
     const response = await fetch(url, {
       headers: {
@@ -152,7 +175,13 @@ async function fetchNative(url: string): Promise<FirecrawlScrapeResult> {
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
       },
       redirect: 'follow',
+      signal: controller.signal,
     });
+
+    // Re-validate the final URL after redirects to block SSRF via open-redirect
+    if (!isValidUrl(response.url)) {
+      return { success: false, error: 'Redirect target is a private/blocked address' };
+    }
 
     if (!response.ok) {
       return { success: false, error: `HTTP ${response.status}` };
@@ -169,7 +198,27 @@ async function fetchNative(url: string): Promise<FirecrawlScrapeResult> {
       };
     }
 
-    const html = await response.text();
+    // Read body with a hard size limit to prevent memory exhaustion
+    const reader = response.body?.getReader();
+    if (!reader) {
+      return { success: false, error: 'No response body' };
+    }
+
+    const chunks: Uint8Array[] = [];
+    let totalBytes = 0;
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      totalBytes += value.byteLength;
+      if (totalBytes > MAX_NATIVE_BODY_BYTES) {
+        reader.cancel();
+        break;
+      }
+      chunks.push(value);
+    }
+
+    const bodyBuffer = Buffer.concat(chunks);
+    const html = bodyBuffer.toString('utf-8');
     const text = htmlToText(html);
     const title = extractTitle(html);
     const description = extractDescription(html);
@@ -184,6 +233,8 @@ async function fetchNative(url: string): Promise<FirecrawlScrapeResult> {
       success: false, 
       error: error instanceof Error ? error.message : String(error) 
     };
+  } finally {
+    clearTimeout(timer);
   }
 }
 
@@ -230,16 +281,29 @@ export async function fetchLinkContent(url: string): Promise<LinkContent> {
 }
 
 /**
- * Fetch content from multiple URLs
+ * Fetch content from multiple URLs in parallel (max `concurrency` at a time).
+ * Uses a shared index counter — safe in single-threaded JS since index++ is
+ * synchronous and never interleaved across async boundaries.
  */
-export async function fetchMultipleLinks(urls: string[]): Promise<LinkContent[]> {
-  const results: LinkContent[] = [];
-  
-  for (const url of urls) {
-    const content = await fetchLinkContent(url);
-    results.push(content);
+export async function fetchMultipleLinks(urls: string[], concurrency = 3): Promise<LinkContent[]> {
+  if (urls.length === 0) return [];
+
+  const limit = Math.max(1, concurrency);
+  const results: LinkContent[] = new Array(urls.length);
+  let next = 0;
+
+  async function worker(): Promise<void> {
+    // Each iteration atomically claims an index before awaiting
+    let i = next++;
+    while (i < urls.length) {
+      results[i] = await fetchLinkContent(urls[i]);
+      i = next++;
+    }
   }
-  
+
+  const pool = Array.from({ length: Math.min(limit, urls.length) }, worker);
+  await Promise.all(pool);
+
   return results;
 }
 

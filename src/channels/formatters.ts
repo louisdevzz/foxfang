@@ -150,7 +150,7 @@ function parseInline(text: string): Token[] {
     { type: 'bold' as TokenType, regex: /^__(.+?)__/ },
     { type: 'code' as TokenType, regex: /^`([^`]+)`/ },
     { type: 'strikethrough' as TokenType, regex: /^~~(.+?)~~/ },
-    { type: 'underline' as TokenType, regex: /^_(.+?)_/ },
+    { type: 'italic' as TokenType, regex: /^_(.+?)_/ },
     { type: 'italic' as TokenType, regex: /^\*(.+?)\*/ },
     { type: 'link' as TokenType, regex: /^\[([^\]]+)\]\(([^)]+)\)/ },
   ];
@@ -173,6 +173,9 @@ function parseInline(text: string): Token[] {
           token.url = match[2];
           // Parse nested content inside link text
           token.children = parseInline(match[1]);
+        } else if (pattern.type === 'code') {
+          // Code spans are literal — no nested inline parsing
+          token.children = undefined;
         } else {
           // Parse nested content for other inline elements
           token.children = parseInline(match[1]);
@@ -230,8 +233,7 @@ function renderTelegramToken(token: Token): string {
       return `<i>${token.children?.map(renderTelegramToken).join('') || escapeHtml(token.content)}</i>`;
     
     case 'underline':
-      // Telegram uses <u> or <i> for underline (using <i> for compatibility)
-      return `<i>${token.children?.map(renderTelegramToken).join('') || escapeHtml(token.content)}</i>`;
+      return `<u>${token.children?.map(renderTelegramToken).join('') || escapeHtml(token.content)}</u>`;
     
     case 'strikethrough':
       return `<s>${token.children?.map(renderTelegramToken).join('') || escapeHtml(token.content)}</s>`;
