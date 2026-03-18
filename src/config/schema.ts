@@ -28,7 +28,7 @@ export interface ToolsPolicyConfig {
 // Memory configuration
 export interface MemoryConfig {
   enabled: boolean;
-  backend: 'sqlite' | 'postgres' | 'memory';
+  
   connectionString?: string;
   maxMessages?: number;
   ttl?: number; // Time to live in seconds

@@ -33,7 +33,7 @@ export const defaultConfig: AppConfig = {
 
   memory: {
     enabled: true,
-    backend: 'sqlite',
+    
     maxMessages: 50,
     ttl: 86400, // 24 hours
   },
