@@ -16,6 +16,7 @@ import { bootstrapFoxFang } from '../../wizard/bootstrap';
 import { initDatabase } from '../../database/sqlite';
 import { runMigrations } from '../../compat';
 import { saveCredential, deleteCredential, isKeychainAvailable, migrateFromConfig } from '../../credentials/index';
+import { isGitHubConnected, saveGitHubToken, startGitHubOAuthFlow } from '../../integrations/github';
 
 // Available providers with metadata
 const AVAILABLE_PROVIDERS = [
@@ -363,6 +364,46 @@ export async function registerWizardCommand(program: Command): Promise<void> {
       if (setupChannels) {
         console.log(chalk.dim('\n--- Channel Setup ---\n'));
         await runChannelSetupWizard(config);
+      }
+      
+      // Setup GitHub integration
+      console.log(chalk.dim('\n--- GitHub Integration ---\n'));
+      const connectGitHub = await confirm({
+        message: 'Connect GitHub now? (can be done later via chat)',
+        initialValue: false,
+      });
+      
+      if (connectGitHub) {
+        const s4 = spinner();
+        s4.start('Starting GitHub OAuth flow...');
+        
+        try {
+          const { authUrl, waitForCallback } = await startGitHubOAuthFlow();
+          s4.stop('OAuth server ready!');
+          
+          // Open browser
+          const openCommand = process.platform === 'darwin' ? 'open' : 
+                             process.platform === 'win32' ? 'start' : 'xdg-open';
+          require('child_process').spawn(openCommand, [authUrl], { detached: true, stdio: 'ignore' }).unref();
+          
+          console.log(chalk.blue('\nBrowser opened for GitHub authorization.'));
+          console.log(chalk.dim('If browser does not open, visit: ' + authUrl));
+          
+          const s5 = spinner();
+          s5.start('Waiting for authorization...');
+          
+          const token = await waitForCallback();
+          s5.stop(chalk.green(`✓ GitHub connected as ${token.username || 'unknown'}!`));
+          
+          // Force event loop to continue
+          await new Promise(resolve => setImmediate(resolve));
+        } catch (error) {
+          s4.stop('GitHub connection failed');
+          console.log(chalk.yellow(`⚠ Could not complete GitHub connection: ${error instanceof Error ? error.message : String(error)}`));
+          console.log(chalk.dim('You can connect later by saying "Connect GitHub" in chat'));
+        }
+      } else {
+        console.log(chalk.dim('Skipped — say "Connect GitHub" in chat anytime to connect'));
       }
       
       // Print helpful tips after setup

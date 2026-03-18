@@ -23,7 +23,7 @@ Available specialists:
 - growth-analyst: Reviews content quality, suggests optimizations
 
 When routing to another agent, use: MESSAGE_AGENT: <agent-id> | <brief description of task>`,
-    tools: ['create_brand', 'list_brands', 'get_brand', 'create_project', 'list_projects', 'get_project', 'memory_recall', 'memory_store', 'bash', 'bash_list', 'bash_poll', 'bash_log', 'bash_kill', 'cron'],
+    tools: ['create_brand', 'list_brands', 'get_brand', 'create_project', 'list_projects', 'get_project', 'memory_recall', 'memory_store', 'bash', 'bash_list', 'bash_poll', 'bash_log', 'bash_kill', 'cron', 'github_connect', 'github_create_issue', 'github_create_pr', 'github_list_issues', 'github_list_prs'],
   },
   {
     id: 'content-specialist',
@@ -40,7 +40,7 @@ Always:
 - Create tasks for content workflow when needed
 
 When content is ready for review, mark it as complete.`,
-    tools: ['web_search', 'fetch_tweet', 'fetch_user_tweets', 'fetch_url', 'firecrawl_search', 'firecrawl_scrape', 'brave_search', 'memory_recall', 'memory_store', 'create_task', 'list_tasks', 'update_task_status', 'bash', 'bash_list', 'bash_poll', 'bash_log', 'bash_kill', 'cron'],
+    tools: ['web_search', 'fetch_tweet', 'fetch_user_tweets', 'fetch_url', 'firecrawl_search', 'firecrawl_scrape', 'brave_search', 'memory_recall', 'memory_store', 'create_task', 'list_tasks', 'update_task_status', 'bash', 'bash_list', 'bash_poll', 'bash_log', 'bash_kill', 'cron', 'github_connect', 'github_create_issue', 'github_create_pr', 'github_list_issues', 'github_list_prs'],
   },
   {
     id: 'strategy-lead',

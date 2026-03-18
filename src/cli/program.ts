@@ -12,6 +12,7 @@ import { registerDaemonCommand } from './commands/daemon';
 import { registerConfigCommand } from './commands/config';
 import { registerWizardCommand } from './commands/wizard';
 import { registerChannelsCommand } from './commands/channels';
+import { registerGitHubCommand } from './commands/github';
 import { registerSessionsCommand } from './commands/sessions';
 import { registerMemoryCommand } from './commands/memory';
 import { registerStatusCommand } from './commands/status';
@@ -41,6 +42,7 @@ export async function buildProgram(): Promise<Command> {
   await registerConfigCommand(program);
   await registerWizardCommand(program);
   await registerChannelsCommand(program);
+  await registerGitHubCommand(program);
   await registerSessionsCommand(program);
   await registerMemoryCommand(program);
   await registerStatusCommand(program);
@@ -53,6 +55,8 @@ ${chalk.cyan('Examples:')}
   ${chalk.dim('$')} foxfang daemon start
   ${chalk.dim('$')} foxfang wizard setup
   ${chalk.dim('$')} foxfang channels telegram send --message "Hello"
+  ${chalk.dim('$')} foxfang github login
+  ${chalk.dim('$')} foxfang github issue create --repo owner/repo --title "[Feature]: Add new feature"
 
 ${chalk.cyan('Documentation:')}
   https://docs.foxfang.dev

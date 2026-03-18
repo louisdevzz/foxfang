@@ -17,7 +17,7 @@ export async function registerRunCommand(program: Command): Promise<void> {
     .command('run')
     .description('Run a single agent task')
     .argument('<message>', 'Message or task description')
-    .option('-a, --agent <agent>', 'Agent ID to use', 'default')
+    .option('-a, --agent <agent>', 'Agent ID to use', 'orchestrator')
     .option('-p, --project <project>', 'Project ID')
     .option('-s, --session <session>', 'Session ID (creates new if not provided)')
     .option('--stream', 'Stream output', true)
@@ -25,6 +25,7 @@ export async function registerRunCommand(program: Command): Promise<void> {
     .option('-m, --model <model>', 'Model to use (e.g., gpt-4, claude-3)')
     .option('--provider <provider>', 'Provider to use (openai, anthropic, kimi)')
     .action(async (message, options) => {
+
       const spinner = ora('Initializing...').start();
       
       try {
