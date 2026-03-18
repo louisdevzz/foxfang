@@ -730,12 +730,12 @@ async function setupSignal() {
   });
   
   const httpUrl = await text({
-    message: 'Signal CLI URL:',
-    placeholder: 'http://localhost:8080',
-    defaultValue: 'http://localhost:8080',
+    message: 'Signal CLI HTTP URL:',
+    placeholder: 'http://127.0.0.1:8686',
+    defaultValue: 'http://127.0.0.1:8686',
   });
   
-  const httpUrlStr = (httpUrl as string) || 'http://localhost:8080';
+  const httpUrlStr = (httpUrl as string) || 'http://127.0.0.1:8686';
   
   const config = await loadConfig();
   if (!config.channels) config.channels = {};
