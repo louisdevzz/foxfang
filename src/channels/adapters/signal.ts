@@ -95,11 +95,11 @@ export class SignalAdapter implements ChannelAdapter {
 
   private startReceiving(): void {
     // signal-cli receive -t 5 (poll every 5 seconds)
+    // Note: --json flag may not be available in all versions
     this.receiveProcess = spawn(this.signalCliPath, [
       '-a', this.phoneNumber,
       'receive',
-      '-t', '5',
-      '--json'
+      '-t', '5'
     ]);
 
     let buffer = '';
@@ -107,13 +107,14 @@ export class SignalAdapter implements ChannelAdapter {
     this.receiveProcess.stdout?.on('data', (data: Buffer) => {
       buffer += data.toString();
       
-      // Process line by line (JSON objects)
-      const lines = buffer.split('\n');
-      buffer = lines.pop() || ''; // Keep incomplete line in buffer
-
-      for (const line of lines) {
-        if (line.trim()) {
-          this.handleJsonMessage(line.trim());
+      // Process text format (not JSON)
+      // Split by "Envelope from:" to get individual messages
+      const parts = buffer.split('Envelope from:');
+      buffer = parts.pop() || ''; // Keep incomplete message in buffer
+      
+      for (const part of parts) {
+        if (part.trim()) {
+          this.handleTextMessage('Envelope from:' + part);
         }
       }
     });
@@ -133,35 +134,44 @@ export class SignalAdapter implements ChannelAdapter {
     });
   }
 
-  private async handleJsonMessage(jsonStr: string): Promise<void> {
+  private async handleTextMessage(text: string): Promise<void> {
     try {
-      const envelope = JSON.parse(jsonStr);
+      // Parse text format:
+      // Envelope from: "Name" +NUMBER (device: 1) to +NUMBER
+      // ...
+      // Body: message content
       
-      // Check if it's a data message (not receipt/sync)
-      if (envelope.envelope?.dataMessage) {
-        const msg = envelope.envelope.dataMessage;
-        const source = envelope.envelope.source;
+      const fromMatch = text.match(/from: ["']([^"']+)["']\s+(\+\d+)/);
+      const bodyMatch = text.match(/Body: (.+?)(?:\n|$)/);
+      const timestampMatch = text.match(/Timestamp:\s+(\d+)/);
+      
+      if (fromMatch && bodyMatch && this.messageHandler) {
+        const name = fromMatch[1];
+        const phone = fromMatch[2];
+        const content = bodyMatch[1].trim();
+        const timestamp = timestampMatch ? timestampMatch[1] : Date.now().toString();
         
-        if (msg.message && this.messageHandler) {
+        if (content) {
           const channelMsg: ChannelMessage = {
-            id: envelope.envelope.timestamp.toString(),
+            id: timestamp,
             channel: 'signal',
-            from: source,
-            content: msg.message,
+            from: `${name} (${phone})`,
+            content: content,
             timestamp: new Date(),
-            threadId: msg.groupInfo?.groupId,
           };
+
+          console.log(`[Signal] Received from ${name}: ${content.substring(0, 50)}...`);
 
           const response = await this.messageHandler(channelMsg);
           
           if (response) {
             // Send response back
-            await this.send(source, response.content);
+            await this.send(phone, response.content);
           }
         }
       }
     } catch (error) {
-      // Ignore parse errors (might be non-message data)
+      // Ignore parse errors
     }
   }
 }
