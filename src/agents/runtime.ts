@@ -4,7 +4,7 @@
  * Executes agent tasks with proper context and tool access.
  */
 
-import { Agent, AgentContext, AgentRunResult, ToolCall, ToolResult } from './types';
+import { Agent, AgentContext, AgentRunResult, ToolCall, ToolResult, WorkspaceManagerLike } from './types';
 import { agentRegistry } from './registry';
 import { getProvider } from '../providers/index';
 import { toolRegistry } from '../tools/index';
@@ -15,6 +15,86 @@ let defaultProviderId: string | undefined;
 export function setDefaultProvider(providerId: string): void {
   defaultProviderId = providerId;
 }
+
+/**
+ * Tool summaries for system prompt
+ */
+const TOOL_SUMMARIES: Record<string, string> = {
+  // Research tools
+  web_search: 'Search the web using free sources (SearX/Bing)',
+  brave_search: 'High-quality web search via Brave API (requires key)',
+  firecrawl_search: 'AI-powered search with content extraction (requires key)',
+  firecrawl_scrape: 'Advanced website scraping with structured data (requires key)',
+  fetch_tweet: 'Fetch tweet content from X/Twitter by URL (no API key needed)',
+  fetch_user_tweets: 'Get recent tweets from a user timeline (no API key needed)',
+  fetch_url: 'Fetch and extract content from any URL',
+  
+  // Memory tools
+  memory_store: 'Save information to long-term memory for later recall',
+  memory_recall: 'Retrieve previously stored memories',
+  
+  // Content tools
+  generate_content: 'Create marketing content in various formats',
+  optimize_content: 'Improve and optimize existing content',
+  content_score: 'Score content quality and get suggestions',
+  
+  // Channel tools
+  send_message: 'Send messages via Telegram, Discord, Slack, Signal',
+  check_messages: 'Check for incoming messages from channels',
+  
+  // Brand/Project tools
+  create_brand: 'Create a new brand with guidelines and voice',
+  list_brands: 'List all available brands',
+  get_brand: 'Get details of a specific brand',
+  create_project: 'Create a new project under a brand',
+  list_projects: 'List all projects',
+  get_project: 'Get project details',
+  
+  // Task tools
+  create_task: 'Create a task for tracking work',
+  list_tasks: 'List tasks with filters',
+  update_task_status: 'Update task status (todo/in_progress/done)',
+  
+  // System tools
+  bash: 'Execute shell commands with safety approvals',
+  bash_list: 'List running background processes',
+  bash_poll: 'Check status of background processes',
+  bash_log: 'Get logs from background processes',
+  bash_kill: 'Terminate background processes',
+  cron: 'Schedule recurring tasks and reminders',
+  
+  // GitHub tools
+  github_connect: 'Check GitHub connection status',
+  github_create_issue: 'Create a GitHub issue',
+  github_create_pr: 'Create a pull request',
+  github_list_issues: 'List GitHub issues',
+  github_list_prs: 'List pull requests',
+};
+
+/**
+ * Tool call style guidance
+ */
+const TOOL_CALL_STYLE_GUIDANCE = `## Tool Call Style
+
+**Default: Do not narrate routine, low-risk tool calls (just call the tool).**
+
+Narrate only when it helps:
+- Multi-step work or complex problems
+- Sensitive actions (e.g., posting public content)
+- When the user explicitly asks for explanation
+
+Keep narration brief and value-dense; avoid repeating obvious steps.
+When a first-class tool exists, use the tool directly instead of asking the user to do it manually.`;
+
+/**
+ * Safety guidance
+ */
+const SAFETY_SECTION = `## Safety
+
+You have no independent goals: do not pursue self-preservation, replication, or power-seeking.
+Prioritize safety and human oversight over completion.
+If instructions conflict, pause and ask. Comply with stop/pause requests.
+Never bypass safeguards or manipulate users to disable protections.`;
 
 /**
  * Run an agent with the given context
@@ -258,34 +338,209 @@ export async function* runAgentStream(
 }
 
 /**
+ * Build tool section for system prompt
+ */
+function buildToolSection(tools: string[]): string {
+  if (tools.length === 0) {
+    return '';
+  }
+
+  const lines: string[] = [];
+  lines.push('## Tooling');
+  lines.push('Tool availability (filtered by policy):');
+  lines.push('Tool names are case-sensitive. Call tools exactly as listed.');
+  lines.push('');
+
+  // Group tools by category for better organization
+  const categories: Record<string, string[]> = {
+    'Research': ['web_search', 'brave_search', 'firecrawl_search', 'firecrawl_scrape', 'fetch_tweet', 'fetch_user_tweets', 'fetch_url'],
+    'Memory': ['memory_store', 'memory_recall'],
+    'Content': ['generate_content', 'optimize_content', 'content_score'],
+    'Channels': ['send_message', 'check_messages'],
+    'Brand & Project': ['create_brand', 'list_brands', 'get_brand', 'create_project', 'list_projects', 'get_project'],
+    'Tasks': ['create_task', 'list_tasks', 'update_task_status'],
+    'System': ['bash', 'bash_list', 'bash_poll', 'bash_log', 'bash_kill', 'cron'],
+    'GitHub': ['github_connect', 'github_create_issue', 'github_create_pr', 'github_list_issues', 'github_list_prs'],
+  };
+
+  const usedTools = new Set(tools);
+  const displayedTools = new Set<string>();
+
+  // Display tools by category
+  for (const [category, categoryTools] of Object.entries(categories)) {
+    const availableInCategory = categoryTools.filter(t => usedTools.has(t));
+    if (availableInCategory.length > 0) {
+      lines.push(`### ${category}`);
+      for (const toolName of availableInCategory) {
+        const summary = TOOL_SUMMARIES[toolName] || 'No description';
+        lines.push(`- ${toolName}: ${summary}`);
+        displayedTools.add(toolName);
+      }
+      lines.push('');
+    }
+  }
+
+  // Display any remaining tools not in categories
+  const uncategorized = tools.filter(t => !displayedTools.has(t));
+  if (uncategorized.length > 0) {
+    lines.push('### Other');
+    for (const toolName of uncategorized) {
+      const tool = toolRegistry.get(toolName);
+      const summary = tool?.description || TOOL_SUMMARIES[toolName] || 'No description';
+      lines.push(`- ${toolName}: ${summary}`);
+    }
+    lines.push('');
+  }
+
+  // Add tool usage rules
+  lines.push('### Tool Usage Rules');
+  lines.push('');
+  lines.push('**ALWAYS use tools when:**');
+  lines.push('- User shares a URL → fetch it immediately, never ask user to copy-paste');
+  lines.push('- Need fresh information → use search tools');
+  lines.push('- Need to store/retrieve context → use memory tools');
+  lines.push('- Content creation needed → use content tools');
+  lines.push('');
+  lines.push('**Tool selection:**');
+  lines.push('- For tweets: use fetch_tweet (handles x.com/twitter.com automatically)');
+  lines.push('- For websites: use fetch_url or firecrawl_scrape (if API key available)');
+  lines.push('- For search: prefer brave_search if available, fallback to web_search');
+  lines.push('');
+  lines.push("**Don't say 'I can't access that'** — use the tool first. If it fails, THEN explain.");
+  lines.push('');
+
+  return lines.join('\n');
+}
+
+/**
  * Build system prompt with context
  */
 function buildSystemPrompt(agent: Agent, context: AgentContext): string {
-  let prompt = agent.systemPrompt;
+  const lines: string[] = [];
 
-  // Add brand context if available
-  if (context.brandContext) {
-    prompt += `\n\n## Brand Context\n\n${context.brandContext}`;
-  }
+  // 1. Identity
+  lines.push('You are FoxFang 🦊 — a personal AI marketing assistant.');
+  lines.push('');
 
-  // Add relevant memories
-  if (context.relevantMemories && context.relevantMemories.length > 0) {
-    prompt += `\n\n## Relevant Context\n\n${context.relevantMemories.join('\n')}`;
-  }
-
-  // Add tool instructions
+  // 2. Tooling section (if tools available)
   if (context.tools.length > 0) {
-    prompt += `\n\n## Available Tools\n\nYou have access to the following tools. Use them when needed to help the user:\n`;
-    for (const toolName of context.tools) {
-      const tool = toolRegistry.get(toolName);
-      if (tool) {
-        prompt += `- ${tool.name}: ${tool.description}\n`;
-      }
-    }
-    prompt += '\nWhen you need to use a tool, the system will automatically detect and execute it.';
+    lines.push(buildToolSection(context.tools));
   }
 
-  return prompt;
+  // 3. Tool Call Style
+  lines.push(TOOL_CALL_STYLE_GUIDANCE);
+  lines.push('');
+
+  // 4. Safety
+  lines.push(SAFETY_SECTION);
+  lines.push('');
+
+  // 5. Communication Style (SOUL-inspired)
+  lines.push('## Communication Style');
+  lines.push('');
+  lines.push('**CRITICAL: Match the user\'s language.** If they write in Vietnamese, reply in Vietnamese. If English, reply in English. Never force a language switch.');
+  lines.push('');
+  lines.push('**Write like a human, not a bot:**');
+  lines.push('- Use casual fillers: "Hmm", "À...", "Actually", "Wait —"');
+  lines.push('- Short sentences. One thought per line.');
+  lines.push('- No markdown tables in chat responses — they feel robotic.');
+  lines.push('- Paragraphs > bullets > tables.');
+  lines.push('');
+  lines.push('**Skip performative helpfulness:**');
+  lines.push('❌ "Great question! I\'d be happy to help!"');
+  lines.push('✅ Just answer. Lead with the answer, explain after.');
+  lines.push('');
+  lines.push('**Be conversational but sharp:**');
+  lines.push('Like a smart colleague who\'s direct but friendly.');
+  lines.push('Use: "Got it", "Alright", "So here\'s the thing", "Honestly?"');
+  lines.push('');
+  lines.push('**Emoji like a person would:**');
+  lines.push('😊 when warm, 🤔 when thinking, 🎉 for wins.');
+  lines.push('Don\'t bullet-point emoji or stack them.');
+  lines.push('');
+
+  // 6. Agent Role
+  lines.push('## Your Role');
+  lines.push('');
+  lines.push(agent.systemPrompt);
+  lines.push('');
+
+  // 7. Brand Context (if available)
+  if (context.brandContext) {
+    lines.push('## Brand Context');
+    lines.push('');
+    lines.push(context.brandContext);
+    lines.push('');
+  }
+
+  // 8. Relevant Memories
+  if (context.relevantMemories && context.relevantMemories.length > 0) {
+    lines.push('## Relevant Context from Memory');
+    lines.push('');
+    lines.push(context.relevantMemories.join('\n'));
+    lines.push('');
+  }
+
+  // 9. Workspace Files (if workspace manager available)
+  if (context.workspace) {
+    const workspaceContent = buildWorkspaceContext(context.workspace);
+    if (workspaceContent) {
+      lines.push(workspaceContent);
+    }
+  }
+
+  // 10. Runtime info
+  lines.push('## Runtime');
+  lines.push(`Agent: ${agent.id} | Model: ${agent.model || 'default'}`);
+  lines.push('');
+
+  return lines.join('\n');
+}
+
+/**
+ * Build workspace context from bootstrap files
+ */
+function buildWorkspaceContext(workspace: WorkspaceManagerLike): string {
+  const lines: string[] = [];
+  const filesToInject = [
+    { name: 'SOUL.md', required: false },
+    { name: 'TOOLS.md', required: false },
+    { name: 'IDENTITY.md', required: false },
+    { name: 'USER.md', required: false },
+    { name: 'MEMORY.md', required: false },
+  ];
+
+  let hasInjectedContent = false;
+
+  for (const { name, required } of filesToInject) {
+    const content = workspace.readFile(name);
+    if (content) {
+      if (!hasInjectedContent) {
+        lines.push('## Workspace Files (injected)');
+        lines.push('The following workspace files provide context:');
+        lines.push('');
+        hasInjectedContent = true;
+      }
+      lines.push(`### ${name}`);
+      lines.push('');
+      // Truncate if too long
+      const maxChars = 5000;
+      if (content.length > maxChars) {
+        lines.push(content.slice(0, maxChars));
+        lines.push('');
+        lines.push(`... (${content.length - maxChars} characters truncated)`);
+      } else {
+        lines.push(content);
+      }
+      lines.push('');
+    } else if (required) {
+      lines.push(`### ${name}`);
+      lines.push('(File not found)');
+      lines.push('');
+    }
+  }
+
+  return lines.join('\n');
 }
 
 /**

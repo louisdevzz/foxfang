@@ -2,7 +2,6 @@
  * Cron Scheduler
  * 
  * Schedule recurring tasks and campaigns.
- * Inspired by OpenClaw's cron implementation.
  */
 
 export * from './types';

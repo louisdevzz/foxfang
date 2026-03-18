@@ -11,12 +11,23 @@ import { SessionManager } from '../sessions/manager';
 import { toolRegistry } from '../tools/index';
 import { buildContext } from '../context-engine';
 import { storeMemory } from '../memory/database';
+import { understandLinks } from '../link-understanding';
+import { WorkspaceManager } from '../workspace/manager';
 
 export class AgentOrchestrator {
   private sessionManager: SessionManager;
+  private workspaceManager?: WorkspaceManager;
 
-  constructor(sessionManager: SessionManager) {
+  constructor(sessionManager: SessionManager, workspaceManager?: WorkspaceManager) {
     this.sessionManager = sessionManager;
+    this.workspaceManager = workspaceManager;
+  }
+
+  /**
+   * Set workspace manager for file injection
+   */
+  setWorkspaceManager(workspaceManager: WorkspaceManager): void {
+    this.workspaceManager = workspaceManager;
   }
 
   /**
@@ -53,17 +64,33 @@ export class AgentOrchestrator {
       }));
     }
     
+    // Detect and fetch content from any links in the user's message (best-effort)
+    let enhancedMessage = request.message;
     if (request.message) {
+      try {
+        const linkResult = await understandLinks(request.message);
+        if (linkResult.hasLinks) {
+          // Append link context to user's message
+          enhancedMessage = `${request.message}\n\n${linkResult.context}`;
+        }
+      } catch {
+        // Link understanding is best-effort — fall back to original message
+        // so a fetch failure never blocks the user's actual request
+        enhancedMessage = request.message;
+      }
+    }
+
+    if (enhancedMessage) {
       messages.push({
         role: 'user',
-        content: request.message,
+        content: enhancedMessage,
         timestamp: new Date(),
       });
       
-      // Also save to session for persistence
+      // Save the enhanced message to session so follow-ups retain link context
       await this.sessionManager.addMessage(request.sessionId, {
         role: 'user',
-        content: request.message,
+        content: enhancedMessage,
         timestamp: Date.now(),
       });
     }
@@ -72,7 +99,7 @@ export class AgentOrchestrator {
     const context = await buildContext({
       projectId: request.projectId,
       sessionId: request.sessionId,
-      query: request.message || messages[messages.length - 1]?.content,
+      query: enhancedMessage || messages[messages.length - 1]?.content,
     });
 
     const agentContext: AgentContext = {
@@ -83,6 +110,7 @@ export class AgentOrchestrator {
       tools: agentRegistry.get(request.agentId)?.tools || [],
       brandContext: context.projectContext?.brandMd,
       relevantMemories: context.recentMemories,
+      workspace: this.workspaceManager,
     };
 
     // Run the agent
