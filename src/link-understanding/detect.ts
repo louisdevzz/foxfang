@@ -2,7 +2,6 @@
  * Link Detection
  * 
  * Extract URLs from user messages.
- * Inspired by OpenClaw's link-understanding/detect.ts
  */
 
 // Match bare URLs (http:// or https://)

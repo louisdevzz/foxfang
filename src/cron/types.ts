@@ -2,7 +2,6 @@
  * Cron Types
  * 
  * Type definitions for the cron scheduling system.
- * Inspired by OpenClaw's cron implementation.
  */
 
 export type CronSchedule =

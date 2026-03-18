@@ -1,7 +1,7 @@
 /**
  * Wizard Command - Interactive setup wizard
  * 
- * Inspired by OpenClaw's auth-choice pattern:
+ * Flow:
  * - User selects provider from list first
  * - Then enters API key for selected provider
  * - Can add multiple providers
@@ -106,7 +106,7 @@ export async function registerWizardCommand(program: Command): Promise<void> {
       
       const config = await loadConfig();
       
-      // ===== PROVIDER SETUP (OpenClaw-style) =====
+      // ===== PROVIDER SETUP =====
       console.log(chalk.dim('\n📡 AI Provider Setup\n'));
       console.log(chalk.dim('Select the AI providers you want to use.\n'));
       

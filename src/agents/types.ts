@@ -47,6 +47,12 @@ export interface AgentContext {
   tools: string[];
   brandContext?: string; // BRAND.md content
   relevantMemories?: string[];
+  workspace?: WorkspaceManagerLike; // For workspace file injection
+}
+
+// Minimal interface to avoid circular dependency with WorkspaceManager
+export interface WorkspaceManagerLike {
+  readFile(filename: string): string | null;
 }
 
 export interface AgentRequest {

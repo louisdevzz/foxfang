@@ -21,6 +21,8 @@ import { ChannelManager } from '../channels/manager';
 import { CronService } from '../cron/service';
 import { setCronService } from '../tools/builtin/cron';
 import { initCronTables } from '../cron/store';
+import { createWorkspaceManager } from '../workspace/manager';
+import { initFoxFangHome } from '../workspace/manager';
 
 const PORT = parseInt(process.env.FOXFANG_GATEWAY_PORT || '8787', 10);
 const CHANNELS = (process.env.FOXFANG_CHANNELS || '').split(',').filter(Boolean);
@@ -239,8 +241,20 @@ class GatewayServer {
     setDefaultProvider(config.defaultProvider);
     initializeTools(config.tools?.tools || {});
     
+    // Initialize FoxFang home and workspace
+    const foxfangHome = initFoxFangHome();
+    const workspaceManager = createWorkspaceManager(
+      'default_user',
+      foxfangHome,
+      undefined, // projectId
+      undefined  // agentId
+    );
+    
     this.sessionManager = new SessionManager(config.sessions);
-    this.orchestrator = new AgentOrchestrator(this.sessionManager);
+    this.orchestrator = new AgentOrchestrator(this.sessionManager, workspaceManager);
+    
+    // Set workspace manager for channel manager too
+    this.channelManager.setWorkspaceManager(workspaceManager);
     
     console.log('[Gateway] Agents initialized');
   }
