@@ -40,14 +40,31 @@ export class AgentOrchestrator {
    * Run with full context and streaming support
    */
   async run(request: RunRequest): Promise<RunResponse> {
-    const session = this.sessionManager.getSession(request.sessionId);
-    const messages: AgentMessage[] = request.messages || [];
+    const session = await this.sessionManager.getSession(request.sessionId);
+    
+    // Load messages from session if not provided in request
+    let messages: AgentMessage[] = request.messages || [];
+    if (messages.length === 0 && session?.messages) {
+      // Convert session messages to agent messages (last 20 for context window)
+      messages = session.messages.slice(-20).map(m => ({
+        role: m.role === 'system' ? 'assistant' : m.role, // system -> assistant for context
+        content: m.content,
+        timestamp: new Date(m.timestamp),
+      }));
+    }
     
     if (request.message) {
       messages.push({
         role: 'user',
         content: request.message,
         timestamp: new Date(),
+      });
+      
+      // Also save to session for persistence
+      await this.sessionManager.addMessage(request.sessionId, {
+        role: 'user',
+        content: request.message,
+        timestamp: Date.now(),
       });
     }
 
@@ -99,6 +116,13 @@ export class AgentOrchestrator {
         { projectId: request.projectId, importance: 7 }
       );
     }
+    
+    // Save assistant response to session
+    await this.sessionManager.addMessage(request.sessionId, {
+      role: 'assistant',
+      content: result.content,
+      timestamp: Date.now(),
+    });
 
     return {
       content: result.content,

@@ -174,29 +174,16 @@ export async function registerChatCommand(program: Command): Promise<void> {
                 fullContent += chunk.content;
                 process.stdout.write(chunk.content);
               } else if (chunk.type === 'tool_call') {
-                // Clear spinner before showing tool call
+                // Show tool call inline (model is using a tool)
                 if (!hasStarted) {
                   hasStarted = true;
                   clearInterval(spinnerInterval);
                   process.stdout.write('\r' + chalk.blue('Agent: ') + '                    ');
-                  process.stdout.write('\r' + chalk.blue('Agent: ') + chalk.dim(`Using tool: ${chunk.tool}...`));
-                } else {
-                  console.log(chalk.cyan(`\n[Using tool: ${chunk.tool}]`));
                 }
-              } else if (chunk.type === 'tool_result') {
-                // Show tool result
-                if (chunk.result?.error) {
-                  console.log(chalk.red(`\n  ✗ Error: ${chunk.result.error}`));
-                } else {
-                  const output = chunk.result?.output;
-                  console.log(chalk.green(`\n  ✓ Result:`));
-                  if (typeof output === 'object') {
-                    console.log('  ' + JSON.stringify(output, null, 2).split('\n').join('\n  '));
-                  } else {
-                    console.log(`  ${output}`);
-                  }
-                }
+                process.stdout.write(chalk.dim(` [tool: ${chunk.tool}] `));
               }
+              // tool_result chunks are internal - model will generate text based on them
+              // We don't display them to avoid duplication with model's response
             }
           }
           

@@ -52,6 +52,76 @@ export function initCronTables(): void {
     )
   `);
 
+  // Migration: add all columns if they don't exist (for existing databases)
+  // Core columns with defaults
+  const coreIntegerColumns: { col: string; defaultVal?: string }[] = [
+    { col: 'enabled', defaultVal: '1' },
+    { col: 'delete_after_run', defaultVal: '0' },
+    { col: 'created_at_ms', defaultVal: String(Date.now()) },
+    { col: 'updated_at_ms', defaultVal: String(Date.now()) },
+  ];
+  const coreTextColumns: { col: string; defaultVal?: string }[] = [
+    { col: 'session_target', defaultVal: "'isolated'" },
+    { col: 'wake_mode', defaultVal: "'next-heartbeat'" },
+    { col: 'payload_kind', defaultVal: "'text'" },
+  ];
+  
+  // State columns
+  const stateIntegerColumns = [
+    'state_next_run_at_ms',
+    'state_last_run_at_ms',
+    'state_consecutive_errors',
+    'state_last_failure_alert_at_ms',
+  ];
+  const stateTextColumns = [
+    'state_last_run_status',
+    'state_last_error',
+  ];
+  
+  // Other optional columns (no defaults)
+  const optionalIntegerColumns = [
+    'schedule_every_ms',
+    'schedule_anchor_ms',
+    'payload_timeout_seconds',
+    'failure_alert_after',
+    'delivery_best_effort',
+  ];
+  const optionalTextColumns = [
+    'description',
+    'agent_id',
+    'session_key',
+    'schedule_at',
+    'schedule_cron_expr',
+    'schedule_cron_tz',
+    'payload_text',
+    'payload_message',
+    'payload_model',
+    'payload_thinking',
+    'delivery_mode',
+    'delivery_channel',
+    'delivery_to',
+    'delivery_account_id',
+    'failure_alert_channel',
+    'failure_alert_to',
+  ];
+  
+  // Helper to add column with optional default
+  const addCol = (col: string, type: string, defaultVal?: string) => {
+    try {
+      const defaultClause = defaultVal ? ` DEFAULT ${defaultVal}` : '';
+      run(`ALTER TABLE cron_jobs ADD COLUMN ${col} ${type}${defaultClause}`);
+    } catch {
+      // Column already exists, ignore error
+    }
+  };
+  
+  for (const { col, defaultVal } of coreIntegerColumns) addCol(col, 'INTEGER', defaultVal);
+  for (const { col, defaultVal } of coreTextColumns) addCol(col, 'TEXT', defaultVal);
+  for (const col of stateIntegerColumns) addCol(col, 'INTEGER');
+  for (const col of stateTextColumns) addCol(col, 'TEXT');
+  for (const col of optionalIntegerColumns) addCol(col, 'INTEGER');
+  for (const col of optionalTextColumns) addCol(col, 'TEXT');
+
   run(`
     CREATE TABLE IF NOT EXISTS cron_run_logs (
       id TEXT PRIMARY KEY,

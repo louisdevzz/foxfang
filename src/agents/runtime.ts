@@ -94,18 +94,27 @@ export async function runAgent(
 
     const results = await executeToolCalls(toolCallsWithIds);
     
-    // Add tool results to messages and continue
-    const toolResultContent = results.map(r => 
-      `${r.toolCallId}: ${r.error ? `Error: ${r.error}` : r.output}`
-    ).join('\n');
+    // Build tool results for model (pass data, not formatted output)
+    const toolResultsForModel = results.map(r => {
+      const toolName = toolCallsWithIds.find(tc => tc.id === r.toolCallId)?.name;
+      if (r.error) {
+        return `${toolName}: Error: ${r.error}`;
+      }
+      // Pass data object to let model format the response naturally
+      const data = r.data || r.output;
+      return `${toolName}: ${typeof data === 'object' ? JSON.stringify(data) : data}`;
+    }).join('\n');
 
     // Make another call with tool results
+    // Include the assistant's tool call intent so model has full context
+    const assistantToolCallMsg = response.content || `I'll use the ${toolCallsWithIds.map(tc => tc.name).join(', ')} tool to help you.`;
+    
     const finalResponse = await provider.chat({
       model: agent.model || defaultModel,
       messages: [
         ...messages,
-        { role: 'assistant', content: response.content },
-        { role: 'user', content: `[Tool Results]\n${toolResultContent}` },
+        { role: 'assistant', content: assistantToolCallMsg },
+        { role: 'user', content: `[Tool Results - use this to answer the user]\n${toolResultsForModel}\n\nNow provide a helpful response to the user based on these results.` },
       ],
     });
 
@@ -209,14 +218,20 @@ export async function* runAgentStream(
         yield { 
           type: 'tool_result', 
           tool: pendingToolCalls.find(tc => tc.id === result.toolCallId)?.name,
-          result: result.error ? { error: result.error } : { output: result.output }
+          result: result.error ? { error: result.error } : { data: result.data || result.output }
         };
       }
 
-      // Continue conversation with tool results
-      const toolResultContent = results.map(r => 
-        `${r.toolCallId}: ${r.error ? `Error: ${r.error}` : r.output}`
-      ).join('\n');
+      // Continue conversation with tool results (pass data to model, not formatted output)
+      const toolResultContent = results.map(r => {
+        const toolName = pendingToolCalls.find(tc => tc.id === r.toolCallId)?.name;
+        if (r.error) {
+          return `${toolName}: Error: ${r.error}`;
+        }
+        // Pass data object to model, let it format the response
+        const data = r.data || r.output;
+        return `${toolName}: ${typeof data === 'object' ? JSON.stringify(data) : data}`;
+      }).join('\n');
 
       // Make follow-up call with tool results
       const followUpStream = provider.chatStream({
@@ -296,6 +311,7 @@ async function executeToolCalls(toolCalls: ToolCall[]): Promise<ToolResult[]> {
         toolCallId: toolCall.id,
         output: result.success ? String(result.output) : '',
         error: result.success ? undefined : result.error,
+        data: result.success ? result.data : undefined,
       });
     } catch (error) {
       results.push({

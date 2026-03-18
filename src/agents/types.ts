@@ -36,6 +36,7 @@ export interface ToolResult {
   toolCallId: string;
   output: string;
   error?: string;
+  data?: any; // Structured data for model to format
 }
 
 export interface AgentContext {

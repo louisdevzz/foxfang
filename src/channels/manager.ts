@@ -131,6 +131,14 @@ export class ChannelManager {
       // Stop typing indicator
       this.stopTypingIndicator(typingKey);
 
+      // Log tool calls if any
+      if (result.toolCalls && result.toolCalls.length > 0) {
+        for (const tc of result.toolCalls) {
+          const args = JSON.stringify(tc.arguments).substring(0, 80);
+          console.log(`[ChannelManager] 🔧 Tool: ${tc.name}(${args}${args.length > 80 ? '...' : ''})`);
+        }
+      }
+
       if (result.content) {
         // Show agent response preview
         const responsePreview = result.content.substring(0, 50).replace(/\n/g, ' ');

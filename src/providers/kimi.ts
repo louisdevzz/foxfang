@@ -85,7 +85,9 @@ export class KimiCodingProvider implements Provider {
     };
     
     const result: ChatResponse = {
-      content: data.content?.[0]?.text || data.completion || '',
+      content: data.content?.find(c => c.type === 'text')?.text || 
+               data.content?.[0]?.text || 
+               data.completion || '',
       usage: {
         promptTokens: data.usage?.input_tokens || 0,
         completionTokens: data.usage?.output_tokens || 0,
@@ -93,12 +95,13 @@ export class KimiCodingProvider implements Provider {
       },
     };
 
-    // Handle tool use if present
-    if (data.content?.[0]?.type === 'tool_use') {
-      result.toolCalls = [{
-        name: data.content[0].name || '',
-        arguments: data.content[0].input,
-      }];
+    // Handle tool use if present (look through all content blocks)
+    const toolUses = data.content?.filter(c => c.type === 'tool_use') || [];
+    if (toolUses.length > 0) {
+      result.toolCalls = toolUses.map(tu => ({
+        name: tu.name || '',
+        arguments: tu.input,
+      }));
     }
 
     return result;
