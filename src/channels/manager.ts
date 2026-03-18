@@ -241,6 +241,9 @@ export class ChannelManager {
         // Show agent response preview
         const responsePreview = result.content.substring(0, 50).replace(/\n/g, ' ');
         console.log(`[ChannelManager] 🤖 ${responsePreview}${result.content.length > 50 ? '...' : ''}`);
+        
+        // Send complete response
+        await adapter.send(msg.from, result.content);
         console.log(`[ChannelManager] 📤 Sent to ${msg.from.split(' ')[0]}`);
         
         // Remove the "eyes" reaction after reply is sent
@@ -273,6 +276,7 @@ export class ChannelManager {
         }
       }
       
+
       return {
         messageId: msg.id,
         content: errorMsg,
