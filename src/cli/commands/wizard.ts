@@ -48,11 +48,13 @@ const AVAILABLE_PROVIDERS = [
   { 
     id: 'kimi-coding', 
     name: 'Kimi Coding', 
-    hint: 'Specialized for coding tasks - Different API endpoint',
+    hint: 'Coding-specialized API (requires User-Agent header)',
     apiKeyPlaceholder: 'sk-...',
     apiKeyPrefix: 'sk-',
-    baseUrl: 'https://api.moonshot.cn/v1',  // User can customize to coding endpoint
-    models: ['kimi-coder', 'moonshot-v1-8k', 'moonshot-v1-32k']
+    baseUrl: 'https://api.kimi.com/coding/',
+    models: ['kimi-code', 'k2p5'],
+    apiType: 'anthropic-messages',
+    headers: { 'User-Agent': 'claude-code/0.1.0' }
   },
   { 
     id: 'openrouter', 
@@ -175,14 +177,23 @@ export async function registerWizardCommand(program: Command): Promise<void> {
           initialValue: providerMeta.models[0],
         }) as string;
         
-        configuredProviders.push({
+        const providerConfig: any = {
           id: providerId,
           name: providerMeta.name,
           apiKey: apiKey,
           baseUrl: baseUrl,
           defaultModel: selectedModel,
           enabled: true,
-        });
+        };
+        
+        // Add special config for Kimi Coding (headers + apiType)
+        if (providerId === 'kimi-coding') {
+          providerConfig.headers = { 'User-Agent': 'claude-code/0.1.0' };
+          providerConfig.apiType = 'anthropic-messages';
+          console.log(chalk.dim('  Note: Kimi Coding requires User-Agent header (auto-configured)'));
+        }
+        
+        configuredProviders.push(providerConfig);
         
         console.log(chalk.green(`✓ ${providerMeta.name} configured`));
       }
@@ -412,7 +423,7 @@ async function addProvider(config: any) {
     options: providerMeta.models.map(m => ({ value: m, label: m })),
   }) as string;
   
-  const newProvider = {
+  const newProvider: any = {
     id: providerId,
     name: providerMeta.name,
     apiKey,
@@ -421,11 +432,20 @@ async function addProvider(config: any) {
     enabled: true,
   };
   
+  // Add special config for Kimi Coding
+  if (providerId === 'kimi-coding') {
+    newProvider.headers = { 'User-Agent': 'claude-code/0.1.0' };
+    newProvider.apiType = 'anthropic-messages';
+  }
+  
   if (!config.providers) config.providers = [];
   config.providers.push(newProvider);
   await saveConfig(config);
   
   console.log(chalk.green(`✓ ${providerMeta.name} added!`));
+  if (providerId === 'kimi-coding') {
+    console.log(chalk.dim('  Note: User-Agent header auto-configured for Kimi Coding'));
+  }
 }
 
 async function editProvider(config: any) {

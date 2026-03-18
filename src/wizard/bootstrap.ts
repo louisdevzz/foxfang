@@ -183,7 +183,7 @@ pnpm foxfang wizard setup
 | **OpenAI** | GPT-4o, GPT-4, GPT-3.5 | Default, most popular |
 | **Anthropic** | Claude 3.5 Sonnet, Opus, Haiku | Excellent for long content |
 | **Kimi (Moonshot)** | moonshot-v1-* | General purpose, China market |
-| **Kimi Coding** | kimi-coder | Specialized for coding tasks |
+| **Kimi Coding** | kimi-code, k2p5 | Coding-specialized (requires User-Agent) |
 | **OpenRouter** | 100+ models | Unified API access |
 | **Ollama** | Llama, Qwen, etc. | Run locally, no API key |
 | **Custom** | Any | OpenAI-compatible APIs |
@@ -394,6 +394,14 @@ pnpm foxfang wizard providers remove
 # Test connections
 pnpm foxfang wizard providers test
 \`\`\`
+
+### Provider Notes
+
+**Kimi Coding** requires a special User-Agent header. FoxFang automatically configures this when you set up the provider.
+
+- Base URL: \`https://api.kimi.com/coding/\`
+- API Format: Anthropic Messages API
+- Models: \`kimi-code\`, \`k2p5\`
 
 ## Memory System
 

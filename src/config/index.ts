@@ -43,6 +43,8 @@ export interface ProviderConfig {
   enabled: boolean;
   baseUrl?: string;
   models?: string[];
+  headers?: Record<string, string>;
+  apiType?: 'openai' | 'anthropic-messages';
 }
 
 const defaultConfig: AppConfig = {
