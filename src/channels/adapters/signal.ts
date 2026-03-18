@@ -7,6 +7,7 @@
 
 import type { ChannelAdapter, ChannelMessage, ChannelResponse } from '../types';
 import { loadConfig } from '../../config';
+import { stripMarkdown } from '../formatters';
 
 interface SignalSseEvent {
   event?: string;
@@ -69,6 +70,9 @@ export class SignalAdapter implements ChannelAdapter {
     }
 
     try {
+      // Strip markdown for plain text output (Signal doesn't support formatting)
+      const plainContent = stripMarkdown(content);
+
       // JSON-RPC call to send message
       const response = await fetch(`${this.httpUrl}/api/v1/rpc`, {
         method: 'POST',
@@ -79,7 +83,7 @@ export class SignalAdapter implements ChannelAdapter {
           params: {
             account: this.phoneNumber,
             recipient: [to],
-            message: content,
+            message: plainContent,
           },
           id: Math.random().toString(36).substr(2, 9),
         }),
