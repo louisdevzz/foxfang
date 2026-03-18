@@ -193,9 +193,10 @@ export class SignalAdapter implements ChannelAdapter {
           // Process through agent
           this.messageHandler(channelMsg).then(async (response) => {
             if (response) {
-              console.log(`[Signal] 🤖 Agent replied, sending...`);
+              const preview = response.content.substring(0, 80).replace(/\n/g, ' ');
+              console.log(`[Signal] 🤖 Agent: ${preview}${response.content.length > 80 ? '...' : ''}`);
               await this.send(source, response.content);
-              console.log(`[Signal] 📤 Reply sent to ${source}`);
+              console.log(`[Signal] 📤 Sent reply (${response.content.length} chars)`);
             }
           }).catch(err => {
             console.error('[Signal] Error handling message:', err);
