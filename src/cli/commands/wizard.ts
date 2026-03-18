@@ -263,7 +263,7 @@ export async function registerWizardCommand(program: Command): Promise<void> {
       
       // Channels
       const setupChannels = await confirm({
-        message: 'Setup messaging channels (Telegram, Discord)?',
+        message: 'Setup messaging channels (Telegram, Discord, Signal, Slack)?',
         initialValue: false,
       });
       
@@ -309,16 +309,17 @@ export async function registerWizardCommand(program: Command): Promise<void> {
       console.log(chalk.dim('\n💡 Tip: Start chatting and tell FoxFang about your brand/project.'));
       console.log(chalk.dim('   Example: "I need to create a marketing campaign for my coffee shop"'));
       
-      if (setupChannels) {
-        console.log(chalk.dim('\nTo setup channels, run:'));
-        console.log(chalk.yellow('  pnpm foxfang channels setup'));
-      }
-      
       outro(chalk.green(`Setup complete! 🦊
 
 Your FoxFang is ready at ~/.foxfang/
 Configured providers: ${configuredProviders.map(p => p.name).join(', ')}
 Run "pnpm foxfang chat" to start.`));
+      
+      // Setup channels immediately if requested
+      if (setupChannels) {
+        console.log(chalk.dim('\n--- Channel Setup ---\n'));
+        await runChannelSetupWizard(config);
+      }
     });
 
   wizard
@@ -619,4 +620,65 @@ async function setupSignal() {
     phoneNumber: phoneNumber as string,
   };
   await saveConfig(config);
+}
+
+/**
+ * Run channel setup wizard inline (called during initial setup)
+ */
+async function runChannelSetupWizard(config: any) {
+  const { isCancel } = await import('@clack/prompts');
+  
+  let continueSetup = true;
+  
+  while (continueSetup) {
+    const channel = await select({
+      message: 'Select channel to configure:',
+      options: [
+        { value: 'telegram', label: 'Telegram', hint: 'Bot API' },
+        { value: 'discord', label: 'Discord', hint: 'Bot token' },
+        { value: 'slack', label: 'Slack', hint: 'Slack app' },
+        { value: 'signal', label: 'Signal', hint: 'Signal CLI' },
+        { value: 'done', label: 'Done - Finish channel setup' },
+      ],
+    }) as string;
+    
+    if (isCancel(channel) || channel === 'done') {
+      break;
+    }
+    
+    try {
+      switch (channel) {
+        case 'telegram':
+          await setupTelegram();
+          console.log(chalk.green('\n✓ Telegram configured!'));
+          break;
+        case 'discord':
+          await setupDiscord();
+          console.log(chalk.green('\n✓ Discord configured!'));
+          break;
+        case 'slack':
+          await setupSlack();
+          console.log(chalk.green('\n✓ Slack configured!'));
+          break;
+        case 'signal':
+          await setupSignal();
+          console.log(chalk.green('\n✓ Signal configured!'));
+          break;
+      }
+    } catch (error) {
+      console.log(chalk.red(`\n✗ Failed to configure ${channel}:`, error));
+    }
+    
+    // Ask if user wants to setup another channel
+    const setupAnother = await confirm({
+      message: 'Setup another channel?',
+      initialValue: false,
+    });
+    
+    if (!setupAnother) {
+      continueSetup = false;
+    }
+  }
+  
+  console.log(chalk.dim('\n--- Channel setup complete ---\n'));
 }
