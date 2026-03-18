@@ -16,11 +16,11 @@
     "dev:ui": "pnpm --filter ui dev",
     "build:ui": "pnpm --filter ui build",
     "dev:all": "pnpm dev & pnpm dev:ui",
-    "cli": "node foxfang.cjs",
-    "cli:dev": "tsx src/cli/entry.ts",
-    "daemon:start": "node foxfang.cjs daemon start",
-    "daemon:stop": "node foxfang.cjs daemon stop",
-    "wizard": "node foxfang.cjs wizard setup"
+    "foxfang": "node foxfang.cjs",
+    "foxfang:dev": "tsx src/cli/entry.ts",
+    "daemon:start": "pnpm foxfang daemon start",
+    "daemon:stop": "pnpm foxfang daemon stop",
+    "wizard": "pnpm foxfang wizard setup"
   },
   "dependencies": {
     "@clack/prompts": "^0.10.0",

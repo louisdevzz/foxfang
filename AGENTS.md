@@ -1,15 +1,15 @@
 # AGENTS.md - FoxFang 🦊 Agent Specification
 
-This file defines the product-facing agent system for FoxFang.
+This file defines the agent system for FoxFang — your personal AI marketing assistant.
 
-## 1) Agent topology (minimal and practical)
+## 1) Agent Architecture
 
-The platform uses one coordinator + three specialist agents per project:
+FoxFang uses a coordinator + specialist pattern to help with marketing tasks:
 
 - `OrchestratorAgent` (system)
-  - Receives requests from chat/UI
-  - Loads project context (brand memory, idea stream, pipeline state)
-  - Delegates tasks and returns final output
+  - Receives requests from chat/CLI
+  - Loads your context (preferences, past work, current project)
+  - Delegates to specialists and returns final output
 
 - `Strategy Lead`
   - Campaign planning and brief writing
@@ -17,63 +17,53 @@ The platform uses one coordinator + three specialist agents per project:
 
 - `Content Specialist`
   - Draft generation and variant production
-  - Enforces project-specific tone constraints
+  - Enforces your tone and style preferences
 
 - `Growth Analyst`
-  - Performance analysis and channel signals
-  - Optimization recommendations and experiment ideas
+  - Quality review and optimization suggestions
+  - Channel-specific recommendations
 
-## 2) Memory layers (project-scoped)
+## 2) Memory System
 
-- `BrandMemory`: guidelines, tone, audience, visual/content rules
-- `WorkingMemory`: temporary context for the active task/session
-- `LongTermMemory`: approved outputs + feedback-derived patterns
+FoxFang maintains three types of memory:
 
-All memory records must include `project_id`.
+- `UserPreferences`: Your style, tone, favorite formats
+- `WorkingMemory`: Context for the current session/task
+- `LongTermMemory`: Past work and feedback patterns
 
-## 3) Learning loop
+All data is stored locally on your machine.
 
-1. Human reviewers submit score + notes
-2. System extracts structured improvement signals
-3. Memory updates apply with confidence thresholds
-4. Provenance is stored (`source`, `reviewer`, `timestamp`, `content_id`)
-5. Prompt templates are adjusted for future generation
+## 3) Learning Loop
 
-## 4) Tone-of-voice enforcement
+1. You review and provide feedback on outputs
+2. FoxFang extracts improvement signals
+3. Memory updates with confidence weighting
+4. Future outputs incorporate learned patterns
 
-Each project owns a `ToneProfile` with:
+## 4) Tone Enforcement
+
+Your `ToneProfile` includes:
 
 - Do/Don't guidance
 - Preferred vocabulary
-- Style rhythm and sentence constraints
-- CTA style patterns
-- Forbidden words and claims
+- Style rhythm constraints
+- CTA patterns
+- Forbidden words
 
-Writer and BrandReviewAgent must validate outputs against `ToneProfile` before returning results.
+## 5) Events
 
-## 5) Initial event contract (SSE)
+- `session.started`
+- `message.received`
+- `content.generated`
+- `feedback.submitted`
+- `memory.updated`
 
-- `project.context.loaded.v1`
-- `idea.ingested.v1`
-- `content.draft.generated.v1`
-- `content.edited.v1`
-- `content.approved.v1`
-- `feedback.submitted.v1`
-- `memory.updated.v1`
-- `agent.error.v1`
+## 6) Agent Communication
 
-## 6) Human-in-the-loop reviewers
-
-Initial reviewers: `You`, `Stephen`, `Mark`, `Peter`.
-
-Goal: reach a consistent publish-quality threshold before increasing automation depth.
-
-## 7) Agent-to-agent handoff
-
-Agents can delegate work using structured directives:
+Agents can delegate work:
 
 ```
-MESSAGE_AGENT: Content Specialist | Please draft a LinkedIn post based on this brief: ...
+MESSAGE_AGENT: Content Specialist | Draft a LinkedIn post about: ...
 ```
 
-The gateway routes the follow-up to the named agent within the same project/task context.
+The orchestrator routes to the appropriate specialist.

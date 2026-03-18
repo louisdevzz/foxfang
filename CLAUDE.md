@@ -1,64 +1,82 @@
 # CLAUDE.md - Implementation Guardrails
 
-This document defines execution rules for coding agents working on FoxFang.
+This document defines execution rules for coding agents working on FoxFang 🦊.
 
 ## Mission
 
-Build FoxFang 🦊 — a personal AI marketing agent that helps individuals and small teams create, manage, and optimize their marketing with minimal effort:
+Build FoxFang — a personal AI marketing assistant that runs locally and helps users create content, plan campaigns, and manage their marketing:
 
-- One HTTP gateway (REST + SSE) to the frontend
-- Per-project long-term memory
-- Brand-specific tone control
-- Real-time dashboard workflow in `ui/`
+- CLI-first interface (like OpenClaw)
+- Local storage for privacy
+- Multiple AI provider support (user brings their own keys)
+- Optional channel integrations (Telegram, Discord, Slack, Signal)
+- Optional web UI for visualization
 
-## Product invariants
+## Product Invariants
 
-1. `Project = Brand` is the top-level boundary.
-2. Memory and tone never leak across projects.
-3. Every content artifact moves through: `Analyze -> Draft -> Edit -> Approve`.
-4. Human feedback is the primary learning signal.
+1. **Privacy first**: All data stored locally by default
+2. **User owns their keys**: Bring your own OpenAI/Anthropic/Kimi API keys
+3. **Terminal-native**: Primary interface is CLI, not web dashboard
+4. **Extensible**: Plugin system for custom tools
+5. **Contextual memory**: Learns from past interactions
 
-## Engineering invariants
+## Engineering Invariants
 
-1. Keep the backend architecture minimal (no channel matrix complexity).
-2. All transport contracts must be typed and runtime-validated.
-3. Agent actions must be traceable through structured logs/events.
-4. Memory writes must include provenance (`source`, `actor`, `timestamp`).
+1. Keep architecture minimal — this is a personal tool, not a platform
+2. All transport contracts typed and runtime-validated
+3. Agent actions traceable through structured logs
+4. Memory writes include provenance (`source`, `timestamp`)
+5. No external database required — local JSON/SQLite only
 
-## Code standards
+## Code Standards
 
-- TypeScript strict mode in both `ui/` and backend (`src/`).
-- Use Zod (or equivalent) for runtime payload validation.
-- Use event naming: `domain.action.v1`.
-- Never hardcode brand voice in code; read from project memory.
-- Add tests for state transitions and memory merge/update behavior.
+- TypeScript strict mode
+- CommonJS for compatibility (no .js extensions in imports)
+- CLI uses Commander.js
+- Event naming: `domain.action`
+- Never hardcode marketing voice; read from user preferences
 
-## Suggested backend modules
+## Architecture
 
-- `gateway/`: Express HTTP API + SSE stream endpoints
-- `agent/`: orchestrator, loop, prompt builder, and dispatcher
-- `sessions/`: in-memory task/session state
-- `memory/`: retrieval and long-term updates with provenance
-- `workspace/`: file-based agent workspace bootstrap
-- `providers/`: LLM provider adapters and routing
-- `tools/`: tool registry and built-in tools
-- `database/`: per-user SQLite access
-- `plugins/`: optional capability extensions
-- `cron/`: scheduled background tasks
-- `observability/`: structured traces and logs
+```
+foxfang.cjs           # Entry point
+src/
+  cli/                # CLI commands and interface
+  agent/              # Orchestrator and specialists
+  sessions/           # Chat session management
+  memory/             # Local memory storage
+  config/             # User configuration
+  secrets/            # API key management
+  providers/          # LLM adapters
+  tools/              # Tool registry
+  channels/           # Messaging integrations
+  gateway/            # Optional HTTP API
+gateway/
+  index.ts            # Express server (optional)
+ui/                   # Optional Next.js frontend
+```
 
-## Suggested frontend modules
+## Key Modules
 
-- `dashboard-shell`: layout, project switcher, nav
-- `chat-panel`: real-time agent conversation
-- `idea-stream`: inspiration inbox and tagging
-- `pipeline-board`: workflow stages and task cards
-- `feedback-panel`: scores, notes, and retraining actions
+- `cli/`: Commands (chat, run, daemon, channels, etc.)
+- `agent/orchestrator.ts`: Routes tasks to specialists
+- `memory/store.ts`: Local JSON-based memory
+- `config/`: User settings and preferences
+- `channels/`: Telegram, Discord, Slack, Signal bots
+
+## Running FoxFang
+
+```bash
+pnpm foxfang              # Show help
+pnpm foxfang chat         # Interactive chat
+pnpm foxfang run "..."    # Single task
+pnpm foxfang daemon start # Background mode
+```
 
 ## Milestones
 
-1. Documentation and architecture baseline
-2. Backend gateway + project context loading
-3. Memory-enabled drafting loop
-4. Dashboard implementation with live events
-5. Feedback-to-memory continuous improvement loop
+1. CLI foundation with chat and run commands
+2. Agent orchestrator with specialist routing
+3. Memory system for context retention
+4. Channel integrations
+5. Optional web UI
