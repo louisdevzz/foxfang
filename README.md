@@ -33,7 +33,7 @@ cd foxfang
 pnpm install
 
 # Build the project
-npm run build
+pnpm run build
 
 # Run the setup wizard
 pnpm foxfang wizard setup
