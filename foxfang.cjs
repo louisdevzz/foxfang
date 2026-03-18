@@ -1,13 +1,8 @@
 #!/usr/bin/env node
 
-// Suppress experimental warnings (e.g., SQLite)
-const originalEmit = process.emit;
-process.emit = function (event, error) {
-  if (event === 'warning' && error && error.name === 'ExperimentalWarning') {
-    return false;
-  }
-  return originalEmit.apply(process, arguments);
-};
+// Suppress Node.js warnings (e.g., SQLite experimental)
+process.env.NODE_NO_WARNINGS = '1';
+process.removeAllListeners('warning');
 
 const nodeModule = require("node:module");
 const { dirname, join } = require("node:path");
