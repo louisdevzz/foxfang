@@ -168,6 +168,35 @@ export FIRECRAWL_API_KEY=your-key
 | Content Extraction | Basic HTML parsing | Firecrawl (AI-powered) |
 | Site Crawling | Single page | Full site + structured data |
 
+## AI Providers
+
+FoxFang supports multiple AI providers. Configure via setup wizard:
+
+\`\`\`bash
+pnpm foxfang wizard setup
+\`\`\`
+
+### Supported Providers
+
+| Provider | Models | Notes |
+|----------|--------|-------|
+| **OpenAI** | GPT-4o, GPT-4, GPT-3.5 | Default, most popular |
+| **Anthropic** | Claude 3.5 Sonnet, Opus, Haiku | Excellent for long content |
+| **Kimi (Moonshot)** | Kimi Coding API | China market, great for coding |
+| **OpenRouter** | 100+ models | Unified API access |
+| **Ollama** | Llama, Qwen, etc. | Run locally, no API key |
+| **Custom** | Any | OpenAI-compatible APIs |
+
+### Manage Providers
+
+\`\`\`bash
+# Add/edit/remove providers
+pnpm foxfang wizard providers
+
+# Test provider connections
+pnpm foxfang wizard providers test
+\`\`\`
+
 ## Custom Tools
 
 Place custom tools in this directory to extend capabilities.
@@ -288,6 +317,16 @@ to this file:
 
   'AGENT.md': `# AGENT — Your FoxFang Agent Configuration
 
+## Quick Start
+
+\`\`\`bash
+# Initial setup (configure AI providers, tools, etc.)
+pnpm foxfang wizard setup
+
+# Start chatting
+pnpm foxfang chat
+\`\`\`
+
 ## Agent System
 
 Your FoxFang uses specialist agents to handle different marketing tasks:
@@ -315,6 +354,43 @@ Routes tasks to the right specialist based on your request.
 Agents can delegate tasks to each other:
 \`\`\`
 MESSAGE_AGENT: Content Specialist | Draft a post about...
+\`\`\`
+
+## AI Providers
+
+FoxFang works with multiple AI providers. Configure them via:
+
+\`\`\`bash
+# Interactive setup
+pnpm foxfang wizard setup
+
+# Or manage providers later
+pnpm foxfang wizard providers
+\`\`\`
+
+### Supported Providers
+
+- **OpenAI** — GPT-4o, GPT-4, GPT-3.5
+- **Anthropic** — Claude 3.5 Sonnet, Opus, Haiku
+- **Kimi (Moonshot)** — Kimi Coding API (China market)
+- **OpenRouter** — Access 100+ models via unified API
+- **Ollama** — Run models locally (no API key)
+- **Custom** — Any OpenAI-compatible API
+
+### Provider Commands
+
+\`\`\`bash
+# Add new provider
+pnpm foxfang wizard providers add
+
+# Edit existing provider
+pnpm foxfang wizard providers edit
+
+# Remove provider
+pnpm foxfang wizard providers remove
+
+# Test connections
+pnpm foxfang wizard providers test
 \`\`\`
 
 ## Memory System
