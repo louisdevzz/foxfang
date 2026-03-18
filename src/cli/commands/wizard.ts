@@ -39,11 +39,20 @@ const AVAILABLE_PROVIDERS = [
   { 
     id: 'kimi', 
     name: 'Kimi (Moonshot)', 
-    hint: 'Kimi Coding API - China market',
+    hint: 'General purpose LLM - China market',
     apiKeyPlaceholder: 'sk-...',
     apiKeyPrefix: 'sk-',
     baseUrl: 'https://api.moonshot.cn/v1',
     models: ['moonshot-v1-8k', 'moonshot-v1-32k', 'moonshot-v1-128k']
+  },
+  { 
+    id: 'kimi-coding', 
+    name: 'Kimi Coding', 
+    hint: 'Specialized for coding tasks - Different API endpoint',
+    apiKeyPlaceholder: 'sk-...',
+    apiKeyPrefix: 'sk-',
+    baseUrl: 'https://api.moonshot.cn/v1',  // User can customize to coding endpoint
+    models: ['kimi-coder', 'moonshot-v1-8k', 'moonshot-v1-32k']
   },
   { 
     id: 'openrouter', 

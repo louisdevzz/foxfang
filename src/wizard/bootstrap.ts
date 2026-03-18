@@ -182,7 +182,8 @@ pnpm foxfang wizard setup
 |----------|--------|-------|
 | **OpenAI** | GPT-4o, GPT-4, GPT-3.5 | Default, most popular |
 | **Anthropic** | Claude 3.5 Sonnet, Opus, Haiku | Excellent for long content |
-| **Kimi (Moonshot)** | Kimi Coding API | China market, great for coding |
+| **Kimi (Moonshot)** | moonshot-v1-* | General purpose, China market |
+| **Kimi Coding** | kimi-coder | Specialized for coding tasks |
 | **OpenRouter** | 100+ models | Unified API access |
 | **Ollama** | Llama, Qwen, etc. | Run locally, no API key |
 | **Custom** | Any | OpenAI-compatible APIs |
@@ -372,7 +373,8 @@ pnpm foxfang wizard providers
 
 - **OpenAI** — GPT-4o, GPT-4, GPT-3.5
 - **Anthropic** — Claude 3.5 Sonnet, Opus, Haiku
-- **Kimi (Moonshot)** — Kimi Coding API (China market)
+- **Kimi (Moonshot)** — General purpose LLM (China market)
+- **Kimi Coding** — Specialized for coding tasks
 - **OpenRouter** — Access 100+ models via unified API
 - **Ollama** — Run models locally (no API key)
 - **Custom** — Any OpenAI-compatible API
