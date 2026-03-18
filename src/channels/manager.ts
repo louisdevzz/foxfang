@@ -125,15 +125,20 @@ export class ChannelManager {
         sessionId: `channel-${msg.channel}-${msg.from}`,
         agentId: 'orchestrator',
         message: `[From ${msg.channel}:${msg.from}] ${msg.content}`,
-        stream: false, // Important: don't stream, wait for complete response
+        stream: false,
       });
 
       // Stop typing indicator
       this.stopTypingIndicator(typingKey);
 
       if (result.content) {
-        // Send complete response (adapter will log)
+        // Show agent response preview
+        const responsePreview = result.content.substring(0, 50).replace(/\n/g, ' ');
+        console.log(`[ChannelManager] 🤖 ${responsePreview}${result.content.length > 50 ? '...' : ''}`);
+        
+        // Send complete response
         await adapter.send(msg.from, result.content);
+        console.log(`[ChannelManager] 📤 Sent to ${msg.from.split(' ')[0]}`);
 
         return {
           messageId: msg.id,
