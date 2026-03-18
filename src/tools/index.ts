@@ -73,10 +73,32 @@ export function initializeTools(config: Record<string, any>): void {
   // Register built-in tools
   const { WebSearchTool } = require('./builtin/search');
   const { MemoryStoreTool, MemoryRecallTool } = require('./builtin/memory');
+  const { CreateBrandTool, ListBrandsTool, GetBrandTool } = require('./builtin/brand');
+  const { CreateProjectTool, ListProjectsTool, GetProjectTool } = require('./builtin/project');
+  const { CreateTaskTool, ListTasksTool, GetTaskTool, UpdateTaskStatusTool } = require('./builtin/task');
   
+  // Research tools
   toolRegistry.register(new WebSearchTool());
+  
+  // Memory tools
   toolRegistry.register(new MemoryStoreTool());
   toolRegistry.register(new MemoryRecallTool());
+  
+  // Brand management tools
+  toolRegistry.register(new CreateBrandTool());
+  toolRegistry.register(new ListBrandsTool());
+  toolRegistry.register(new GetBrandTool());
+  
+  // Project management tools
+  toolRegistry.register(new CreateProjectTool());
+  toolRegistry.register(new ListProjectsTool());
+  toolRegistry.register(new GetProjectTool());
+  
+  // Task management tools
+  toolRegistry.register(new CreateTaskTool());
+  toolRegistry.register(new ListTasksTool());
+  toolRegistry.register(new GetTaskTool());
+  toolRegistry.register(new UpdateTaskStatusTool());
   
   console.log(`Initialized ${toolRegistry.list().length} tools`);
 }

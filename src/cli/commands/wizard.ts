@@ -10,7 +10,6 @@ import { initializeProviders } from '../../providers/index';
 import { bootstrapFoxFang } from '../../wizard/bootstrap';
 import { initDatabase } from '../../database/sqlite';
 import { runMigrations } from '../../compat';
-import { randomUUID } from 'crypto';
 // import { testProviderConnection } from '../../providers/test';
 
 export async function registerWizardCommand(program: Command): Promise<void> {
@@ -130,15 +129,8 @@ export async function registerWizardCommand(program: Command): Promise<void> {
       await runMigrations();
       s3.stop('Database ready!');
       
-      // Create first project
-      const createProject = await confirm({
-        message: 'Create your first project?',
-        initialValue: true,
-      });
-      
-      if (createProject) {
-        await createFirstProject();
-      }
+      console.log(chalk.dim('\n💡 Tip: Start chatting and tell FoxFang about your brand/project.'));
+      console.log(chalk.dim('   Example: "I need to create a marketing campaign for my coffee shop"'));
       
       if (setupChannels) {
         console.log(chalk.dim('\nTo setup channels, run:'));
@@ -268,94 +260,4 @@ async function setupSignal() {
     phoneNumber: phoneNumber as string,
   };
   await saveConfig(config);
-}
-
-async function createFirstProject() {
-  console.log(chalk.dim('\nLet\'s create your first project with a BRAND.md\n'));
-  
-  const projectName = await text({
-    message: 'Project name:',
-    placeholder: 'My Brand',
-    validate: (value) => {
-      if (!value || value.length < 2) return 'Name must be at least 2 characters';
-    },
-  });
-  
-  const projectDesc = await text({
-    message: 'Project description:',
-    placeholder: 'A brief description...',
-  });
-  
-  const tone = await select({
-    message: 'Brand tone:',
-    options: [
-      { value: 'professional', label: 'Professional', hint: 'Formal and authoritative' },
-      { value: 'casual', label: 'Casual', hint: 'Friendly and approachable' },
-      { value: 'witty', label: 'Witty', hint: 'Clever and humorous' },
-      { value: 'inspirational', label: 'Inspirational', hint: 'Motivational and uplifting' },
-    ],
-  }) as string;
-  
-  const audience = await text({
-    message: 'Target audience:',
-    placeholder: 'e.g., Developers aged 25-35',
-  });
-  
-  // Create project in database
-  const { run } = await import('../../database/sqlite');
-  const projectId = randomUUID();
-  
-  const brandProfile = {
-    name: projectName,
-    tone,
-    audience,
-    description: projectDesc,
-  };
-  
-  const brandMdContent = `# ${String(projectName)} - Brand Guide
-
-## Overview
-${String(projectDesc || '')}
-
-## Voice & Tone
-**Primary Tone:** ${String(tone)}
-
-We communicate in a ${String(tone)} manner that resonates with our audience.
-
-## Target Audience
-${String(audience || '')}
-
-## Key Messages
-- Add your key messages here
-- What makes your brand unique
-- Core value propositions
-
-## Content Guidelines
-### Do
-- Be authentic and genuine
-- Focus on value for the audience
-- Use clear, concise language
-
-### Don't
-- Use jargon or buzzwords
-- Be overly promotional
-- Copy competitors' voice
-
-## Visual Style
-- Add visual guidelines here
-- Colors, fonts, imagery style
-
----
-*This BRAND.md was created during FoxFang setup. Update as your brand evolves.*
-`;
-  
-  run(
-    `INSERT INTO projects (id, name, description, brand_profile, brand_md_content) 
-     VALUES (?, ?, ?, ?, ?)`,
-    [projectId, String(projectName), String(projectDesc || ''), JSON.stringify(brandProfile), brandMdContent]
-  );
-  
-  console.log(chalk.green(`\n✓ Project "${String(projectName)}" created!`));
-  console.log(chalk.dim(`Project ID: ${projectId}`));
-  console.log(chalk.dim('Edit your BRAND.md anytime in the database.'));
 }

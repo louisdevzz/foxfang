@@ -32,7 +32,7 @@ export function initDatabase(): DatabaseSync {
   db.exec('PRAGMA journal_mode = WAL;');
   db.exec('PRAGMA foreign_keys = ON;');
 
-  // Run schema inline (since we can't reliably get __dirname in CJS)
+  // Run schema
   db.exec(`
     -- Users table
     CREATE TABLE IF NOT EXISTS users (
@@ -44,26 +44,48 @@ export function initDatabase(): DatabaseSync {
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
 
-    -- Projects table
-    CREATE TABLE IF NOT EXISTS projects (
+    -- Brands table - each user can have multiple brands
+    CREATE TABLE IF NOT EXISTS brands (
       id TEXT PRIMARY KEY,
       user_id TEXT NOT NULL DEFAULT 'default_user',
       name TEXT NOT NULL,
       description TEXT,
-      brand_profile TEXT,
-      brand_md_content TEXT,
+      industry TEXT,
+      brand_profile TEXT, -- JSON: tone, voice, audience, etc.
+      brand_md_content TEXT, -- Full BRAND.md content
       status TEXT DEFAULT 'active' CHECK (status IN ('active','archived')),
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
     );
 
+    CREATE INDEX IF NOT EXISTS idx_brands_user_id ON brands(user_id);
+
+    -- Projects table - belongs to a brand
+    CREATE TABLE IF NOT EXISTS projects (
+      id TEXT PRIMARY KEY,
+      brand_id TEXT NOT NULL,
+      user_id TEXT NOT NULL DEFAULT 'default_user',
+      name TEXT NOT NULL,
+      description TEXT,
+      status TEXT DEFAULT 'active' CHECK (status IN ('active','archived','completed')),
+      start_date DATETIME,
+      end_date DATETIME,
+      goals TEXT, -- JSON: project goals/metrics
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (brand_id) REFERENCES brands(id) ON DELETE CASCADE,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_projects_brand_id ON projects(brand_id);
     CREATE INDEX IF NOT EXISTS idx_projects_user_id ON projects(user_id);
 
-    -- Memories table
+    -- Memories - can be associated with brand or project
     CREATE TABLE IF NOT EXISTS memories (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       user_id TEXT NOT NULL DEFAULT 'default_user',
+      brand_id TEXT,
       project_id TEXT,
       session_id TEXT,
       content TEXT NOT NULL,
@@ -73,10 +95,12 @@ export function initDatabase(): DatabaseSync {
       metadata TEXT,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+      FOREIGN KEY (brand_id) REFERENCES brands(id) ON DELETE CASCADE,
       FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
     );
 
     CREATE INDEX IF NOT EXISTS idx_memories_user_id ON memories(user_id);
+    CREATE INDEX IF NOT EXISTS idx_memories_brand_id ON memories(brand_id);
     CREATE INDEX IF NOT EXISTS idx_memories_project_id ON memories(project_id);
 
     -- FTS for memories
@@ -86,32 +110,37 @@ export function initDatabase(): DatabaseSync {
       user_id UNINDEXED
     );
 
-    -- Tasks table
+    -- Tasks - belong to a project
     CREATE TABLE IF NOT EXISTS tasks (
       id TEXT PRIMARY KEY,
       user_id TEXT NOT NULL DEFAULT 'default_user',
       project_id TEXT NOT NULL,
+      brand_id TEXT,
       title TEXT NOT NULL,
       description TEXT,
       status TEXT DEFAULT 'todo' CHECK (status IN ('todo','in_progress','review','done','cancelled')),
       priority TEXT DEFAULT 'medium' CHECK (priority IN ('low','medium','high')),
-      assignee TEXT,
+      assignee TEXT, -- agent name or 'user'
       due_date DATETIME,
-      tags TEXT,
-      metadata TEXT,
+      completed_at DATETIME,
+      tags TEXT, -- JSON array
+      metadata TEXT, -- JSON
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
-      FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+      FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
+      FOREIGN KEY (brand_id) REFERENCES brands(id) ON DELETE SET NULL
     );
 
-    CREATE INDEX IF NOT EXISTS idx_tasks_user_id ON tasks(user_id);
-    CREATE INDEX IF NOT EXISTS idx_tasks_project_id ON tasks(project_id);
+    CREATE INDEX IF NOT EXISTS idx_tasks_project_id ON projects(id);
+    CREATE INDEX IF NOT EXISTS idx_tasks_brand_id ON tasks(brand_id);
+    CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
 
-    -- Ideas table
+    -- Ideas - can be associated with brand
     CREATE TABLE IF NOT EXISTS ideas (
       id TEXT PRIMARY KEY,
       user_id TEXT NOT NULL DEFAULT 'default_user',
+      brand_id TEXT,
       project_id TEXT,
       title TEXT NOT NULL,
       content TEXT,
@@ -120,32 +149,37 @@ export function initDatabase(): DatabaseSync {
       status TEXT DEFAULT 'new' CHECK (status IN ('new','used','archived')),
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+      FOREIGN KEY (brand_id) REFERENCES brands(id) ON DELETE SET NULL,
       FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE SET NULL
     );
 
-    CREATE INDEX IF NOT EXISTS idx_ideas_user_id ON ideas(user_id);
+    CREATE INDEX IF NOT EXISTS idx_ideas_brand_id ON ideas(brand_id);
 
-    -- Sessions table
+    -- Sessions - associated with a project
     CREATE TABLE IF NOT EXISTS sessions (
       id TEXT PRIMARY KEY,
       user_id TEXT NOT NULL DEFAULT 'default_user',
       project_id TEXT,
+      brand_id TEXT,
       title TEXT,
       messages TEXT,
       context TEXT,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
-      FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE SET NULL
+      FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE SET NULL,
+      FOREIGN KEY (brand_id) REFERENCES brands(id) ON DELETE SET NULL
     );
 
-    CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id);
+    CREATE INDEX IF NOT EXISTS idx_sessions_project_id ON sessions(project_id);
 
-    -- Artifacts table
+    -- Content artifacts
     CREATE TABLE IF NOT EXISTS artifacts (
       id TEXT PRIMARY KEY,
       user_id TEXT NOT NULL DEFAULT 'default_user',
+      brand_id TEXT,
       project_id TEXT,
+      task_id TEXT,
       session_id TEXT,
       type TEXT NOT NULL,
       title TEXT,
@@ -155,13 +189,14 @@ export function initDatabase(): DatabaseSync {
       metadata TEXT,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+      FOREIGN KEY (brand_id) REFERENCES brands(id) ON DELETE CASCADE,
       FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
-      FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE SET NULL
+      FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE SET NULL
     );
 
-    CREATE INDEX IF NOT EXISTS idx_artifacts_user_id ON artifacts(user_id);
+    CREATE INDEX IF NOT EXISTS idx_artifacts_project_id ON artifacts(project_id);
 
-    -- Cron jobs table
+    -- Cron jobs
     CREATE TABLE IF NOT EXISTS cron_jobs (
       id TEXT PRIMARY KEY,
       user_id TEXT NOT NULL DEFAULT 'default_user',
