@@ -220,7 +220,8 @@ function escapeHtmlAttr(text: string): string {
 function renderTelegramToken(token: Token): string {
   switch (token.type) {
     case 'text':
-      return escapeHtml(token.content);
+      // If children exist (parsed inline), render them; otherwise escape content
+      return token.children?.map(renderTelegramToken).join('') || escapeHtml(token.content);
     
     case 'bold':
       return `<b>${token.children?.map(renderTelegramToken).join('') || escapeHtml(token.content)}</b>`;
@@ -314,7 +315,7 @@ function escapeSlackText(text: string): string {
 function renderSlackToken(token: Token): string {
   switch (token.type) {
     case 'text':
-      return token.content;
+      return token.children?.map(renderSlackToken).join('') || token.content;
     
     case 'bold':
       return `*${token.children?.map(renderSlackToken).join('') || token.content}*`;
@@ -367,7 +368,7 @@ export function markdownToSlackMrkdwn(text: string): string {
 function renderDiscordToken(token: Token): string {
   switch (token.type) {
     case 'text':
-      return token.content;
+      return token.children?.map(renderDiscordToken).join('') || token.content;
     
     case 'bold':
       return `**${token.children?.map(renderDiscordToken).join('') || token.content}**`;
@@ -427,7 +428,7 @@ function formatForDiscord(text: string): string {
 function renderPlainToken(token: Token): string {
   switch (token.type) {
     case 'text':
-      return token.content;
+      return token.children?.map(renderPlainToken).join('') || token.content;
     
     case 'bold':
     case 'italic':
