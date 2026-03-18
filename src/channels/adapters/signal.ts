@@ -1,10 +1,8 @@
 /**
- * Signal Channel Adapter using signal-cli HTTP API
+ * Signal Channel Adapter using signal-cli HTTP API (JSON-RPC)
  * 
  * Requires signal-cli daemon running:
  *   signal-cli -a +YOUR_NUMBER daemon --http 127.0.0.1:8686
- * 
- * Or use systemd/launchd to run signal-cli daemon automatically.
  */
 
 import type { ChannelAdapter, ChannelMessage, ChannelResponse } from '../types';
@@ -40,28 +38,20 @@ export class SignalAdapter implements ChannelAdapter {
 
     // Check signal-cli HTTP API is accessible
     try {
-      // Try to get account info (different endpoints for different versions)
-      const checkUrl = `${this.httpUrl}/api/v1/accounts/${encodeURIComponent(this.phoneNumber)}`;
-      const response = await fetch(checkUrl);
+      const response = await fetch(`${this.httpUrl}/api/v1/check`);
       if (!response.ok) {
-        // Try root endpoint as fallback
-        const rootResponse = await fetch(`${this.httpUrl}/`);
-        if (!rootResponse.ok) {
-          throw new Error(`HTTP ${response.status}`);
-        }
+        throw new Error(`HTTP ${response.status}`);
       }
-      console.log(`[Signal] Connected to signal-cli at ${this.httpUrl}`);
+      console.log(`[Signal] ✅ Connected to signal-cli at ${this.httpUrl}`);
     } catch (error) {
       throw new Error(
         `Cannot connect to signal-cli daemon at ${this.httpUrl}.\n` +
         `Make sure signal-cli is running:\n` +
-        `  signal-cli -a ${this.phoneNumber} daemon --http 127.0.0.1:8686\n` +
-        `Error: ${error instanceof Error ? error.message : String(error)}`
+        `  signal-cli -a ${this.phoneNumber} daemon --http 127.0.0.1:8686`
       );
     }
 
     this.connected = true;
-    console.log(`[Signal] Connected to ${this.httpUrl} for ${this.phoneNumber}`);
     
     // Start SSE loop
     this.startSseLoop();
@@ -79,12 +69,20 @@ export class SignalAdapter implements ChannelAdapter {
     }
 
     try {
-      // signal-cli HTTP API format: /api/v1/accounts/{account}/messages/{recipient}
-      const url = `${this.httpUrl}/api/v1/accounts/${encodeURIComponent(this.phoneNumber)}/messages/${encodeURIComponent(to)}`;
-      const response = await fetch(url, {
+      // JSON-RPC call to send message
+      const response = await fetch(`${this.httpUrl}/api/v1/rpc`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: content }),
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          method: 'send',
+          params: {
+            account: this.phoneNumber,
+            recipient: [to],
+            message: content,
+          },
+          id: Math.random().toString(36).substr(2, 9),
+        }),
       });
 
       if (!response.ok) {
@@ -111,13 +109,13 @@ export class SignalAdapter implements ChannelAdapter {
       while (this.connected && !signal.aborted) {
         try {
           await this.streamEvents(signal);
-          reconnectDelay = 1000; // Reset on success
+          reconnectDelay = 1000;
         } catch (error) {
           if (signal.aborted) return;
           
           console.log(`[Signal] Connection lost, reconnecting in ${reconnectDelay}ms...`);
           await this.sleep(reconnectDelay, signal);
-          reconnectDelay = Math.min(reconnectDelay * 2, 30000); // Exponential backoff
+          reconnectDelay = Math.min(reconnectDelay * 2, 30000);
         }
       }
     };
@@ -126,8 +124,8 @@ export class SignalAdapter implements ChannelAdapter {
   }
 
   private async streamEvents(abortSignal: AbortSignal): Promise<void> {
-    // signal-cli HTTP API: /api/v1/accounts/{account}/events
-    const url = `${this.httpUrl}/api/v1/accounts/${encodeURIComponent(this.phoneNumber)}/events`;
+    // signal-cli SSE: /api/v1/events?account=PHONE_NUMBER
+    const url = `${this.httpUrl}/api/v1/events?account=${encodeURIComponent(this.phoneNumber)}`;
 
     const response = await fetch(url, {
       signal: abortSignal,
@@ -161,7 +159,6 @@ export class SignalAdapter implements ChannelAdapter {
         } else if (line.startsWith('id:')) {
           currentEvent.id = line.slice(3).trim();
         } else if (line === '' && currentEvent.data) {
-          // Event complete
           this.handleSseEvent(currentEvent);
           currentEvent = {};
         }
@@ -175,7 +172,7 @@ export class SignalAdapter implements ChannelAdapter {
     try {
       const data = JSON.parse(event.data);
       
-      // Check if it's a message event
+      // Parse signal-cli envelope format
       if (data.envelope?.dataMessage) {
         const msg = data.envelope.dataMessage;
         const source = data.envelope.source;
@@ -191,13 +188,14 @@ export class SignalAdapter implements ChannelAdapter {
             threadId: msg.groupInfo?.groupId,
           };
 
-          console.log(`[Signal] 📩 Message from ${sourceName}: ${msg.message.substring(0, 50)}...`);
+          console.log(`[Signal] 📩 ${sourceName}: ${msg.message.substring(0, 50)}${msg.message.length > 50 ? '...' : ''}`);
 
-          // Handle async
+          // Process through agent
           this.messageHandler(channelMsg).then(async (response) => {
             if (response) {
-              console.log(`[Signal] 📤 Sending reply to ${source}...`);
+              console.log(`[Signal] 🤖 Agent replied, sending...`);
               await this.send(source, response.content);
+              console.log(`[Signal] 📤 Reply sent to ${source}`);
             }
           }).catch(err => {
             console.error('[Signal] Error handling message:', err);
