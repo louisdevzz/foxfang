@@ -4,10 +4,6 @@
  * Manages all channel connections and routes messages between
  * channels and the agent orchestrator.
  * 
- * Pattern: ZeroClaw-style handling
- * - Show typing indicator while processing (if supported)
- * - Wait for complete response
- * - Send full response at once (no streaming)
  */
 
 import { SignalAdapter } from './adapters/signal';
