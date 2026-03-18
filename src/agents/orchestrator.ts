@@ -54,17 +54,27 @@ export class AgentOrchestrator {
       }));
     }
     
+    // Detect and fetch content from any links in the user's message
+    let enhancedMessage = request.message;
     if (request.message) {
+      const linkResult = await understandLinks(request.message);
+      if (linkResult.hasLinks) {
+        // Append link context to user's message (like OpenClaw does)
+        enhancedMessage = `${request.message}\n\n${linkResult.context}`;
+      }
+    }
+
+    if (enhancedMessage) {
       messages.push({
         role: 'user',
-        content: request.message,
+        content: enhancedMessage,
         timestamp: new Date(),
       });
       
-      // Also save to session for persistence
+      // Also save to session for persistence (store original message)
       await this.sessionManager.addMessage(request.sessionId, {
         role: 'user',
-        content: request.message,
+        content: request.message!, // Store original
         timestamp: Date.now(),
       });
     }
@@ -73,17 +83,8 @@ export class AgentOrchestrator {
     const context = await buildContext({
       projectId: request.projectId,
       sessionId: request.sessionId,
-      query: request.message || messages[messages.length - 1]?.content,
+      query: enhancedMessage || messages[messages.length - 1]?.content,
     });
-
-    // Detect and fetch content from any links in the user's message
-    let linkContext = '';
-    if (request.message) {
-      const linkResult = await understandLinks(request.message);
-      if (linkResult.hasLinks) {
-        linkContext = linkResult.context;
-      }
-    }
 
     const agentContext: AgentContext = {
       sessionId: request.sessionId,
@@ -93,7 +94,6 @@ export class AgentOrchestrator {
       tools: agentRegistry.get(request.agentId)?.tools || [],
       brandContext: context.projectContext?.brandMd,
       relevantMemories: context.recentMemories,
-      linkContext: linkContext || undefined,
     };
 
     // Run the agent
