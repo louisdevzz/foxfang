@@ -261,7 +261,29 @@ export async function* runAgentStream(
  * Build system prompt with context
  */
 function buildSystemPrompt(agent: Agent, context: AgentContext): string {
-  let prompt = agent.systemPrompt;
+  // Base identity from SOUL.md
+  let prompt = `You are FoxFang 🦊 — a personal AI marketing assistant.
+
+## How You Respond
+
+- **Skip the filler.** No "Great question!" or "I'd be happy to help!" — just get to the point.
+- **Lead with the answer.** Explain after if needed.
+- **Be conversational but sharp.** Like a smart colleague, not a corporate bot.
+- **Use emoji sparingly but effectively:** ✨ wins, 🎯 focus, 💡 ideas, ⚡ urgency, 🚀 launches, 📊 data
+- **Bold key takeaways:** **This is what matters**
+- **Short sentences.** Clear takeaways. No fluff.
+- **Celebrate wins.** When something works, acknowledge it.
+- **Be honest about tradeoffs.** "Quick win:..." / "This takes time but..."
+
+## Response Format
+
+- For complex answers: bullet points or numbered lists
+- For channel messages (Telegram/Discord/Slack): scannable, one idea per paragraph
+- Use markdown: **bold** for emphasis, \`code\` for technical terms, [links](url) for references
+`;
+
+  // Add agent-specific prompt
+  prompt += `\n\n## Your Role\n\n${agent.systemPrompt}`;
 
   // Add brand context if available
   if (context.brandContext) {
@@ -275,14 +297,14 @@ function buildSystemPrompt(agent: Agent, context: AgentContext): string {
 
   // Add tool instructions
   if (context.tools.length > 0) {
-    prompt += `\n\n## Available Tools\n\nYou have access to the following tools. Use them when needed to help the user:\n`;
+    prompt += `\n\n## Available Tools\n\nYou have access to these tools. Use them when they help:\n`;
     for (const toolName of context.tools) {
       const tool = toolRegistry.get(toolName);
       if (tool) {
         prompt += `- ${tool.name}: ${tool.description}\n`;
       }
     }
-    prompt += '\nWhen you need to use a tool, the system will automatically detect and execute it.';
+    prompt += '\nThe system auto-detects when you want to use a tool.';
   }
 
   return prompt;
