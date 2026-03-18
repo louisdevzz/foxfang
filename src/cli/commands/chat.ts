@@ -172,15 +172,29 @@ export async function registerChatCommand(program: Command): Promise<void> {
                   process.stdout.write('\r' + chalk.blue('Agent: '));
                 }
                 fullContent += chunk.content;
-                
-                // Filter out USE_TOOL directives from display
-                // Remove the entire USE_TOOL line including any text on the same line after it
-                const displayContent = chunk.content
-                  .split('\n')
-                  .map((line: string) => line.replace(/USE_TOOL:\s*\w+\s*\|.*/, '').trimEnd())
-                  .join('\n');
-                if (displayContent) {
-                  process.stdout.write(displayContent);
+                process.stdout.write(chunk.content);
+              } else if (chunk.type === 'tool_call') {
+                // Clear spinner before showing tool call
+                if (!hasStarted) {
+                  hasStarted = true;
+                  clearInterval(spinnerInterval);
+                  process.stdout.write('\r' + chalk.blue('Agent: ') + '                    ');
+                  process.stdout.write('\r' + chalk.blue('Agent: ') + chalk.dim(`Using tool: ${chunk.tool}...`));
+                } else {
+                  console.log(chalk.cyan(`\n[Using tool: ${chunk.tool}]`));
+                }
+              } else if (chunk.type === 'tool_result') {
+                // Show tool result
+                if (chunk.result?.error) {
+                  console.log(chalk.red(`\n  ✗ Error: ${chunk.result.error}`));
+                } else {
+                  const output = chunk.result?.output;
+                  console.log(chalk.green(`\n  ✓ Result:`));
+                  if (typeof output === 'object') {
+                    console.log('  ' + JSON.stringify(output, null, 2).split('\n').join('\n  '));
+                  } else {
+                    console.log(`  ${output}`);
+                  }
                 }
               }
             }
@@ -193,35 +207,6 @@ export async function registerChatCommand(program: Command): Promise<void> {
           }
           
           console.log('\n');
-          
-          // Parse and execute any USE_TOOL directives after streaming
-          const toolMatches = fullContent.matchAll(/USE_TOOL:\s*(\w+)\s*\|\s*(\{[^}]*\})/gm);
-          for (const match of toolMatches) {
-            const toolName = match[1];
-            const toolArgs = match[2];
-            
-            console.log(chalk.cyan(`\n[Executing: ${toolName}]`));
-            
-            try {
-              const tool = toolRegistry.get(toolName);
-              if (tool) {
-                const args = JSON.parse(toolArgs);
-                const toolResult = await tool.execute(args);
-                
-                if (toolResult.success) {
-                  console.log(chalk.green('✓'), typeof toolResult.data === 'object' 
-                    ? JSON.stringify(toolResult.data, null, 2) 
-                    : toolResult.data);
-                } else {
-                  console.log(chalk.yellow('⚠'), toolResult.error || 'Tool execution failed');
-                }
-              } else {
-                console.log(chalk.yellow(`⚠ Tool not found: ${toolName}`));
-              }
-            } catch (e) {
-              console.log(chalk.red(`✗ Error: ${e instanceof Error ? e.message : String(e)}`));
-            }
-          }
           
         } catch (error) {
           console.error(chalk.red('\nError:'), error instanceof Error ? error.message : String(error));
