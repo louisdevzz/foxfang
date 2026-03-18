@@ -111,7 +111,12 @@ If instructions conflict, pause and ask. Comply with stop/pause requests.
 Never bypass safeguards or manipulate users to disable protections.`;
 
 /**
- * Run an agent with the given context
+ * Run an agent with the given context using Agent Loop pattern
+ * 
+ * Agent Loop:
+ * 1. Call LLM with current context
+ * 2. If tool calls → execute tools → add results to context → go to step 1
+ * 3. Return final response when no more tool calls
  */
 export async function runAgent(
   agentId: string,
@@ -138,63 +143,83 @@ export async function runAgent(
   // Debug: log tools being sent
   console.log(`[AgentRuntime] Agent ${agentId} has ${tools.length} tools:`, tools.map(t => t.name).join(', '));
 
-  // Convert messages to provider format (no 'tool' role)
-  const messages: ChatMessage[] = [
+  // Initialize messages array
+  let messages: ChatMessage[] = [
     { role: 'system', content: systemPrompt },
     ...context.messages
-      .filter(m => m.role !== 'tool') // Filter out tool messages for now
+      .filter(m => m.role !== 'tool')
       .map(m => ({
         role: m.role === 'user' ? 'user' as const : 'assistant' as const,
         content: m.content,
       })),
   ];
 
-  // Get provider - use agent's provider, or default, or first available
+  // Get provider
   const providerId = agent.provider || defaultProviderId;
   let provider = providerId ? getProvider(providerId) : undefined;
   if (!provider) {
-    // Fallback to first available provider
     provider = getProvider('openai') || getProvider('anthropic') || getProvider('kimi') || getProvider('kimi-coding');
   }
   if (!provider) {
     throw new Error('No provider available. Please configure an AI provider first.');
   }
 
-  // Get the actual provider ID for model selection
+  // Get model
   const actualProviderId = agent.provider || defaultProviderId || 'openai';
   const defaultModel = actualProviderId === 'kimi-coding' ? 'kimi-code' : 
                        actualProviderId === 'kimi' ? 'moonshot-v1-8k' :
                        actualProviderId === 'anthropic' ? 'claude-3-5-sonnet-latest' :
                        'gpt-4o';
+  const model = agent.model || defaultModel;
 
-  // Call LLM
-  let response;
-  try {
-    response = await provider.chat({
-      model: agent.model || defaultModel,
-      messages,
-      tools: tools.length > 0 ? tools : undefined,
-    });
-  } catch (error) {
-    console.error('Provider chat error:', error);
-    throw new Error(`Failed to get response from ${provider.name}: ${error instanceof Error ? error.message : String(error)}`);
-  }
+  // Track all tool calls made during the loop
+  const allToolCalls: ToolCall[] = [];
+  let iteration = 0;
+  const maxIterations = 10; // Prevent infinite loops
 
-  // Debug: log response
-  console.log(`[AgentRuntime] Response received, content length: ${response.content?.length || 0}, toolCalls: ${response.toolCalls?.length || 0}`);
-  if (response.toolCalls && response.toolCalls.length > 0) {
+  // AGENT LOOP
+  while (iteration < maxIterations) {
+    iteration++;
+    console.log(`[AgentRuntime] Agent loop iteration ${iteration}`);
+
+    // Call LLM
+    let response;
+    try {
+      response = await provider.chat({
+        model,
+        messages,
+        tools: tools.length > 0 ? tools : undefined,
+      });
+    } catch (error) {
+      console.error('Provider chat error:', error);
+      throw new Error(`Failed to get response from ${provider.name}: ${error instanceof Error ? error.message : String(error)}`);
+    }
+
+    // Debug: log response
+    console.log(`[AgentRuntime] Response received, content length: ${response.content?.length || 0}, toolCalls: ${response.toolCalls?.length || 0}`);
+
+    // If no tool calls, return the response
+    if (!response.toolCalls || response.toolCalls.length === 0) {
+      console.log(`[AgentRuntime] No tool calls, returning final response`);
+      return {
+        content: response.content,
+        toolCalls: allToolCalls.length > 0 ? allToolCalls : undefined,
+        usage: response.usage,
+      };
+    }
+
+    // Handle tool calls
     console.log(`[AgentRuntime] Tool calls:`, response.toolCalls.map(tc => tc.name).join(', '));
-  }
 
-  // Handle tool calls
-  if (response.toolCalls && response.toolCalls.length > 0) {
     // Convert provider tool calls to our format with IDs
     const toolCallsWithIds: ToolCall[] = response.toolCalls.map((tc, idx) => ({
-      id: `call_${Date.now()}_${idx}`,
+      id: `call_${Date.now()}_${idx}_${iteration}`,
       name: tc.name,
       arguments: tc.arguments,
     }));
+    allToolCalls.push(...toolCallsWithIds);
 
+    // Execute tool calls
     const results = await executeToolCalls(toolCallsWithIds);
     
     // Debug: log tool results
@@ -203,51 +228,44 @@ export async function runAgent(
       hasData: !!r.data,
       hasOutput: !!r.output,
       hasError: !!r.error,
-      error: r.error?.substring(0, 100),
     })));
-    
-    // Build tool results for model (pass data, not formatted output)
+
+    // Build tool results
     const toolResultsForModel = results.map(r => {
       const toolName = toolCallsWithIds.find(tc => tc.id === r.toolCallId)?.name;
       if (r.error) {
         return `${toolName}: Error: ${r.error}`;
       }
-      // Pass data object to let model format the response naturally
       const data = r.data || r.output;
-      const resultStr = `${toolName}: ${typeof data === 'object' ? JSON.stringify(data) : data}`;
-      console.log(`[AgentRuntime] Tool result for ${toolName}:`, resultStr.substring(0, 200));
-      return resultStr;
+      return `${toolName}: ${typeof data === 'object' ? JSON.stringify(data) : data}`;
     }).join('\n');
 
-    // Make another call with tool results
-    // Include the assistant's tool call intent so model has full context
-    const assistantToolCallMsg = response.content || `I'll use the ${toolCallsWithIds.map(tc => tc.name).join(', ')} tool to help you.`;
-    
-    const finalResponse = await provider.chat({
-      model: agent.model || defaultModel,
-      messages: [
-        ...messages,
-        { role: 'assistant', content: assistantToolCallMsg },
-        { role: 'user', content: `[Tool Results - use this to answer the user]\n${toolResultsForModel}\n\nNow provide a helpful response to the user based on these results.` },
-      ],
-    });
+    // Add assistant message and tool results to context
+    const assistantContent = response.content || `I'll use the ${toolCallsWithIds.map(tc => tc.name).join(', ')} tool to help you.`;
+    messages = [
+      ...messages,
+      { role: 'assistant', content: assistantContent },
+      { role: 'user', content: `[Tool Results]\n${toolResultsForModel}` },
+    ];
 
-    return {
-      content: finalResponse.content,
-      toolCalls: toolCallsWithIds,
-      usage: finalResponse.usage,
-    };
+    // Continue loop - call LLM again with updated context
   }
 
+  // Max iterations reached
+  console.warn(`[AgentRuntime] Max iterations (${maxIterations}) reached`);
   return {
-    content: response.content,
-    usage: response.usage,
+    content: messages[messages.length - 1]?.content || 'Max iterations reached',
+    toolCalls: allToolCalls,
   };
 }
 
 /**
- * Run agent with streaming response
- * Handles tool calls in the stream and executes them
+ * Run agent with streaming response using Agent Loop pattern
+ * 
+ * Agent Loop:
+ * 1. Stream LLM response
+ * 2. If tool calls → execute tools → add results to context → go to step 1
+ * 3. Yield done when no more tool calls
  */
 export async function* runAgentStream(
   agentId: string,
@@ -271,8 +289,8 @@ export async function* runAgentStream(
       parameters: tool!.parameters,
     }));
 
-  // Convert messages to provider format
-  const messages: ChatMessage[] = [
+  // Initialize messages array
+  let messages: ChatMessage[] = [
     { role: 'system', content: systemPrompt },
     ...context.messages
       .filter(m => m.role !== 'tool')
@@ -297,37 +315,56 @@ export async function* runAgentStream(
                        actualProviderId === 'kimi' ? 'moonshot-v1-8k' :
                        actualProviderId === 'anthropic' ? 'claude-3-5-sonnet-latest' :
                        'gpt-4o';
+  const model = agent.model || defaultModel;
 
-  // Stream response with tool call handling
-  const pendingToolCalls: ToolCall[] = [];
-  let fullContent = '';
+  // Track iterations to prevent infinite loops
+  let iteration = 0;
+  const maxIterations = 10;
 
-  try {
-    const stream = provider.chatStream({
-      model: agent.model || defaultModel,
-      messages,
-      tools: tools.length > 0 ? tools : undefined,
-    });
+  // AGENT LOOP
+  while (iteration < maxIterations) {
+    iteration++;
+    console.log(`[AgentRuntime] Stream loop iteration ${iteration}`);
 
-    for await (const chunk of stream) {
-      if (chunk.type === 'content') {
-        fullContent += chunk.content || '';
-        yield { type: 'text', content: chunk.content || '' };
-      } else if (chunk.type === 'tool_call') {
-        const toolCall: ToolCall = {
-          id: `call_${Date.now()}_${pendingToolCalls.length}`,
-          name: chunk.tool || '',
-          arguments: chunk.args,
-        };
-        pendingToolCalls.push(toolCall);
-        yield { type: 'tool_call', tool: chunk.tool, args: chunk.args };
+    // Collect data for this iteration
+    const pendingToolCalls: ToolCall[] = [];
+    let fullContent = '';
+
+    try {
+      // Stream response from LLM
+      const stream = provider.chatStream({
+        model,
+        messages,
+        tools: tools.length > 0 ? tools : undefined,
+      });
+
+      for await (const chunk of stream) {
+        if (chunk.type === 'content') {
+          fullContent += chunk.content || '';
+          yield { type: 'text', content: chunk.content || '' };
+        } else if (chunk.type === 'tool_call') {
+          const toolCall: ToolCall = {
+            id: `call_${Date.now()}_${pendingToolCalls.length}_${iteration}`,
+            name: chunk.tool || '',
+            arguments: chunk.args,
+          };
+          pendingToolCalls.push(toolCall);
+          yield { type: 'tool_call', tool: chunk.tool, args: chunk.args };
+        }
       }
-    }
 
-    // Execute any pending tool calls
-    if (pendingToolCalls.length > 0) {
+      // If no tool calls in this iteration, we're done
+      if (pendingToolCalls.length === 0) {
+        console.log(`[AgentRuntime] No tool calls in iteration ${iteration}, streaming complete`);
+        yield { type: 'done' };
+        return;
+      }
+
+      // Execute pending tool calls
+      console.log(`[AgentRuntime] Executing ${pendingToolCalls.length} tool calls`);
       const results = await executeToolCalls(pendingToolCalls);
       
+      // Yield tool results
       for (const result of results) {
         yield { 
           type: 'tool_result', 
@@ -336,39 +373,35 @@ export async function* runAgentStream(
         };
       }
 
-      // Continue conversation with tool results (pass data to model, not formatted output)
+      // Build tool results for next iteration
       const toolResultContent = results.map(r => {
         const toolName = pendingToolCalls.find(tc => tc.id === r.toolCallId)?.name;
         if (r.error) {
           return `${toolName}: Error: ${r.error}`;
         }
-        // Pass data object to model, let it format the response
         const data = r.data || r.output;
         return `${toolName}: ${typeof data === 'object' ? JSON.stringify(data) : data}`;
       }).join('\n');
 
-      // Make follow-up call with tool results
-      const followUpStream = provider.chatStream({
-        model: agent.model || defaultModel,
-        messages: [
-          ...messages,
-          { role: 'assistant', content: fullContent },
-          { role: 'user', content: `[Tool Results]\n${toolResultContent}` },
-        ],
-      });
+      // Update messages for next iteration
+      messages = [
+        ...messages,
+        { role: 'assistant', content: fullContent },
+        { role: 'user', content: `[Tool Results]\n${toolResultContent}` },
+      ];
 
-      for await (const chunk of followUpStream) {
-        if (chunk.type === 'content') {
-          yield { type: 'text', content: chunk.content || '' };
-        }
-      }
+      // Continue to next iteration
+    } catch (error) {
+      yield { type: 'text', content: `\nError: ${error instanceof Error ? error.message : String(error)}\n` };
+      yield { type: 'done' };
+      return;
     }
-
-    yield { type: 'done' };
-  } catch (error) {
-    yield { type: 'text', content: `\nError: ${error instanceof Error ? error.message : String(error)}\n` };
-    yield { type: 'done' };
   }
+
+  // Max iterations reached
+  console.warn(`[AgentRuntime] Stream max iterations (${maxIterations}) reached`);
+  yield { type: 'text', content: '\n[Max tool iterations reached]\n' };
+  yield { type: 'done' };
 }
 
 /**
