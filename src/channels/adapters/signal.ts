@@ -123,6 +123,57 @@ export class SignalAdapter implements ChannelAdapter {
     }
   }
 
+  async reactToMessage(messageId: string, emoji: string, to?: string): Promise<void> {
+    if (!this.connected || !to) return;
+
+    try {
+      // JSON-RPC call to send reaction
+      await fetch(`${this.httpUrl}/api/v1/rpc`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          method: 'sendReaction',
+          params: {
+            account: this.phoneNumber,
+            recipient: [to],
+            targetTimestamp: parseInt(messageId, 10),
+            emoji: emoji,
+          },
+          id: Math.random().toString(36).substr(2, 9),
+        }),
+      });
+    } catch {
+      // Ignore reaction errors
+    }
+  }
+
+  async removeReaction(messageId: string, to?: string): Promise<void> {
+    if (!this.connected || !to) return;
+
+    try {
+      // Remove reaction by sending empty emoji
+      await fetch(`${this.httpUrl}/api/v1/rpc`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          method: 'sendReaction',
+          params: {
+            account: this.phoneNumber,
+            recipient: [to],
+            targetTimestamp: parseInt(messageId, 10),
+            emoji: '',
+            remove: true,
+          },
+          id: Math.random().toString(36).substr(2, 9),
+        }),
+      });
+    } catch {
+      // Ignore removal errors
+    }
+  }
+
   onMessage(handler: (msg: ChannelMessage) => Promise<ChannelResponse | void>): void {
     this.messageHandler = handler;
   }

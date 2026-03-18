@@ -188,6 +188,34 @@ export class SlackAdapter implements ChannelAdapter {
     }
   }
 
+  async reactToMessage(messageId: string, emoji: string, channelId?: string): Promise<void> {
+    if (!this.connected || !channelId) return;
+
+    try {
+      await this.apiCall('reactions.add', {
+        channel: channelId,
+        timestamp: messageId,
+        name: emoji,
+      }, this.botToken);
+    } catch {
+      // Ignore reaction errors
+    }
+  }
+
+  async removeReaction(messageId: string, channelId?: string): Promise<void> {
+    if (!this.connected || !channelId) return;
+
+    try {
+      await this.apiCall('reactions.remove', {
+        channel: channelId,
+        timestamp: messageId,
+        name: 'eyes', // Remove the eyes reaction
+      }, this.botToken);
+    } catch {
+      // Ignore removal errors
+    }
+  }
+
   onMessage(handler: (msg: ChannelMessage) => Promise<ChannelResponse | void>): void {
     this.messageHandler = handler;
   }
