@@ -9,6 +9,7 @@ export interface ChannelMessage {
   content: string;
   timestamp: Date;
   threadId?: string;
+  metadata?: Record<string, any>;
 }
 
 export interface ChannelResponse {

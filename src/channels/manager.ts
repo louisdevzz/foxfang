@@ -11,6 +11,9 @@
  */
 
 import { SignalAdapter } from './adapters/signal';
+import { TelegramAdapter } from './adapters/telegram';
+import { DiscordAdapter } from './adapters/discord';
+import { SlackAdapter } from './adapters/slack';
 import type { ChannelAdapter, ChannelMessage, ChannelResponse } from './types';
 import type { AgentOrchestrator } from '../agents/orchestrator';
 
@@ -98,6 +101,12 @@ export class ChannelManager {
     switch (name) {
       case 'signal':
         return new SignalAdapter();
+      case 'telegram':
+        return new TelegramAdapter();
+      case 'discord':
+        return new DiscordAdapter();
+      case 'slack':
+        return new SlackAdapter();
       default:
         return null;
     }
