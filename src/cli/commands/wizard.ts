@@ -15,6 +15,7 @@ import { initializeProviders } from '../../providers/index';
 import { bootstrapFoxFang } from '../../wizard/bootstrap';
 import { initDatabase } from '../../database/sqlite';
 import { runMigrations } from '../../compat';
+import { saveCredential, deleteCredential, isKeychainAvailable, migrateFromConfig } from '../../credentials/index';
 
 // Available providers with metadata
 const AVAILABLE_PROVIDERS = [
@@ -183,10 +184,20 @@ export async function registerWizardCommand(program: Command): Promise<void> {
           initialValue: providerMeta.models[0],
         }) as string;
         
+        // Save API key to credentials store (keychain or encrypted file)
+        await saveCredential(providerId, {
+          provider: providerId,
+          apiKey: apiKey as string,
+          baseUrl: baseUrl,
+          headers: providerId === 'kimi-coding' ? { 'User-Agent': 'claude-code/0.1.0' } : undefined,
+          apiType: providerId === 'kimi-coding' ? 'anthropic-messages' : undefined,
+          createdAt: new Date().toISOString(),
+        });
+        
+        // Config to save in foxfang.json (no API key)
         const providerConfig: any = {
           id: providerId,
           name: providerMeta.name,
-          apiKey: apiKey,
           baseUrl: baseUrl,
           defaultModel: selectedModel,
           enabled: true,
@@ -198,6 +209,12 @@ export async function registerWizardCommand(program: Command): Promise<void> {
           providerConfig.apiType = 'anthropic-messages';
           console.log(chalk.dim('  Note: Kimi Coding requires User-Agent header (auto-configured)'));
         }
+        
+        // Show keychain status
+        const keychainStatus = isKeychainAvailable() 
+          ? 'OS keychain' 
+          : 'encrypted file';
+        console.log(chalk.dim(`  API key saved to ${keychainStatus}`));
         
         configuredProviders.push(providerConfig);
         
@@ -245,6 +262,30 @@ export async function registerWizardCommand(program: Command): Promise<void> {
         initialValue: true,
       });
       
+      // Check for old API keys in config and offer migration
+      const hasOldApiKeys = config.providers?.some((p: any) => p.apiKey) || 
+                            config.channels?.telegram?.botToken ||
+                            config.channels?.discord?.botToken ||
+                            config.channels?.slack?.botToken;
+      
+      if (hasOldApiKeys) {
+        console.log(chalk.yellow('\n⚠️  Security Update: API keys detected in config file'));
+        console.log(chalk.dim('   FoxFang now stores API keys securely in OS keychain or encrypted file.\n'));
+        
+        const shouldMigrate = await confirm({
+          message: 'Migrate existing API keys to secure storage?',
+          initialValue: true,
+        });
+        
+        if (shouldMigrate) {
+          const sMigrate = spinner();
+          sMigrate.start('Migrating API keys to secure storage...');
+          const migrated = await migrateFromConfig(config);
+          await saveConfig(config);
+          sMigrate.stop(`Migrated ${migrated.length} API key(s) to secure storage`);
+        }
+      }
+      
       // Optional API Keys for research tools
       console.log(chalk.dim('\n💡 Optional: Add API keys for enhanced research tools\n'));
       console.log(chalk.dim('   Press Enter to skip - these are completely optional.\n'));
@@ -288,12 +329,22 @@ export async function registerWizardCommand(program: Command): Promise<void> {
         }
       }
       
-      // Save optional API keys
+      // Save optional API keys to credentials store
       if (braveApiKey && braveApiKey !== 'BS-...') {
-        config.braveSearch = { apiKey: braveApiKey as string };
+        await saveCredential('brave-search', {
+          provider: 'brave-search',
+          apiKey: braveApiKey as string,
+          createdAt: new Date().toISOString(),
+        });
+        config.braveSearch = { apiKeyRef: 'credential:brave-search' };
       }
       if (firecrawlApiKey && firecrawlApiKey !== 'fc-...') {
-        config.firecrawl = { apiKey: firecrawlApiKey as string };
+        await saveCredential('firecrawl', {
+          provider: 'firecrawl',
+          apiKey: firecrawlApiKey as string,
+          createdAt: new Date().toISOString(),
+        });
+        config.firecrawl = { apiKeyRef: 'credential:firecrawl' };
       }
       
       await saveConfig(config);
@@ -442,10 +493,19 @@ async function addProvider(config: any) {
     options: providerMeta.models.map(m => ({ value: m, label: m })),
   }) as string;
   
+  // Save API key to credentials store
+  await saveCredential(providerId, {
+    provider: providerId,
+    apiKey: apiKey as string,
+    baseUrl: baseUrl,
+    headers: providerId === 'kimi-coding' ? { 'User-Agent': 'claude-code/0.1.0' } : undefined,
+    apiType: providerId === 'kimi-coding' ? 'anthropic-messages' : undefined,
+    createdAt: new Date().toISOString(),
+  });
+  
   const newProvider: any = {
     id: providerId,
     name: providerMeta.name,
-    apiKey,
     baseUrl,
     defaultModel,
     enabled: true,
@@ -461,7 +521,11 @@ async function addProvider(config: any) {
   config.providers.push(newProvider);
   await saveConfig(config);
   
+  const keychainStatus = isKeychainAvailable() 
+    ? 'OS keychain' 
+    : 'encrypted file';
   console.log(chalk.green(`✓ ${providerMeta.name} added!`));
+  console.log(chalk.dim(`  API key saved to ${keychainStatus}`));
   if (providerId === 'kimi-coding') {
     console.log(chalk.dim('  Note: User-Agent header auto-configured for Kimi Coding'));
   }
@@ -487,7 +551,7 @@ async function editProvider(config: any) {
   const apiKey = await text({
     message: `${provider.name} API Key:`,
     placeholder: 'sk-...',
-    defaultValue: provider.apiKey || '',
+    defaultValue: '',
   }) as string;
   
   const baseUrl = await text({
@@ -496,11 +560,29 @@ async function editProvider(config: any) {
     defaultValue: provider.baseUrl || providerMeta?.baseUrl,
   }) as string;
   
-  provider.apiKey = apiKey;
+  // Save API key to credentials store
+  if (apiKey) {
+    await saveCredential(providerId, {
+      provider: providerId,
+      apiKey: apiKey as string,
+      baseUrl: baseUrl,
+      headers: providerId === 'kimi-coding' ? { 'User-Agent': 'claude-code/0.1.0' } : undefined,
+      apiType: providerId === 'kimi-coding' ? 'anthropic-messages' : undefined,
+      createdAt: new Date().toISOString(),
+    });
+  }
+  
   provider.baseUrl = baseUrl;
   
   await saveConfig(config);
+  
+  const keychainStatus = isKeychainAvailable() 
+    ? 'OS keychain' 
+    : 'encrypted file';
   console.log(chalk.green(`✓ ${provider.name} updated!`));
+  if (apiKey) {
+    console.log(chalk.dim(`  API key saved to ${keychainStatus}`));
+  }
 }
 
 async function removeProvider(config: any) {
@@ -517,8 +599,12 @@ async function removeProvider(config: any) {
     })),
   }) as string;
   
+  // Remove from config
   config.providers = config.providers.filter((p: any) => p.id !== providerId);
   await saveConfig(config);
+  
+  // Remove from credentials store
+  await deleteCredential(providerId);
   
   console.log(chalk.green('✓ Provider removed'));
 }
@@ -549,13 +635,24 @@ async function setupTelegram() {
     },
   });
   
+  // Save token to credentials store
+  await saveCredential('channel:telegram', {
+    provider: 'channel:telegram',
+    apiKey: token as string,
+    createdAt: new Date().toISOString(),
+  });
+  
   const config = await loadConfig();
   if (!config.channels) config.channels = {};
   config.channels.telegram = {
     enabled: true,
-    botToken: token as string,
   };
   await saveConfig(config);
+  
+  const keychainStatus = isKeychainAvailable() 
+    ? 'OS keychain' 
+    : 'encrypted file';
+  console.log(chalk.dim(`  Token saved to ${keychainStatus}`));
 }
 
 async function setupDiscord() {
@@ -571,13 +668,24 @@ async function setupDiscord() {
     },
   });
   
+  // Save token to credentials store
+  await saveCredential('channel:discord', {
+    provider: 'channel:discord',
+    apiKey: token as string,
+    createdAt: new Date().toISOString(),
+  });
+  
   const config = await loadConfig();
   if (!config.channels) config.channels = {};
   config.channels.discord = {
     enabled: true,
-    botToken: token as string,
   };
   await saveConfig(config);
+  
+  const keychainStatus = isKeychainAvailable() 
+    ? 'OS keychain' 
+    : 'encrypted file';
+  console.log(chalk.dim(`  Token saved to ${keychainStatus}`));
 }
 
 async function setupSlack() {
@@ -595,13 +703,24 @@ async function setupSlack() {
     },
   });
   
+  // Save token to credentials store
+  await saveCredential('channel:slack', {
+    provider: 'channel:slack',
+    apiKey: token as string,
+    createdAt: new Date().toISOString(),
+  });
+  
   const config = await loadConfig();
   if (!config.channels) config.channels = {};
   config.channels.slack = {
     enabled: true,
-    botToken: token as string,
   };
   await saveConfig(config);
+  
+  const keychainStatus = isKeychainAvailable() 
+    ? 'OS keychain' 
+    : 'encrypted file';
+  console.log(chalk.dim(`  Token saved to ${keychainStatus}`));
 }
 
 async function setupSignal() {

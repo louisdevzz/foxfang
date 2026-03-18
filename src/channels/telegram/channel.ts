@@ -4,7 +4,7 @@
 
 export interface TelegramConfig {
   enabled: boolean;
-  botToken: string;
+  botToken?: string;
 }
 
 export interface TelegramMessage {

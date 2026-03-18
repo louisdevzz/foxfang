@@ -4,7 +4,7 @@
 
 export interface DiscordConfig {
   enabled: boolean;
-  botToken: string;
+  botToken?: string;
 }
 
 export interface DiscordMessage {

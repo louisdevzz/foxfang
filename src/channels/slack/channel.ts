@@ -4,7 +4,7 @@
 
 export interface SlackConfig {
   enabled: boolean;
-  botToken: string;
+  botToken?: string;
 }
 
 export interface SlackMessage {

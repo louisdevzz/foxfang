@@ -4,7 +4,7 @@
 
 import { Command } from 'commander';
 import chalk from 'chalk';
-import { loadConfig, saveConfig } from '../../config/index';
+import { loadConfig, loadConfigWithCredentials, saveConfig } from '../../config/index';
 import { TelegramChannel } from '../../channels/telegram/channel';
 import { DiscordChannel } from '../../channels/discord/channel';
 import { SlackChannel } from '../../channels/slack/channel';
@@ -22,7 +22,7 @@ export async function registerChannelsCommand(program: Command): Promise<void> {
     .alias('ls')
     .description('List configured channels')
     .action(async () => {
-      const config = await loadConfig();
+      const config = await loadConfigWithCredentials();
       
       console.log(chalk.cyan('Configured Channels:'));
       console.log();
@@ -52,7 +52,7 @@ export async function registerChannelsCommand(program: Command): Promise<void> {
     .requiredOption('-c, --chat <id>', 'Chat ID or username')
     .requiredOption('-m, --message <text>', 'Message text')
     .action(async (options) => {
-      const config = await loadConfig();
+      const config = await loadConfigWithCredentials();
       
       if (!config.channels?.telegram?.enabled) {
         console.log(chalk.red('Telegram is not configured. Run: foxfang wizard channels'));
@@ -76,7 +76,7 @@ export async function registerChannelsCommand(program: Command): Promise<void> {
     .command('test')
     .description('Test Telegram connection')
     .action(async () => {
-      const config = await loadConfig();
+      const config = await loadConfigWithCredentials();
       
       if (!config.channels?.telegram?.enabled) {
         console.log(chalk.red('Telegram is not configured'));
@@ -103,7 +103,7 @@ export async function registerChannelsCommand(program: Command): Promise<void> {
     .requiredOption('-c, --channel <id>', 'Channel ID')
     .requiredOption('-m, --message <text>', 'Message text')
     .action(async (options) => {
-      const config = await loadConfig();
+      const config = await loadConfigWithCredentials();
       
       if (!config.channels?.discord?.enabled) {
         console.log(chalk.red('Discord is not configured. Run: foxfang wizard channels'));
@@ -127,7 +127,7 @@ export async function registerChannelsCommand(program: Command): Promise<void> {
     .requiredOption('-c, --channel <id>', 'Channel ID')
     .requiredOption('-m, --message <text>', 'Message text')
     .action(async (options) => {
-      const config = await loadConfig();
+      const config = await loadConfigWithCredentials();
       
       if (!config.channels?.slack?.enabled) {
         console.log(chalk.red('Slack is not configured. Run: foxfang wizard channels'));
@@ -151,7 +151,7 @@ export async function registerChannelsCommand(program: Command): Promise<void> {
     .requiredOption('-n, --number <phone>', 'Recipient phone number')
     .requiredOption('-m, --message <text>', 'Message text')
     .action(async (options) => {
-      const config = await loadConfig();
+      const config = await loadConfigWithCredentials();
       
       if (!config.channels?.signal?.enabled) {
         console.log(chalk.red('Signal is not configured. Run: foxfang wizard channels'));
@@ -169,7 +169,7 @@ export async function registerChannelsCommand(program: Command): Promise<void> {
     .command('enable <channel>')
     .description('Enable a channel')
     .action(async (channelId: string) => {
-      const config = await loadConfig();
+      const config = await loadConfigWithCredentials();
       if (!config.channels) config.channels = {} as any;
       if (!(config.channels as any)[channelId]) {
         (config.channels as any)[channelId] = {};
@@ -183,7 +183,7 @@ export async function registerChannelsCommand(program: Command): Promise<void> {
     .command('disable <channel>')
     .description('Disable a channel')
     .action(async (channelId: string) => {
-      const config = await loadConfig();
+      const config = await loadConfigWithCredentials();
       if ((config.channels as any)?.[channelId]) {
         (config.channels as any)[channelId].enabled = false;
         await saveConfig(config);

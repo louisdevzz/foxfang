@@ -21,9 +21,9 @@ export interface AppConfig {
   daemon: { enabled: boolean; port: number; host: string };
   workspace: { homeDir: string };
   channels?: {
-    telegram?: { enabled: boolean; botToken: string };
-    discord?: { enabled: boolean; botToken: string };
-    slack?: { enabled: boolean; botToken: string };
+    telegram?: { enabled: boolean; botToken?: string };
+    discord?: { enabled: boolean; botToken?: string };
+    slack?: { enabled: boolean; botToken?: string };
     signal?: { 
       enabled: boolean; 
       phoneNumber: string;
@@ -35,9 +35,9 @@ export interface AppConfig {
   cron: { enabled: boolean; pollIntervalMs: number };
   security: { allowedOrigins: string[] };
   gateway: { port: number; host: string; enableCors: boolean; maxRequestSize: string };
-  // Optional web tool API keys
-  braveSearch?: { apiKey: string };
-  firecrawl?: { apiKey: string; baseUrl?: string };
+  // Optional web tool API keys (now stored in credentials, config keeps only ref)
+  braveSearch?: { apiKey?: string; apiKeyRef?: string };
+  firecrawl?: { apiKey?: string; apiKeyRef?: string; baseUrl?: string };
 }
 
 export interface ProviderConfig {
@@ -48,7 +48,7 @@ export interface ProviderConfig {
   baseUrl?: string;
   models?: string[];
   headers?: Record<string, string>;
-  apiType?: 'openai' | 'anthropic-messages';
+  apiType?: 'openai' | 'anthropic-messages' | string;
 }
 
 const defaultConfig: AppConfig = {
@@ -83,6 +83,51 @@ export async function loadConfig(): Promise<AppConfig> {
     console.error('Failed to load config, using defaults:', error);
     return { ...defaultConfig };
   }
+}
+
+/**
+ * Load config with credentials merged from keychain/credentials store
+ * This is the main function to use when initializing the app
+ */
+export async function loadConfigWithCredentials(): Promise<AppConfig> {
+  const config = await loadConfig();
+  
+  // Dynamically import credentials to avoid circular dependency
+  const { getCredential, isKeychainAvailable } = await import('../credentials/index');
+  
+  // Merge credentials from keychain into provider configs
+  if (config.providers) {
+    for (const provider of config.providers) {
+      if (!provider.apiKey) {
+        // Try to load from credentials store
+        const credential = await getCredential(provider.id);
+        if (credential) {
+          provider.apiKey = credential.apiKey;
+          if (credential.baseUrl) provider.baseUrl = credential.baseUrl;
+          if (credential.headers) provider.headers = credential.headers;
+          if (credential.apiType) provider.apiType = credential.apiType;
+        }
+      }
+    }
+  }
+  
+  // Merge channel credentials
+  if (config.channels) {
+    const { getCredential } = await import('../credentials/index');
+    const channels = ['telegram', 'discord', 'slack'] as const;
+    
+    for (const channel of channels) {
+      const channelConfig = config.channels[channel];
+      if (channelConfig && !channelConfig.botToken) {
+        const credential = await getCredential(`channel:${channel}`);
+        if (credential) {
+          channelConfig.botToken = credential.apiKey;
+        }
+      }
+    }
+  }
+  
+  return config;
 }
 
 export async function saveConfig(config: AppConfig): Promise<void> {
