@@ -21,13 +21,13 @@ export function setDefaultProvider(providerId: string): void {
  */
 const TOOL_SUMMARIES: Record<string, string> = {
   // Research tools
-  web_search: 'Search the web using free sources (SearX/Bing)',
-  brave_search: 'High-quality web search via Brave API (requires key)',
-  firecrawl_search: 'AI-powered search with content extraction (requires key)',
-  firecrawl_scrape: 'Advanced website scraping with structured data (requires key)',
-  fetch_tweet: 'Fetch tweet content from X/Twitter by URL (no API key needed)',
-  fetch_user_tweets: 'Get recent tweets from a user timeline (no API key needed)',
-  fetch_url: 'Fetch and extract content from any URL',
+  web_search: 'Search the web using free sources (SearX/Bing). Use when user asks about current events, facts, or topics.',
+  brave_search: 'High-quality web search via Brave API (requires key). Use when user asks about current events, facts, or topics.',
+  firecrawl_search: 'AI-powered search with content extraction (requires key). Use when user asks about current events, facts, or topics.',
+  firecrawl_scrape: 'Advanced website scraping with structured data (requires key). Use when user shares a website URL.',
+  fetch_tweet: 'Fetch tweet content from X/Twitter by URL. CRITICAL: ALWAYS use this when user shares x.com or twitter.com URLs.',
+  fetch_user_tweets: 'Get recent tweets from a user timeline. Use when user asks about a specific Twitter user.',
+  fetch_url: 'Fetch and extract content from any URL. CRITICAL: ALWAYS use this when user shares any website URL.',
   
   // Memory tools
   memory_store: 'Save information to long-term memory for later recall',
@@ -76,6 +76,20 @@ const TOOL_SUMMARIES: Record<string, string> = {
  */
 const TOOL_CALL_STYLE_GUIDANCE = `## Tool Call Style
 
+**MANDATORY: When user shares ANY URL, IMMEDIATELY call the appropriate tool.**
+- URLs for X/Twitter → use fetch_tweet
+- URLs for websites → use fetch_url or firecrawl_scrape
+- Do NOT say "I can't access" or "Twitter is blocking" — just call the tool
+- If tool fails, THEN explain the issue
+
+### Examples
+
+❌ WRONG - User: "check this https://x.com/user/status/123"
+Assistant: "I can't access Twitter from here 😤"
+
+✅ CORRECT - User: "check this https://x.com/user/status/123"  
+→ [IMMEDIATELY call fetch_tweet with the URL]
+
 **Default: Do not narrate routine, low-risk tool calls (just call the tool).**
 
 Narrate only when it helps:
@@ -121,6 +135,9 @@ export async function runAgent(
       parameters: tool!.parameters,
     }));
 
+  // Debug: log tools being sent
+  console.log(`[AgentRuntime] Agent ${agentId} has ${tools.length} tools:`, tools.map(t => t.name).join(', '));
+
   // Convert messages to provider format (no 'tool' role)
   const messages: ChatMessage[] = [
     { role: 'system', content: systemPrompt },
@@ -163,6 +180,12 @@ export async function runAgent(
     throw new Error(`Failed to get response from ${provider.name}: ${error instanceof Error ? error.message : String(error)}`);
   }
 
+  // Debug: log response
+  console.log(`[AgentRuntime] Response received, content length: ${response.content?.length || 0}, toolCalls: ${response.toolCalls?.length || 0}`);
+  if (response.toolCalls && response.toolCalls.length > 0) {
+    console.log(`[AgentRuntime] Tool calls:`, response.toolCalls.map(tc => tc.name).join(', '));
+  }
+
   // Handle tool calls
   if (response.toolCalls && response.toolCalls.length > 0) {
     // Convert provider tool calls to our format with IDs
@@ -174,6 +197,15 @@ export async function runAgent(
 
     const results = await executeToolCalls(toolCallsWithIds);
     
+    // Debug: log tool results
+    console.log(`[AgentRuntime] Tool execution results:`, results.map(r => ({
+      toolCallId: r.toolCallId,
+      hasData: !!r.data,
+      hasOutput: !!r.output,
+      hasError: !!r.error,
+      error: r.error?.substring(0, 100),
+    })));
+    
     // Build tool results for model (pass data, not formatted output)
     const toolResultsForModel = results.map(r => {
       const toolName = toolCallsWithIds.find(tc => tc.id === r.toolCallId)?.name;
@@ -182,7 +214,9 @@ export async function runAgent(
       }
       // Pass data object to let model format the response naturally
       const data = r.data || r.output;
-      return `${toolName}: ${typeof data === 'object' ? JSON.stringify(data) : data}`;
+      const resultStr = `${toolName}: ${typeof data === 'object' ? JSON.stringify(data) : data}`;
+      console.log(`[AgentRuntime] Tool result for ${toolName}:`, resultStr.substring(0, 200));
+      return resultStr;
     }).join('\n');
 
     // Make another call with tool results
@@ -395,6 +429,11 @@ function buildToolSection(tools: string[]): string {
   // Add tool usage rules
   lines.push('### Tool Usage Rules');
   lines.push('');
+  lines.push('**CRITICAL: When you see ANY URL in user message, you MUST call a tool.**');
+  lines.push('- x.com or twitter.com URLs → call fetch_tweet IMMEDIATELY');
+  lines.push('- Any other URL → call fetch_url IMMEDIATELY');
+  lines.push('- DO NOT say "I can\'t access" or "Twitter is blocking" — call the tool first!');
+  lines.push('');
   lines.push('**ALWAYS use tools when:**');
   lines.push('- User shares a URL → fetch it immediately, never ask user to copy-paste');
   lines.push('- Need fresh information → use search tools');
@@ -406,7 +445,7 @@ function buildToolSection(tools: string[]): string {
   lines.push('- For websites: use fetch_url or firecrawl_scrape (if API key available)');
   lines.push('- For search: prefer brave_search if available, fallback to web_search');
   lines.push('');
-  lines.push("**Don't say 'I can't access that'** — use the tool first. If it fails, THEN explain.");
+  lines.push("**Never say 'I can't access that'** — use the tool first. If it fails, THEN explain.");
   lines.push('');
 
   return lines.join('\n');

@@ -100,7 +100,7 @@ export class BraveSearchTool implements Tool {
     freshness?: 'pd' | 'pw' | 'pm' | 'py';
   }): Promise<{ 
     success: boolean; 
-    results?: BraveWebResult[]; 
+    data?: BraveWebResult[]; 
     error?: string 
   }> {
     const config = getBraveConfig();
@@ -120,7 +120,7 @@ export class BraveSearchTool implements Tool {
         args.offset || 0,
         args.freshness
       );
-      return { success: true, results };
+      return { success: true, data: results };
     } catch (error) {
       return { 
         success: false, 
