@@ -4,7 +4,7 @@
  * Creates initial files in ~/.foxfang/ during setup
  */
 
-import { readFile, writeFile, mkdir } from 'fs/promises';
+import { writeFile, mkdir } from 'fs/promises';
 import { existsSync } from 'fs';
 import { join } from 'path';
 import { homedir } from 'os';
