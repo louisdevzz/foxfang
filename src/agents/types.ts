@@ -47,6 +47,7 @@ export interface AgentContext {
   tools: string[];
   brandContext?: string; // BRAND.md content
   relevantMemories?: string[];
+  linkContext?: string; // Content from URLs in user's message
 }
 
 export interface AgentRequest {

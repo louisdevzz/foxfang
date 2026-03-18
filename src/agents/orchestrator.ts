@@ -11,6 +11,7 @@ import { SessionManager } from '../sessions/manager';
 import { toolRegistry } from '../tools/index';
 import { buildContext } from '../context-engine';
 import { storeMemory } from '../memory/database';
+import { understandLinks } from '../link-understanding';
 
 export class AgentOrchestrator {
   private sessionManager: SessionManager;
@@ -75,6 +76,15 @@ export class AgentOrchestrator {
       query: request.message || messages[messages.length - 1]?.content,
     });
 
+    // Detect and fetch content from any links in the user's message
+    let linkContext = '';
+    if (request.message) {
+      const linkResult = await understandLinks(request.message);
+      if (linkResult.hasLinks) {
+        linkContext = linkResult.context;
+      }
+    }
+
     const agentContext: AgentContext = {
       sessionId: request.sessionId,
       projectId: request.projectId,
@@ -83,6 +93,7 @@ export class AgentOrchestrator {
       tools: agentRegistry.get(request.agentId)?.tools || [],
       brandContext: context.projectContext?.brandMd,
       relevantMemories: context.recentMemories,
+      linkContext: linkContext || undefined,
     };
 
     // Run the agent

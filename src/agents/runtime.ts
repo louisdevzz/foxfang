@@ -295,6 +295,11 @@ function buildSystemPrompt(agent: Agent, context: AgentContext): string {
     prompt += `\n\n## Relevant Context\n\n${context.relevantMemories.join('\n')}`;
   }
 
+  // Add link context (content from URLs in user's message)
+  if (context.linkContext) {
+    prompt += `\n\n${context.linkContext}`;
+  }
+
   // Add tool instructions
   if (context.tools.length > 0) {
     prompt += `\n\n## Available Tools\n\nYou have access to these tools. Use them when they help:\n`;
