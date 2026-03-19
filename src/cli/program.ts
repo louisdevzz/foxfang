@@ -16,6 +16,7 @@ import { registerGitHubCommand } from './commands/github';
 import { registerSessionsCommand } from './commands/sessions';
 import { registerMemoryCommand } from './commands/memory';
 import { registerStatusCommand } from './commands/status';
+import { registerOutreachCommand } from './commands/outreach';
 import { getVersion } from './version';
 
 export async function buildProgram(): Promise<Command> {
@@ -46,6 +47,7 @@ export async function buildProgram(): Promise<Command> {
   await registerSessionsCommand(program);
   await registerMemoryCommand(program);
   await registerStatusCommand(program);
+  await registerOutreachCommand(program);
 
   // Add help text
   program.addHelpText('after', `
@@ -57,6 +59,10 @@ ${chalk.cyan('Examples:')}
   ${chalk.dim('$')} foxfang channels telegram send --message "Hello"
   ${chalk.dim('$')} foxfang github login
   ${chalk.dim('$')} foxfang github issue create --repo owner/repo --title "[Feature]: Add new feature"
+  ${chalk.dim('$')} foxfang outreach contacts add --channel signal --identifier +1234567890
+  ${chalk.dim('$')} foxfang outreach campaigns create --name "Product Launch" --type broadcast --list LIST_ID
+  ${chalk.dim('$')} foxfang outreach campaigns launch CAMPAIGN_ID
+  ${chalk.dim('$')} foxfang outreach sequences enroll SEQUENCE_ID CONTACT_ID
 
 ${chalk.cyan('Documentation:')}
   https://docs.foxfang.dev
