@@ -37,7 +37,6 @@ pnpm run build
 
 # Run the setup wizard
 pnpm foxfang onboard
-# Alias: pnpm foxfang wizard setup
 ```
 
 The onboard wizard will guide you through:
