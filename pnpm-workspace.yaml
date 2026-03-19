@@ -1,2 +1,8 @@
 packages:
-  - "ui"
+  - ui
+
+ignoredBuiltDependencies:
+  - better-sqlite3
+  - esbuild
+  - sharp
+  - unrs-resolver
