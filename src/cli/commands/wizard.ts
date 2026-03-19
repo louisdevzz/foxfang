@@ -88,323 +88,15 @@ const AVAILABLE_PROVIDERS = [
 export async function registerWizardCommand(program: Command): Promise<void> {
   const wizard = program
     .command('wizard')
-    .description('Interactive setup wizard');
-
+    .alias('onboard')
+    .description('Interactive setup and configuration')
+    .action(async () => {
+      await runSetupWizard();
+    });
   wizard
     .command('setup')
     .description('Run initial setup wizard')
-    .action(async () => {
-      intro(chalk.cyan('FoxFang Setup Wizard 🦊'));
-      
-      console.log(chalk.dim('Let\'s configure your FoxFang installation.\n'));
-      
-      // Bootstrap ~/.foxfang/ directory
-      const s = spinner();
-      s.start('Creating FoxFang home directory...');
-      await bootstrapFoxFang();
-      s.stop('FoxFang home directory ready!');
-      
-      const config = await loadConfig();
-      
-      // ===== PROVIDER SETUP =====
-      console.log(chalk.dim('\n📡 AI Provider Setup\n'));
-      console.log(chalk.dim('Select the AI providers you want to use.\n'));
-      
-      const selectedProviderIds = await multiselect({
-        message: 'Select providers to configure:',
-        options: AVAILABLE_PROVIDERS.map(p => ({
-          value: p.id,
-          label: p.name,
-          hint: p.hint,
-        })),
-        required: true,
-      }) as string[];
-      
-      if (isCancel(selectedProviderIds) || selectedProviderIds.length === 0) {
-        outro(chalk.yellow('Setup cancelled. Please select at least one provider.'));
-        return;
-      }
-      
-      // Configure each selected provider
-      const configuredProviders: any[] = [];
-      
-      for (const providerId of selectedProviderIds) {
-        const providerMeta = AVAILABLE_PROVIDERS.find(p => p.id === providerId)!;
-        
-        console.log(chalk.dim(`\n--- ${providerMeta.name} ---`));
-        
-        // For Ollama, no API key needed
-        let apiKey = '';
-        if (providerId !== 'ollama') {
-          const keyResult = await text({
-            message: `${providerMeta.name} API Key:`,
-            placeholder: providerMeta.apiKeyPlaceholder,
-            validate: (value) => {
-              if (!value || value.trim() === '') {
-                return 'API key is required (or press Ctrl+C to skip this provider)';
-              }
-              if (providerMeta.apiKeyPrefix && providerMeta.apiKeyPrefix !== 'not-needed' && 
-                  !value.startsWith(providerMeta.apiKeyPrefix)) {
-                return `API key should start with "${providerMeta.apiKeyPrefix}"`;
-              }
-              return undefined;
-            },
-          });
-          
-          if (isCancel(keyResult)) {
-            console.log(chalk.yellow(`⏭ Skipped ${providerMeta.name}`));
-            continue;
-          }
-          apiKey = keyResult as string;
-        } else {
-          console.log(chalk.dim('✓ No API key needed for Ollama (local)'));
-        }
-        
-        // Use default base URL — only prompt for custom/ollama providers
-        let baseUrl = providerMeta.baseUrl;
-        if (providerId === 'custom' || providerId === 'ollama') {
-          const customBaseUrl = await text({
-            message: `${providerMeta.name} Base URL:`,
-            placeholder: providerMeta.baseUrl,
-            defaultValue: providerMeta.baseUrl,
-          });
-
-          if (!isCancel(customBaseUrl) && customBaseUrl) {
-            baseUrl = customBaseUrl as string;
-          }
-        }
-        
-        // Select default model for this provider
-        const selectedModel = await select({
-          message: `Default model for ${providerMeta.name}:`,
-          options: providerMeta.models.map(m => ({ value: m, label: m })),
-          initialValue: providerMeta.models[0],
-        }) as string;
-        
-        // Save API key to credentials store (keychain or encrypted file)
-        await saveCredential(providerId, {
-          provider: providerId,
-          apiKey: apiKey as string,
-          baseUrl: baseUrl,
-          headers: providerId === 'kimi-coding' ? { 'User-Agent': 'claude-code/0.1.0' } : undefined,
-          apiType: providerId === 'kimi-coding' ? 'anthropic-messages' : undefined,
-          createdAt: new Date().toISOString(),
-        });
-        
-        // Config to save in foxfang.json (no API key)
-        const providerConfig: any = {
-          id: providerId,
-          name: providerMeta.name,
-          baseUrl: baseUrl,
-          defaultModel: selectedModel,
-          enabled: true,
-        };
-        
-        // Add special config for Kimi Coding (headers + apiType)
-        if (providerId === 'kimi-coding') {
-          providerConfig.headers = { 'User-Agent': 'claude-code/0.1.0' };
-          providerConfig.apiType = 'anthropic-messages';
-        }
-        
-        // Show keychain status
-        const keychainStatus = isKeychainAvailable() 
-          ? 'OS keychain' 
-          : 'encrypted file';
-        console.log(chalk.dim(`  API key saved to ${keychainStatus}`));
-        
-        configuredProviders.push(providerConfig);
-        
-        console.log(chalk.green(`✓ ${providerMeta.name} configured`));
-      }
-      
-      if (configuredProviders.length === 0) {
-        outro(chalk.red('No providers configured. Please run setup again.'));
-        return;
-      }
-      
-      // Select default provider (only if multiple providers configured)
-      let defaultProvider: string;
-      let defaultProviderConfig: any;
-      
-      if (configuredProviders.length === 1) {
-        // Auto-select the only provider as default
-        defaultProvider = configuredProviders[0].id;
-        defaultProviderConfig = configuredProviders[0];
-        console.log(chalk.dim(`\nUsing ${defaultProviderConfig.name} as default provider`));
-      } else {
-        // Ask user to select default when multiple providers
-        defaultProvider = await select({
-          message: 'Select your default provider:',
-          options: configuredProviders.map(p => ({
-            value: p.id,
-            label: p.name,
-            hint: p.defaultModel,
-          })),
-          initialValue: configuredProviders[0].id,
-        }) as string;
-        defaultProviderConfig = configuredProviders.find(p => p.id === defaultProvider)!;
-      }
-      
-      // Workspace
-      const workspaceDir = await text({
-        message: 'Workspace directory:',
-        placeholder: '~/.foxfang',
-        defaultValue: config.workspace?.homeDir || '~/.foxfang',
-      });
-      
-      // Daemon
-      const enableDaemon = await confirm({
-        message: 'Enable background daemon?',
-        initialValue: true,
-      });
-      
-      // Check for old API keys in config and offer migration
-      const hasOldApiKeys = config.providers?.some((p: any) => p.apiKey) || 
-                            config.channels?.telegram?.botToken ||
-                            config.channels?.discord?.botToken ||
-                            config.channels?.slack?.botToken;
-      
-      if (hasOldApiKeys) {
-        console.log(chalk.yellow('\n⚠️  Security Update: API keys detected in config file'));
-        console.log(chalk.dim('   FoxFang now stores API keys securely in OS keychain or encrypted file.\n'));
-        
-        const shouldMigrate = await confirm({
-          message: 'Migrate existing API keys to secure storage?',
-          initialValue: true,
-        });
-        
-        if (!isCancel(shouldMigrate) && shouldMigrate === true) {
-          const sMigrate = spinner();
-          sMigrate.start('Migrating API keys to secure storage...');
-          const migrated = await migrateFromConfig(config);
-          await saveConfig(config);
-          sMigrate.stop(`Migrated ${migrated.length} API key(s) to secure storage`);
-        }
-      }
-      
-      // Optional API Keys for research tools
-      console.log(chalk.dim('\n💡 Optional: Add API keys for enhanced research tools\n'));
-      console.log(chalk.dim('   Press Enter to skip - these are completely optional.\n'));
-      
-      const braveApiKey = await text({
-        message: 'Brave Search API Key (optional - for high-quality search):',
-        placeholder: 'BS-...',
-        defaultValue: config.braveSearch?.apiKey || '',
-      });
-      
-      const firecrawlApiKey = await text({
-        message: 'Firecrawl API Key (optional - for advanced web scraping):',
-        placeholder: 'fc-...',
-        defaultValue: config.firecrawl?.apiKey || '',
-      });
-      
-      // Channels
-      const setupChannels = await confirm({
-        message: 'Setup messaging channels (Telegram, Discord, Signal, Slack)?',
-        initialValue: false,
-      });
-      
-      const s2 = spinner();
-      s2.start('Saving configuration...');
-      
-      // Update config
-      config.defaultProvider = defaultProvider;
-      config.defaultModel = defaultProviderConfig.defaultModel;
-      config.workspace = { homeDir: workspaceDir as string };
-      config.daemon = { enabled: enableDaemon as boolean, port: 8787, host: '127.0.0.1' };
-      
-      // Merge new providers with existing
-      if (!config.providers) config.providers = [];
-      
-      for (const provider of configuredProviders) {
-        const existingIndex = config.providers.findIndex((p: any) => p.id === provider.id);
-        if (existingIndex >= 0) {
-          config.providers[existingIndex] = provider;
-        } else {
-          config.providers.push(provider);
-        }
-      }
-      
-      // Save optional API keys to credentials store
-      if (braveApiKey && braveApiKey !== 'BS-...') {
-        await saveCredential('brave-search', {
-          provider: 'brave-search',
-          apiKey: braveApiKey as string,
-          createdAt: new Date().toISOString(),
-        });
-        config.braveSearch = { apiKeyRef: 'credential:brave-search' };
-      }
-      if (firecrawlApiKey && firecrawlApiKey !== 'fc-...') {
-        await saveCredential('firecrawl', {
-          provider: 'firecrawl',
-          apiKey: firecrawlApiKey as string,
-          createdAt: new Date().toISOString(),
-        });
-        config.firecrawl = { apiKeyRef: 'credential:firecrawl' };
-      }
-      
-      await saveConfig(config);
-      s2.stop('Configuration saved!');
-      
-      // Initialize database
-      const s3 = spinner();
-      s3.start('Initializing database...');
-      initDatabase();
-      await runMigrations();
-      s3.stop('Database ready!');
-      
-      console.log(chalk.dim('\n💡 Tip: Start chatting and tell FoxFang about your brand/project.'));
-      console.log(chalk.dim('   Example: "I need to create a marketing campaign for my coffee shop"'));
-      
-      // Setup channels immediately if requested
-      if (!isCancel(setupChannels) && setupChannels === true) {
-        console.log(chalk.dim('\n--- Channel Setup ---\n'));
-        await runChannelSetupWizard(config);
-      }
-      
-      // Setup GitHub integration
-      console.log(chalk.dim('\n--- GitHub Integration ---\n'));
-      const connectGitHub = await confirm({
-        message: 'Connect GitHub now? (can be done later via chat)',
-        initialValue: false,
-      });
-      
-      if (!isCancel(connectGitHub) && connectGitHub === true) {
-        const s4 = spinner();
-        s4.start('Starting GitHub OAuth flow...');
-        
-        try {
-          const { authUrl, waitForCallback } = await startGitHubOAuthFlow();
-          s4.stop('OAuth server ready!');
-          
-          // Open browser
-          const openCommand = process.platform === 'darwin' ? 'open' : 
-                             process.platform === 'win32' ? 'start' : 'xdg-open';
-          require('child_process').spawn(openCommand, [authUrl], { detached: true, stdio: 'ignore' }).unref();
-          
-          console.log(chalk.blue('\nBrowser opened for GitHub authorization.'));
-          console.log(chalk.dim('If browser does not open, visit: ' + authUrl));
-          
-          const s5 = spinner();
-          s5.start('Waiting for authorization...');
-          
-          const token = await waitForCallback();
-          s5.stop(chalk.green(`✓ GitHub connected as ${token.username || 'unknown'}!`));
-          
-          // Force event loop to continue
-          await new Promise(resolve => setImmediate(resolve));
-        } catch (error) {
-          s4.stop('GitHub connection failed');
-          console.log(chalk.yellow(`⚠ Could not complete GitHub connection: ${error instanceof Error ? error.message : String(error)}`));
-          console.log(chalk.dim('You can connect later by saying "Connect GitHub" in chat'));
-        }
-      } else {
-        console.log(chalk.dim('Skipped — say "Connect GitHub" in chat anytime to connect'));
-      }
-      
-      // Print helpful tips after setup
-      printSetupTips(configuredProviders.map((p: any) => p.id));
-    });
+    .action(runSetupWizard);
 
   wizard
     .command('providers')
@@ -475,6 +167,319 @@ export async function registerWizardCommand(program: Command): Promise<void> {
       
       outro(chalk.green(`${channel} configured!`));
     });
+}
+
+async function runSetupWizard() {
+  intro(chalk.cyan('FoxFang Setup Wizard 🦊'));
+  
+  console.log(chalk.dim('Let\'s configure your FoxFang installation.\n'));
+  
+  // Bootstrap ~/.foxfang/ directory
+  const s = spinner();
+  s.start('Creating FoxFang home directory...');
+  await bootstrapFoxFang();
+  s.stop('FoxFang home directory ready!');
+  
+  const config = await loadConfig();
+  
+  // ===== PROVIDER SETUP =====
+  console.log(chalk.dim('\n📡 AI Provider Setup\n'));
+  console.log(chalk.dim('Select the AI providers you want to use.\n'));
+  
+  const selectedProviderIds = await multiselect({
+    message: 'Select providers to configure:',
+    options: AVAILABLE_PROVIDERS.map(p => ({
+      value: p.id,
+      label: p.name,
+      hint: p.hint,
+    })),
+    required: true,
+  }) as string[];
+  
+  if (isCancel(selectedProviderIds) || selectedProviderIds.length === 0) {
+    outro(chalk.yellow('Setup cancelled. Please select at least one provider.'));
+    return;
+  }
+  
+  // Configure each selected provider
+  const configuredProviders: any[] = [];
+  
+  for (const providerId of selectedProviderIds) {
+    const providerMeta = AVAILABLE_PROVIDERS.find(p => p.id === providerId)!;
+    
+    console.log(chalk.dim(`\n--- ${providerMeta.name} ---`));
+    
+    // For Ollama, no API key needed
+    let apiKey = '';
+    if (providerId !== 'ollama') {
+      const keyResult = await text({
+        message: `${providerMeta.name} API Key:`,
+        placeholder: providerMeta.apiKeyPlaceholder,
+        validate: (value) => {
+          if (!value || value.trim() === '') {
+            return 'API key is required (or press Ctrl+C to skip this provider)';
+          }
+          if (providerMeta.apiKeyPrefix && providerMeta.apiKeyPrefix !== 'not-needed' && 
+              !value.startsWith(providerMeta.apiKeyPrefix)) {
+            return `API key should start with \"${providerMeta.apiKeyPrefix}\"`;
+          }
+          return undefined;
+        },
+      });
+      
+      if (isCancel(keyResult)) {
+        console.log(chalk.yellow(`⏭ Skipped ${providerMeta.name}`));
+        continue;
+      }
+      apiKey = keyResult as string;
+    } else {
+      console.log(chalk.dim('✓ No API key needed for Ollama (local)'));
+    }
+    
+    // Use default base URL — only prompt for custom/ollama providers
+    let baseUrl = providerMeta.baseUrl;
+    if (providerId === 'custom' || providerId === 'ollama') {
+      const customBaseUrl = await text({
+        message: `${providerMeta.name} Base URL:`,
+        placeholder: providerMeta.baseUrl,
+        defaultValue: providerMeta.baseUrl,
+      });
+
+      if (!isCancel(customBaseUrl) && customBaseUrl) {
+        baseUrl = customBaseUrl as string;
+      }
+    }
+    
+    // Select default model for this provider
+    const selectedModel = await select({
+      message: `Default model for ${providerMeta.name}:`,
+      options: providerMeta.models.map(m => ({ value: m, label: m })),
+      initialValue: providerMeta.models[0],
+    }) as string;
+    
+    // Save API key to credentials store (keychain or encrypted file)
+    await saveCredential(providerId, {
+      provider: providerId,
+      apiKey: apiKey as string,
+      baseUrl: baseUrl,
+      headers: providerId === 'kimi-coding' ? { 'User-Agent': 'claude-code/0.1.0' } : undefined,
+      apiType: providerId === 'kimi-coding' ? 'anthropic-messages' : undefined,
+      createdAt: new Date().toISOString(),
+    });
+    
+    // Config to save in foxfang.json (no API key)
+    const providerConfig: any = {
+      id: providerId,
+      name: providerMeta.name,
+      baseUrl: baseUrl,
+      defaultModel: selectedModel,
+      enabled: true,
+    };
+    
+    // Add special config for Kimi Coding (headers + apiType)
+    if (providerId === 'kimi-coding') {
+      providerConfig.headers = { 'User-Agent': 'claude-code/0.1.0' };
+      providerConfig.apiType = 'anthropic-messages';
+    }
+    
+    // Show keychain status
+    const keychainStatus = isKeychainAvailable() 
+      ? 'OS keychain' 
+      : 'encrypted file';
+    console.log(chalk.dim(`  API key saved to ${keychainStatus}`));
+    
+    configuredProviders.push(providerConfig);
+    
+    console.log(chalk.green(`✓ ${providerMeta.name} configured`));
+  }
+  
+  if (configuredProviders.length === 0) {
+    outro(chalk.red('No providers configured. Please run setup again.'));
+    return;
+  }
+  
+  // Select default provider (only if multiple providers configured)
+  let defaultProvider: string;
+  let defaultProviderConfig: any;
+  
+  if (configuredProviders.length === 1) {
+    // Auto-select the only provider as default
+    defaultProvider = configuredProviders[0].id;
+    defaultProviderConfig = configuredProviders[0];
+    console.log(chalk.dim(`\nUsing ${defaultProviderConfig.name} as default provider`));
+  } else {
+    // Ask user to select default when multiple providers
+    defaultProvider = await select({
+      message: 'Select your default provider:',
+      options: configuredProviders.map(p => ({
+        value: p.id,
+        label: p.name,
+        hint: p.defaultModel,
+      })),
+      initialValue: configuredProviders[0].id,
+    }) as string;
+    defaultProviderConfig = configuredProviders.find(p => p.id === defaultProvider)!;
+  }
+  
+  // Workspace
+  const workspaceDir = await text({
+    message: 'Workspace directory:',
+    placeholder: '~/.foxfang',
+    defaultValue: config.workspace?.homeDir || '~/.foxfang',
+  });
+  
+  // Daemon
+  const enableDaemon = await confirm({
+    message: 'Enable background daemon?',
+    initialValue: true,
+  });
+  
+  // Check for old API keys in config and offer migration
+  const hasOldApiKeys = config.providers?.some((p: any) => p.apiKey) || 
+                        config.channels?.telegram?.botToken ||
+                        config.channels?.discord?.botToken ||
+                        config.channels?.slack?.botToken;
+  
+  if (hasOldApiKeys) {
+    console.log(chalk.yellow('\n⚠️  Security Update: API keys detected in config file'));
+    console.log(chalk.dim('   FoxFang now stores API keys securely in OS keychain or encrypted file.\n'));
+    
+    const shouldMigrate = await confirm({
+      message: 'Migrate existing API keys to secure storage?',
+      initialValue: true,
+    });
+    
+    if (!isCancel(shouldMigrate) && shouldMigrate === true) {
+      const sMigrate = spinner();
+      sMigrate.start('Migrating API keys to secure storage...');
+      const migrated = await migrateFromConfig(config);
+      await saveConfig(config);
+      sMigrate.stop(`Migrated ${migrated.length} API key(s) to secure storage`);
+    }
+  }
+  
+  // Optional API Keys for research tools
+  console.log(chalk.dim('\n💡 Optional: Add API keys for enhanced research tools\n'));
+  console.log(chalk.dim('   Press Enter to skip - these are completely optional.\n'));
+  
+  const braveApiKey = await text({
+    message: 'Brave Search API Key (optional - for high-quality search):',
+    placeholder: 'BS-...',
+    defaultValue: config.braveSearch?.apiKey || '',
+  });
+  
+  const firecrawlApiKey = await text({
+    message: 'Firecrawl API Key (optional - for advanced web scraping):',
+    placeholder: 'fc-...',
+    defaultValue: config.firecrawl?.apiKey || '',
+  });
+  
+  // Channels
+  const setupChannels = await confirm({
+    message: 'Setup messaging channels (Telegram, Discord, Signal, Slack)?',
+    initialValue: false,
+  });
+  
+  const s2 = spinner();
+  s2.start('Saving configuration...');
+  
+  // Update config
+  config.defaultProvider = defaultProvider;
+  config.defaultModel = defaultProviderConfig.defaultModel;
+  config.workspace = { homeDir: workspaceDir as string };
+  config.daemon = { enabled: enableDaemon as boolean, port: 8787, host: '127.0.0.1' };
+  
+  // Merge new providers with existing
+  if (!config.providers) config.providers = [];
+  
+  for (const provider of configuredProviders) {
+    const existingIndex = config.providers.findIndex((p: any) => p.id === provider.id);
+    if (existingIndex >= 0) {
+      config.providers[existingIndex] = provider;
+    } else {
+      config.providers.push(provider);
+    }
+  }
+  
+  // Save optional API keys to credentials store
+  if (braveApiKey && braveApiKey !== 'BS-...') {
+    await saveCredential('brave-search', {
+      provider: 'brave-search',
+      apiKey: braveApiKey as string,
+      createdAt: new Date().toISOString(),
+    });
+    config.braveSearch = { apiKeyRef: 'credential:brave-search' };
+  }
+  if (firecrawlApiKey && firecrawlApiKey !== 'fc-...') {
+    await saveCredential('firecrawl', {
+      provider: 'firecrawl',
+      apiKey: firecrawlApiKey as string,
+      createdAt: new Date().toISOString(),
+    });
+    config.firecrawl = { apiKeyRef: 'credential:firecrawl' };
+  }
+  
+  await saveConfig(config);
+  s2.stop('Configuration saved!');
+  
+  // Initialize database
+  const s3 = spinner();
+  s3.start('Initializing database...');
+  initDatabase();
+  await runMigrations();
+  s3.stop('Database ready!');
+  
+  console.log(chalk.dim('\n💡 Tip: Start chatting and tell FoxFang about your brand/project.'));
+  console.log(chalk.dim('   Example: \"I need to create a marketing campaign for my coffee shop\"'));
+  
+  // Setup channels immediately if requested
+  if (!isCancel(setupChannels) && setupChannels === true) {
+    console.log(chalk.dim('\n--- Channel Setup ---\n'));
+    await runChannelSetupWizard(config);
+  }
+  
+  // Setup GitHub integration
+  console.log(chalk.dim('\n--- GitHub Integration ---\n'));
+  const connectGitHub = await confirm({
+    message: 'Connect GitHub now? (can be done later via chat)',
+    initialValue: false,
+  });
+  
+  if (!isCancel(connectGitHub) && connectGitHub === true) {
+    const s4 = spinner();
+    s4.start('Starting GitHub OAuth flow...');
+    
+    try {
+      const { authUrl, waitForCallback } = await startGitHubOAuthFlow();
+      s4.stop('OAuth server ready!');
+      
+      // Open browser
+      const openCommand = process.platform === 'darwin' ? 'open' : 
+                         process.platform === 'win32' ? 'start' : 'xdg-open';
+      require('child_process').spawn(openCommand, [authUrl], { detached: true, stdio: 'ignore' }).unref();
+      
+      console.log(chalk.blue('\nBrowser opened for GitHub authorization.'));
+      console.log(chalk.dim('If browser does not open, visit: ' + authUrl));
+      
+      const s5 = spinner();
+      s5.start('Waiting for authorization...');
+      
+      const token = await waitForCallback();
+      s5.stop(chalk.green(`✓ GitHub connected as ${token.username || 'unknown'}!`));
+      
+      // Force event loop to continue
+      await new Promise(resolve => setImmediate(resolve));
+    } catch (error) {
+      s4.stop('GitHub connection failed');
+      console.log(chalk.yellow(`⚠ Could not complete GitHub connection: ${error instanceof Error ? error.message : String(error)}`));
+      console.log(chalk.dim('You can connect later by saying \"Connect GitHub\" in chat'));
+    }
+  } else {
+    console.log(chalk.dim('Skipped — say \"Connect GitHub\" in chat anytime to connect'));
+  }
+  
+  // Print helpful tips after setup
+  printSetupTips(configuredProviders.map((p: any) => p.id));
 }
 
 async function addProvider(config: any) {
@@ -774,7 +779,7 @@ async function setupSignal() {
 /**
  * Run channel setup wizard inline (called during initial setup)
  */
-async function runChannelSetupWizard(config: any) {
+export async function runChannelSetupWizard(_config?: any) {
   const { isCancel } = await import('@clack/prompts');
   
   let continueSetup = true;

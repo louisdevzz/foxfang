@@ -36,13 +36,14 @@ pnpm install
 pnpm run build
 
 # Run the setup wizard
-pnpm foxfang wizard setup
+pnpm foxfang onboard
+# Alias: pnpm foxfang wizard setup
 ```
 
-The wizard will guide you through:
+The onboard wizard will guide you through:
 1. Setting up your AI provider API keys
-2. Configuring channels (optional)
-3. Creating your first project
+2. Choosing a default provider/model
+3. Optionally configuring channels and GitHub
 
 ### Usage
 
@@ -53,17 +54,17 @@ pnpm foxfang chat
 # Run a single task
 pnpm foxfang run "Create a LinkedIn post about AI trends"
 
-# Manage the daemon (background service)
-pnpm foxfang daemon install              # Install as system service
-pnpm foxfang daemon start                # Start service
-pnpm foxfang daemon stop                 # Stop service
-pnpm foxfang daemon restart              # Restart service
-pnpm foxfang daemon status               # Check service status
-pnpm foxfang daemon logs                 # View service logs
-pnpm foxfang daemon uninstall            # Remove service
+# Manage the gateway (background service)
+pnpm foxfang gateway install              # Install as system service
+pnpm foxfang gateway start                # Start service
+pnpm foxfang gateway stop                 # Stop service
+pnpm foxfang gateway restart              # Restart service
+pnpm foxfang gateway status               # Check service status
+pnpm foxfang gateway logs                 # View service logs
+pnpm foxfang gateway uninstall            # Remove service
 
-# Run daemon in foreground (for development)
-pnpm foxfang daemon run
+# Run gateway in foreground (for development)
+pnpm foxfang gateway run
 
 # Check system status
 pnpm foxfang status
@@ -113,13 +114,13 @@ Connect FoxFang to messaging platforms to receive and respond to messages direct
 **Quick Setup:**
 ```bash
 # Setup channel (interactive wizard)
-pnpm foxfang channel setup signal
+pnpm foxfang channels setup
 
 # Run gateway with all configured channels
-pnpm foxfang daemon run
+pnpm foxfang gateway run
 
 # Or specify channels explicitly
-pnpm foxfang daemon run --channels signal,telegram
+pnpm foxfang gateway run --channels signal,telegram
 ```
 
 **Supported Channels:**
@@ -127,9 +128,9 @@ pnpm foxfang daemon run --channels signal,telegram
 | Channel | Service Required | Status |
 |---------|------------------|--------|
 | Signal | signal-cli | ✅ Available |
-| Telegram | Coming soon | ⏳ Planned |
-| Discord | Coming soon | ⏳ Planned |
-| Slack | Coming soon | ⏳ Planned |
+| Telegram | Bot API | ✅ Available |
+| Discord | Bot token | ✅ Available |
+| Slack | Slack app | ✅ Available |
 
 #### Signal Setup (Full Guide)
 
@@ -165,7 +166,7 @@ signal-cli -a +84912345678 daemon --http 127.0.0.1:8686
 **Step 4: Configure FoxFang**
 ```bash
 # Terminal 2: Run setup wizard
-pnpm foxfang channel setup signal
+pnpm foxfang channels setup
 # Enter phone: +84912345678
 # Enter URL: http://127.0.0.1:8686
 ```
@@ -173,7 +174,7 @@ pnpm foxfang channel setup signal
 **Step 5: Run FoxFang Gateway**
 ```bash
 # Terminal 3: Start gateway
-pnpm foxfang daemon run
+pnpm foxfang gateway run
 
 # You should see:
 # [Signal] Connected to http://127.0.0.1:8686 for +84912345678
@@ -195,23 +196,23 @@ Send a message to your Signal number from another phone. FoxFang will:
 
 | Issue | Solution |
 |-------|----------|
-| "Cannot connect to signal-cli" | Make sure daemon is running on correct port |
+| "Cannot connect to signal-cli" | Make sure the signal-cli daemon is running on the correct port |
 | "Not receiving messages" | Check `signal-cli receive` works manually |
 | "Permission denied" | Run with `--config` flag to specify config location |
 
 **Install as System Service (auto-start):**
 ```bash
-# Install daemon with Signal support
-pnpm foxfang daemon install --channels signal
+# Install gateway service with Signal support
+pnpm foxfang gateway install --channels signal
 
 # Start the service
-pnpm foxfang daemon start
+pnpm foxfang gateway start
 
 # Check logs
-pnpm foxfang daemon logs
+pnpm foxfang gateway logs
 
 # View status
-pnpm foxfang daemon status
+pnpm foxfang gateway status
 ```
 
 ### 🧠 Memory
@@ -220,7 +221,7 @@ FoxFang remembers your preferences and past work:
 
 ```bash
 # Store important information
-pnpm foxfang memory store "Brand voice: casual, helpful, no jargon"
+pnpm foxfang memory add --content "Brand voice: casual, helpful, no jargon" --type note
 
 # Recall when needed
 pnpm foxfang memory search "brand voice"
@@ -230,7 +231,7 @@ pnpm foxfang memory search "brand voice"
 
 ## Architecture
 
-FoxFang follows a modular agent architecture with optional gateway daemon:
+FoxFang follows a modular agent architecture with an optional gateway service:
 
 **Local Mode:**
 ```
@@ -252,7 +253,7 @@ FoxFang follows a modular agent architecture with optional gateway daemon:
 └───────┘ └───────┘ └───────┘
 ```
 
-**Daemon Mode (with Channels):**
+**Gateway Mode (with Channels):**
 ```
 ┌──────────┐  ┌──────────┐  ┌──────────┐
 │ Signal   │  │Telegram  │  │ Discord  │
@@ -292,13 +293,13 @@ FoxFang uses a setup wizard to configure everything. No `.env` files needed!
 
 ```bash
 # Run the wizard to setup API keys and preferences
-pnpm foxfang wizard setup
+pnpm foxfang onboard
 ```
 
 The wizard will:
-1. Ask for your AI provider API key (OpenAI, Anthropic, or Kimi)
-2. Configure optional channels (Telegram, Discord, etc.)
-3. Set your preferences
+1. Ask for your AI provider API keys (OpenAI, Anthropic, Kimi, OpenRouter, Ollama, or custom)
+2. Configure optional channels (Telegram, Discord, Slack, Signal)
+3. Set your preferences (default provider/model, workspace, daemon)
 
 All data is stored in `~/.foxfang/foxfang.json` — no environment variables needed.
 
@@ -310,13 +311,13 @@ All data is stored in `~/.foxfang/foxfang.json` — no environment variables nee
 |---------|-------------|
 | `pnpm foxfang chat` | Start interactive chat session |
 | `pnpm foxfang run <message>` | Execute a single task |
-| `pnpm foxfang daemon start` | Start background daemon |
-| `pnpm foxfang daemon stop` | Stop background daemon |
+| `pnpm foxfang gateway start` | Start background gateway service |
+| `pnpm foxfang gateway stop` | Stop background gateway service |
 | `pnpm foxfang channels list` | Show configured channels |
 | `pnpm foxfang channels enable <name>` | Enable a channel |
 | `pnpm foxfang memory list` | Show stored memories |
 | `pnpm foxfang memory search <query>` | Search memories |
-| `pnpm foxfang wizard setup` | Run setup wizard |
+| `pnpm foxfang onboard` | Run setup wizard |
 | `pnpm foxfang status` | Show system status |
 | `pnpm foxfang config edit` | Edit configuration |
 

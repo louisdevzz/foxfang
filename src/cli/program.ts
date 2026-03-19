@@ -54,8 +54,9 @@ export async function buildProgram(): Promise<Command> {
 ${chalk.cyan('Examples:')}
   ${chalk.dim('$')} foxfang run "Create a marketing campaign for Q4"
   ${chalk.dim('$')} foxfang chat --agent content-specialist
-  ${chalk.dim('$')} foxfang daemon start
-  ${chalk.dim('$')} foxfang wizard setup
+  ${chalk.dim('$')} foxfang gateway start
+  ${chalk.dim('$')} foxfang onboard
+  ${chalk.dim('$')} foxfang channels setup
   ${chalk.dim('$')} foxfang channels telegram send --message "Hello"
   ${chalk.dim('$')} foxfang github login
   ${chalk.dim('$')} foxfang github issue create --repo owner/repo --title "[Feature]: Add new feature"

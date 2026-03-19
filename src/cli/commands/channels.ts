@@ -10,6 +10,7 @@ import { DiscordChannel } from '../../channels/discord/channel';
 import { SlackChannel } from '../../channels/slack/channel';
 import { SignalChannel } from '../../channels/signal/channel';
 import ora from 'ora';
+import { runChannelSetupWizard } from './wizard';
 
 export async function registerChannelsCommand(program: Command): Promise<void> {
   const channels = program
@@ -39,6 +40,13 @@ export async function registerChannelsCommand(program: Command): Promise<void> {
       
       console.log();
       console.log(chalk.dim('Use "foxfang channels <name> send" to send messages'));
+    });
+
+  channels
+    .command('setup')
+    .description('Run channel setup wizard')
+    .action(async () => {
+      await runChannelSetupWizard();
     });
 
   // Telegram subcommand

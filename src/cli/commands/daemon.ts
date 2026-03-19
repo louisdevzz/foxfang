@@ -11,6 +11,7 @@ import { join } from 'path';
 export async function registerDaemonCommand(program: Command): Promise<void> {
   const daemonCmd = program
     .command('daemon')
+    .alias('gateway')
     .description('Manage FoxFang Gateway daemon');
 
   // daemon install
