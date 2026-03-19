@@ -836,62 +836,14 @@ async function runChannelSetupWizard(config: any) {
  * Print helpful tips after setup completion
  */
 function printSetupTips(providerIds: string[]) {
-  console.log(chalk.cyan('\n╔════════════════════════════════════════════════════════╗'));
-  console.log(chalk.cyan('║              🦊 FoxFang Setup Complete!                ║'));
-  console.log(chalk.cyan('╚════════════════════════════════════════════════════════╝\n'));
-  
-  // Quick start commands
-  console.log(chalk.bold('📚 Quick Start Commands:\n'));
-  console.log(chalk.dim('  Start chatting:'));
-  console.log(chalk.green('    pnpm foxfang chat\n'));
-  
-  console.log(chalk.dim('  Run a single task:'));
-  console.log(chalk.green('    pnpm foxfang run "Create a marketing campaign for Q4"\n'));
-  
-  console.log(chalk.dim('  Check status:'));
-  console.log(chalk.green('    pnpm foxfang status\n'));
-  
-  console.log(chalk.dim('  Start daemon (for channels):'));
-  console.log(chalk.green('    pnpm foxfang daemon run\n'));
-  
-  console.log(chalk.dim('  Install daemon as service:'));
-  console.log(chalk.green('    pnpm foxfang daemon install\n'));
-  
-  // Provider-specific tips
-  if (providerIds.length > 0) {
-    console.log(chalk.bold('🤖 Your AI Providers:\n'));
-    providerIds.forEach(id => {
-      const name = AVAILABLE_PROVIDERS.find(p => p.id === id)?.name || id;
-      console.log(chalk.dim(`  • ${name} is ready to use`));
-    });
-    console.log();
-  }
-  
-  // What you can do
-  console.log(chalk.bold('✨ What You Can Do:\n'));
-  console.log(chalk.dim('  • Create brands and marketing campaigns'));
-  console.log(chalk.dim('  • Generate content for social media'));
-  console.log(chalk.dim('  • Research competitors and trends'));
-  console.log(chalk.dim('  • Schedule and manage tasks'));
+  const providers = providerIds.map(id => AVAILABLE_PROVIDERS.find(p => p.id === id)?.name || id);
+
+  console.log(chalk.green.bold('\n  🦊 FoxFang is ready!\n'));
+  console.log(chalk.dim(`  Providers: ${providers.join(', ')}`));
   console.log();
-  
-  // Example prompts
-  console.log(chalk.bold('💡 Example Prompts:\n'));
-  console.log(chalk.yellow('  "Create a brand for my coffee shop"'));
-  console.log(chalk.yellow('  "Write a LinkedIn post about AI trends"'));
-  console.log(chalk.yellow('  "Research competitors in the fitness industry"'));
-  console.log(chalk.yellow('  "Plan a content calendar for next month"'));
+  console.log(`  ${chalk.green('pnpm foxfang chat')}            ${chalk.dim('Start chatting')}`);
+  console.log(`  ${chalk.green('pnpm foxfang run "..."')}       ${chalk.dim('Run a single task')}`);
+  console.log(`  ${chalk.green('pnpm foxfang daemon run')}      ${chalk.dim('Start channels daemon')}`);
+  console.log(`  ${chalk.green('pnpm foxfang --help')}          ${chalk.dim('All commands')}`);
   console.log();
-  
-  // Help & docs
-  console.log(chalk.bold('📖 Need Help?\n'));
-  console.log(chalk.dim('  Documentation:'));
-  console.log(chalk.blue('    cat ~/.foxfang/AGENT.md\n'));
-  console.log(chalk.dim('  Tool capabilities:'));
-  console.log(chalk.blue('    cat ~/.foxfang/TOOL.md\n'));
-  console.log(chalk.dim('  All commands:'));
-  console.log(chalk.green('    pnpm foxfang --help\n'));
-  
-  console.log(chalk.dim('─'.repeat(60)));
-  console.log(chalk.green.bold('  Your FoxFang is ready! 🦊\n'));
 }
