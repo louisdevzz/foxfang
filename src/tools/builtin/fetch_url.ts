@@ -18,14 +18,14 @@ export interface FetchUrlResult {
 
 export class FetchUrlTool implements Tool {
   name = 'fetch_url';
-  description = 'Fetch and extract content from a website URL. No API key needed. Returns clean article text, title, and links.';
+  description = 'Fetch and extract content from a website URL. CRITICAL: Call this immediately when user shares any website URL (except x.com/twitter.com). No API key needed. Returns clean article text, title, and links.';
   category = ToolCategory.EXTERNAL;
   parameters = {
     type: 'object' as const,
     properties: {
       url: { 
         type: 'string', 
-        description: 'Website URL to fetch (e.g., https://example.com/article)' 
+        description: 'Website URL to fetch (e.g., https://example.com/article). Must be a valid HTTP/HTTPS URL.' 
       },
       maxLength: { 
         type: 'number', 

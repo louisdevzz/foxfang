@@ -9,6 +9,7 @@ Welcome to the FoxFang documentation!
 ## Getting Started
 
 1. **Installation**: Clone the repo and run `pnpm install`
+2. **Build the project**: `pnpm run build`
 2. **Setup**: Run `pnpm foxfang wizard setup`
 3. **Chat**: Start with `pnpm foxfang chat`
 

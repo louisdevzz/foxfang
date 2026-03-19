@@ -31,23 +31,23 @@ export interface TweetData {
 
 export class FetchTweetTool implements Tool {
   name = 'fetch_tweet';
-  description = 'Fetch a tweet from X/Twitter by URL. No API key needed. Note: FxTwitter API availability varies, some tweets may not be accessible.';
+  description = 'Fetch a tweet from X/Twitter by URL. CRITICAL: Call this immediately when user shares any x.com or twitter.com URL. No API key needed. Note: FxTwitter API availability varies, some tweets may not be accessible.';
   category = ToolCategory.EXTERNAL;
   parameters = {
     type: 'object' as const,
     properties: {
       url: { 
         type: 'string', 
-        description: 'Tweet URL (e.g., https://x.com/username/status/123456789)' 
+        description: 'Tweet URL (e.g., https://x.com/username/status/123456789). Must be a valid x.com or twitter.com URL.' 
       },
     },
     required: ['url'],
   };
 
-  async execute(args: { url: string }): Promise<{ success: boolean; tweet?: TweetData; error?: string }> {
+  async execute(args: { url: string }): Promise<{ success: boolean; data?: TweetData; error?: string }> {
     try {
       const tweetData = await fetchTweet(args.url);
-      return { success: true, tweet: tweetData };
+      return { success: true, data: tweetData };
     } catch (error) {
       return { 
         success: false, 
@@ -79,7 +79,7 @@ export class FetchUserTweetsTool implements Tool {
 
   async execute(args: { username: string; limit?: number }): Promise<{ 
     success: boolean; 
-    tweets?: TweetData[]; 
+    data?: TweetData[]; 
     error?: string 
   }> {
     try {
@@ -88,7 +88,7 @@ export class FetchUserTweetsTool implements Tool {
       
       // Fetch from FxTwitter RSS feed
       const tweets = await fetchUserTweets(username, limit);
-      return { success: true, tweets };
+      return { success: true, data: tweets };
     } catch (error) {
       return { 
         success: false, 

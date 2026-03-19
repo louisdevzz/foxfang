@@ -48,22 +48,29 @@ export class KimiCodingProvider implements Provider {
     };
   }
 
-  private transformMessages(messages: Array<{role: string; content: string}>): Array<{role: string; content: string}> {
-    // Kimi Coding uses Anthropic format which is compatible with OpenAI format
-    // but may need role mapping
-    return messages.map(m => ({
-      role: m.role === 'system' ? 'user' : m.role, // Anthropic doesn't have system role
-      content: m.content,
-    }));
+  private transformMessages(messages: Array<{role: string; content: string}>): { system?: string; messages: Array<{role: string; content: string}> } {
+    // Kimi Coding uses Anthropic format - system should be separate parameter
+    const systemMessage = messages.find(m => m.role === 'system');
+    const otherMessages = messages.filter(m => m.role !== 'system');
+    
+    return {
+      system: systemMessage?.content,
+      messages: otherMessages.map(m => ({
+        role: m.role,
+        content: m.content,
+      })),
+    };
   }
 
   async chat(request: ChatRequest): Promise<ChatResponse> {
+    const { system, messages } = this.transformMessages(request.messages);
     const response = await fetch(`${this.baseUrl}/v1/messages`, {
       method: 'POST',
       headers: this.getHeaders(),
       body: JSON.stringify({
         model: request.model || 'kimi-code',
-        messages: this.transformMessages(request.messages),
+        ...(system && { system }),
+        messages,
         max_tokens: 4096,
         tools: request.tools?.map(t => ({
           name: t.name,
@@ -83,6 +90,17 @@ export class KimiCodingProvider implements Provider {
       completion?: string;
       usage?: { input_tokens?: number; output_tokens?: number };
     };
+    
+    // Debug: log request and response
+    console.log(`[KimiCoding] Request:`, JSON.stringify({
+      model: request.model || 'kimi-code',
+      system: system?.substring(0, 200) + '...',
+      messagesCount: messages.length,
+      toolsCount: request.tools?.length || 0,
+      tools: request.tools?.map(t => t.name),
+    }));
+    console.log(`[KimiCoding] Response content types:`, data.content?.map(c => c.type).join(', '));
+    console.log(`[KimiCoding] Tool uses found:`, data.content?.filter(c => c.type === 'tool_use').length || 0);
     
     const result: ChatResponse = {
       content: data.content?.find(c => c.type === 'text')?.text || 
@@ -108,12 +126,14 @@ export class KimiCodingProvider implements Provider {
   }
 
   async *chatStream(request: ChatRequest): AsyncIterable<StreamChunk> {
+    const { system, messages } = this.transformMessages(request.messages);
     const response = await fetch(`${this.baseUrl}/v1/messages`, {
       method: 'POST',
       headers: this.getHeaders(),
       body: JSON.stringify({
         model: request.model || 'kimi-code',
-        messages: this.transformMessages(request.messages),
+        ...(system && { system }),
+        messages,
         max_tokens: 4096,
         tools: request.tools?.map(t => ({
           name: t.name,

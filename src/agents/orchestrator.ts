@@ -11,7 +11,7 @@ import { SessionManager } from '../sessions/manager';
 import { toolRegistry } from '../tools/index';
 import { buildContext } from '../context-engine';
 import { storeMemory } from '../memory/database';
-import { understandLinks } from '../link-understanding';
+// import { understandLinks } from '../link-understanding'; // Disabled - let agent use tools directly
 import { WorkspaceManager } from '../workspace/manager';
 
 export class AgentOrchestrator {
@@ -64,19 +64,19 @@ export class AgentOrchestrator {
       }));
     }
     
-    // Detect and fetch content from any links in the user's message (best-effort)
+    // DISABLED: Link pre-fetching - let agent use tools directly
+    // This ensures agent learns to call tools when user shares URLs
     let enhancedMessage = request.message;
+    
+    // Add hint for URLs to encourage tool usage
     if (request.message) {
-      try {
-        const linkResult = await understandLinks(request.message);
-        if (linkResult.hasLinks) {
-          // Append link context to user's message
-          enhancedMessage = `${request.message}\n\n${linkResult.context}`;
-        }
-      } catch {
-        // Link understanding is best-effort — fall back to original message
-        // so a fetch failure never blocks the user's actual request
-        enhancedMessage = request.message;
+      const hasUrl = /https?:\/\/[^\s]+/.test(request.message);
+      const hasTwitterUrl = /https?:\/\/(x\.com|twitter\.com)[^\s]*/.test(request.message);
+      
+      if (hasTwitterUrl) {
+        enhancedMessage = request.message + '\n\n[Note: Use fetch_tweet tool to read this tweet]';
+      } else if (hasUrl) {
+        enhancedMessage = request.message + '\n\n[Note: Use fetch_url tool to read this URL]';
       }
     }
 

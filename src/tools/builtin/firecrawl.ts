@@ -105,7 +105,7 @@ export class FirecrawlSearchTool implements Tool {
     includeContent?: boolean;
   }): Promise<{ 
     success: boolean; 
-    results?: FirecrawlSearchResult[]; 
+    data?: FirecrawlSearchResult[]; 
     error?: string 
   }> {
     const config = getFirecrawlConfig();
@@ -125,7 +125,7 @@ export class FirecrawlSearchTool implements Tool {
         Math.min(args.limit || 5, 10),
         args.includeContent !== false
       );
-      return { success: true, results };
+      return { success: true, data: results };
     } catch (error) {
       return { 
         success: false, 

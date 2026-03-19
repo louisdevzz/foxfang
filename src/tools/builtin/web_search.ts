@@ -35,12 +35,12 @@ export class WebSearchTool implements Tool {
 
   async execute(args: { query: string; limit?: number }): Promise<{ 
     success: boolean; 
-    results?: SearchResult[]; 
+    data?: SearchResult[]; 
     error?: string 
   }> {
     try {
       const results = await searchSearx(args.query, Math.min(args.limit || 5, 10));
-      return { success: true, results };
+      return { success: true, data: results };
     } catch (error) {
       return { 
         success: false, 
