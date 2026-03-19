@@ -83,6 +83,7 @@ const BACKOFF_CONFIG = {
 
 export class DiscordAdapter implements ChannelAdapter {
   readonly name = 'discord';
+  readonly supportsEditing = true;
   connected = false;
   private botToken: string = '';
   private baseUrl: string = 'https://discord.com/api/v10';
@@ -155,7 +156,7 @@ export class DiscordAdapter implements ChannelAdapter {
     console.log('[Discord] Disconnected');
   }
 
-  async send(to: string, content: string, options?: { replyToMessageId?: string; threadId?: string }): Promise<void> {
+  async send(to: string, content: string, options?: { replyToMessageId?: string; threadId?: string }): Promise<string> {
     if (!this.connected) {
       throw new Error('Discord not connected');
     }
@@ -171,10 +172,43 @@ export class DiscordAdapter implements ChannelAdapter {
 
       // Use thread ID as the endpoint if provided
       const channelId = options?.threadId || to;
-      await this.apiCall(`channels/${channelId}/messages`, 'POST', body);
+      const result = await this.apiCall<{ id: string }>(`channels/${channelId}/messages`, 'POST', body);
+      return result.id;
     } catch (error) {
       console.error('[Discord] Failed to send message:', error);
       throw error;
+    }
+  }
+  
+  /**
+   * Edit a Discord message
+   */
+  async edit(messageId: string, newContent: string, to?: string): Promise<boolean> {
+    if (!this.connected || !to) return false;
+    
+    try {
+      await this.apiCall(`channels/${to}/messages/${messageId}`, 'PATCH', {
+        content: newContent,
+      });
+      return true;
+    } catch (error) {
+      console.error('[Discord] Failed to edit message:', error);
+      return false;
+    }
+  }
+  
+  /**
+   * Delete a Discord message
+   */
+  async delete(messageId: string, to?: string): Promise<boolean> {
+    if (!this.connected || !to) return false;
+    
+    try {
+      await this.apiCall(`channels/${to}/messages/${messageId}`, 'DELETE');
+      return true;
+    } catch (error) {
+      console.error('[Discord] Failed to delete message:', error);
+      return false;
     }
   }
 

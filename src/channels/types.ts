@@ -21,6 +21,9 @@ export interface ChannelAdapter {
   readonly name: string;
   readonly connected: boolean;
   
+  /** Whether this channel supports editing messages */
+  readonly supportsEditing: boolean;
+  
   /** Connect to channel (start listening) */
   connect(): Promise<void>;
   
@@ -30,8 +33,26 @@ export interface ChannelAdapter {
   /** 
    * Send message to channel
    * Options can include replyToMessageId and threadId for channels that support them
+   * @returns The message ID if available
    */
-  send(to: string, content: string, options?: { replyToMessageId?: string; threadId?: string }): Promise<void>;
+  send(to: string, content: string, options?: { replyToMessageId?: string; threadId?: string }): Promise<string | void>;
+
+  /**
+   * Edit an existing message
+   * @param messageId - The ID of the message to edit
+   * @param newContent - The new content
+   * @param to - The recipient (required for Signal)
+   * @returns true if edit was successful
+   */
+  edit?(messageId: string, newContent: string, to?: string): Promise<boolean>;
+
+  /**
+   * Delete/unsend a message
+   * @param messageId - The ID of the message to delete
+   * @param to - The recipient (required for Signal)
+   * @returns true if deletion was successful
+   */
+  delete?(messageId: string, to?: string): Promise<boolean>;
   
   /** 
    * Show typing indicator (if supported by channel)

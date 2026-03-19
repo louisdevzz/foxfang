@@ -163,6 +163,138 @@ export async function registerChannelsCommand(program: Command): Promise<void> {
       await channel.sendMessage(options.number, options.message);
       console.log(chalk.green('✓ Message sent'));
     });
+  
+  signal
+    .command('edit')
+    .description('Edit a previously sent Signal message (delete + resend)')
+    .requiredOption('-n, --number <phone>', 'Recipient phone number')
+    .requiredOption('-t, --timestamp <timestamp>', 'Original message timestamp (from send output)')
+    .requiredOption('-m, --message <text>', 'New message text')
+    .action(async (options) => {
+      const config = await loadConfigWithCredentials();
+      
+      if (!config.channels?.signal?.enabled) {
+        console.log(chalk.red('Signal is not configured. Run: foxfang wizard channels'));
+        process.exit(1);
+      }
+      
+      const { SignalAdapter } = await import('../../channels/adapters/signal');
+      const adapter = new SignalAdapter();
+      await adapter.connect();
+      
+      const spinner = ora('Editing message...').start();
+      
+      try {
+        // Signal edit = delete old + send new with ✏️ prefix
+        const success = await adapter.edit(options.timestamp, options.message, options.number);
+        
+        if (success) {
+          spinner.succeed('Message edited (original deleted, new sent with ✏️ prefix)');
+        } else {
+          spinner.fail('Failed to edit message');
+        }
+      } catch (error) {
+        spinner.fail('Edit failed');
+        throw error;
+      } finally {
+        await adapter.disconnect();
+      }
+    });
+  
+  signal
+    .command('delete')
+    .description('Delete a previously sent Signal message')
+    .requiredOption('-n, --number <phone>', 'Recipient phone number')
+    .requiredOption('-t, --timestamp <timestamp>', 'Message timestamp to delete')
+    .action(async (options) => {
+      const config = await loadConfigWithCredentials();
+      
+      if (!config.channels?.signal?.enabled) {
+        console.log(chalk.red('Signal is not configured. Run: foxfang wizard channels'));
+        process.exit(1);
+      }
+      
+      const { SignalAdapter } = await import('../../channels/adapters/signal');
+      const adapter = new SignalAdapter();
+      await adapter.connect();
+      
+      const spinner = ora('Deleting message...').start();
+      
+      try {
+        const success = await adapter.delete(options.timestamp, options.number);
+        
+        if (success) {
+          spinner.succeed('Message deleted');
+        } else {
+          spinner.fail('Failed to delete message (may be too old or already read)');
+        }
+      } catch (error) {
+        spinner.fail('Delete failed');
+        throw error;
+      } finally {
+        await adapter.disconnect();
+      }
+    });
+  
+  signal
+    .command('stream')
+    .description('Stream content to Signal with live editing')
+    .requiredOption('-n, --number <phone>', 'Recipient phone number')
+    .requiredOption('-m, --message <text>', 'Initial message text')
+    .option('-u, --update <text>', 'Update the message with new text')
+    .option('--finalize', 'Finalize the stream')
+    .option('--cancel', 'Cancel and delete the streamed message')
+    .action(async (options) => {
+      const config = await loadConfigWithCredentials();
+      
+      if (!config.channels?.signal?.enabled) {
+        console.log(chalk.red('Signal is not configured. Run: foxfang wizard channels'));
+        process.exit(1);
+      }
+      
+      const { ContentService } = await import('../../content/service');
+      const contentService = new ContentService();
+      
+      const { SignalAdapter } = await import('../../channels/adapters/signal');
+      const adapter = new SignalAdapter();
+      await adapter.connect();
+      contentService.registerChannel(adapter);
+      
+      try {
+        if (options.update) {
+          // Update existing stream or send as new edit
+          console.log(chalk.cyan('Updating message...'));
+          const streamResult = contentService.createStream('signal', options.number);
+          if (streamResult) {
+            streamResult.stream.update(options.update);
+            const messageId = await streamResult.stream.finalize();
+            console.log(chalk.green(`✓ Message updated: ${messageId}`));
+          }
+        } else if (options.finalize) {
+          console.log(chalk.yellow('Use --update to send content, or use send command for simple messages'));
+        } else if (options.cancel) {
+          console.log(chalk.yellow('Stream cancelled'));
+        } else {
+          // Create new stream
+          console.log(chalk.cyan('Creating Signal draft stream...'));
+          const streamResult = contentService.createStream('signal', options.number, {
+            throttleMs: 2000,
+            editPrefix: '✏️ ',
+          });
+          
+          if (streamResult) {
+            streamResult.stream.update(options.message);
+            const messageId = await streamResult.stream.finalize();
+            console.log(chalk.green(`✓ Streamed message sent: ${messageId}`));
+          }
+        }
+      } catch (error) {
+        console.error(chalk.red('Stream failed:'), error);
+        throw error;
+      } finally {
+        await adapter.disconnect();
+      }
+    });
 
   // Enable/disable commands
   channels

@@ -17,11 +17,15 @@ interface SignalSseEvent {
 
 export class SignalAdapter implements ChannelAdapter {
   readonly name = 'signal';
+  readonly supportsEditing = true;
   connected = false;
   private phoneNumber: string = '';
   private httpUrl: string = 'http://127.0.0.1:8686';
   private messageHandler?: (msg: ChannelMessage) => Promise<ChannelResponse | void>;
   private abortController?: AbortController;
+  
+  /** Track sent messages for editing support */
+  private sentMessages: Map<string, { to: string; timestamp: number }> = new Map();
 
   constructor() {}
 
@@ -64,7 +68,7 @@ export class SignalAdapter implements ChannelAdapter {
     console.log('[Signal] Disconnected');
   }
 
-  async send(to: string, content: string, _options?: { replyToMessageId?: string; threadId?: string }): Promise<void> {
+  async send(to: string, content: string, _options?: { replyToMessageId?: string; threadId?: string }): Promise<string> {
     if (!this.connected) {
       throw new Error('Signal not connected');
     }
@@ -72,6 +76,9 @@ export class SignalAdapter implements ChannelAdapter {
     try {
       // Strip markdown for plain text output (Signal doesn't support formatting)
       const plainContent = stripMarkdown(content);
+      
+      // Generate a unique ID for tracking
+      const messageId = Date.now().toString();
 
       // JSON-RPC call to send message
       const response = await fetch(`${this.httpUrl}/api/v1/rpc`, {
@@ -93,9 +100,148 @@ export class SignalAdapter implements ChannelAdapter {
         const errorText = await response.text().catch(() => 'Unknown error');
         throw new Error(`HTTP ${response.status}: ${errorText}`);
       }
+      
+      // Store message for editing support
+      // Note: Signal doesn't return the actual timestamp in response, we use our own ID
+      this.sentMessages.set(messageId, { to, timestamp: Date.now() });
+      
+      return messageId;
     } catch (error) {
       console.error('[Signal] Failed to send message:', error);
       throw error;
+    }
+  }
+  
+  /**
+   * Edit a message by deleting the original and sending a new one
+   * Signal doesn't support native editing, so we use remoteDelete + resend
+   */
+  async edit(messageId: string, newContent: string, to?: string): Promise<boolean> {
+    if (!this.connected) {
+      console.error('[Signal] Not connected');
+      return false;
+    }
+    
+    const sentMsg = this.sentMessages.get(messageId);
+    if (!sentMsg) {
+      console.error(`[Signal] Message ${messageId} not found in sent messages store`);
+      return false;
+    }
+    
+    const recipient = to || sentMsg.to;
+    if (!recipient) {
+      console.error('[Signal] No recipient specified for edit');
+      return false;
+    }
+    
+    try {
+      // First, try to delete the original message using remoteDelete
+      // Note: This only works if the message was sent recently and hasn't been read
+      const deleteResponse = await fetch(`${this.httpUrl}/api/v1/rpc`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          method: 'remoteDelete',
+          params: {
+            account: this.phoneNumber,
+            recipient: [recipient],
+            targetTimestamp: sentMsg.timestamp,
+          },
+          id: Math.random().toString(36).substr(2, 9),
+        }),
+      });
+      
+      // Even if delete fails (e.g., message too old), we still send the edited version
+      if (!deleteResponse.ok) {
+        console.warn('[Signal] Could not delete original message, sending edited version anyway');
+      }
+      
+      // Send the edited message with prefix
+      const editedContent = `✏️ Edited: ${stripMarkdown(newContent)}`;
+      
+      const sendResponse = await fetch(`${this.httpUrl}/api/v1/rpc`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          method: 'send',
+          params: {
+            account: this.phoneNumber,
+            recipient: [recipient],
+            message: editedContent,
+          },
+          id: Math.random().toString(36).substr(2, 9),
+        }),
+      });
+      
+      if (!sendResponse.ok) {
+        const errorText = await sendResponse.text().catch(() => 'Unknown error');
+        throw new Error(`HTTP ${sendResponse.status}: ${errorText}`);
+      }
+      
+      // Update the stored message with new timestamp
+      const newMessageId = Date.now().toString();
+      this.sentMessages.delete(messageId);
+      this.sentMessages.set(newMessageId, { to: recipient, timestamp: Date.now() });
+      
+      console.log(`[Signal] Message edited and resent to ${recipient}`);
+      return true;
+    } catch (error) {
+      console.error('[Signal] Failed to edit message:', error);
+      return false;
+    }
+  }
+  
+  /**
+   * Delete/unsend a message
+   * Uses remoteDelete which only works for recent messages
+   */
+  async delete(messageId: string, to?: string): Promise<boolean> {
+    if (!this.connected) {
+      console.error('[Signal] Not connected');
+      return false;
+    }
+    
+    const sentMsg = this.sentMessages.get(messageId);
+    if (!sentMsg) {
+      console.error(`[Signal] Message ${messageId} not found in sent messages store`);
+      return false;
+    }
+    
+    const recipient = to || sentMsg.to;
+    if (!recipient) {
+      console.error('[Signal] No recipient specified for delete');
+      return false;
+    }
+    
+    try {
+      const response = await fetch(`${this.httpUrl}/api/v1/rpc`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          method: 'remoteDelete',
+          params: {
+            account: this.phoneNumber,
+            recipient: [recipient],
+            targetTimestamp: sentMsg.timestamp,
+          },
+          id: Math.random().toString(36).substr(2, 9),
+        }),
+      });
+      
+      if (!response.ok) {
+        const errorText = await response.text().catch(() => 'Unknown error');
+        throw new Error(`HTTP ${response.status}: ${errorText}`);
+      }
+      
+      this.sentMessages.delete(messageId);
+      console.log(`[Signal] Message deleted from ${recipient}`);
+      return true;
+    } catch (error) {
+      console.error('[Signal] Failed to delete message:', error);
+      return false;
     }
   }
 

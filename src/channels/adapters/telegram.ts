@@ -99,6 +99,7 @@ const BACKOFF_CONFIG = {
 
 export class TelegramAdapter implements ChannelAdapter {
   readonly name = 'telegram';
+  readonly supportsEditing = true;
   connected = false;
   private botToken: string = '';
   private baseUrl: string = '';
@@ -171,7 +172,7 @@ export class TelegramAdapter implements ChannelAdapter {
   async send(to: string, content: string, options?: { 
     replyToMessageId?: string; 
     threadId?: string;
-  }): Promise<void> {
+  }): Promise<string> {
     if (!this.connected) {
       throw new Error('Telegram not connected');
     }
@@ -195,10 +196,56 @@ export class TelegramAdapter implements ChannelAdapter {
         params.message_thread_id = parseInt(options.threadId, 10);
       }
 
-      await this.apiCall('sendMessage', params);
+      const result = await this.apiCall<{ message_id: number }>('sendMessage', params);
+      return result.message_id.toString();
     } catch (error) {
       console.error('[Telegram] Failed to send message:', error);
       throw error;
+    }
+  }
+  
+  /**
+   * Edit a message using Telegram's editMessageText API
+   */
+  async edit(messageId: string, newContent: string, to?: string): Promise<boolean> {
+    if (!this.connected || !to) return false;
+    
+    try {
+      const chatId = this.parseChatId(to);
+      const htmlContent = markdownToTelegramHtml(newContent);
+      
+      await this.apiCall('editMessageText', {
+        chat_id: chatId,
+        message_id: parseInt(messageId, 10),
+        text: htmlContent,
+        parse_mode: 'HTML',
+      });
+      
+      return true;
+    } catch (error) {
+      console.error('[Telegram] Failed to edit message:', error);
+      return false;
+    }
+  }
+  
+  /**
+   * Delete a message using Telegram's deleteMessage API
+   */
+  async delete(messageId: string, to?: string): Promise<boolean> {
+    if (!this.connected || !to) return false;
+    
+    try {
+      const chatId = this.parseChatId(to);
+      
+      await this.apiCall('deleteMessage', {
+        chat_id: chatId,
+        message_id: parseInt(messageId, 10),
+      });
+      
+      return true;
+    } catch (error) {
+      console.error('[Telegram] Failed to delete message:', error);
+      return false;
     }
   }
 

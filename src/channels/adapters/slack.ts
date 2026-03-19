@@ -73,6 +73,7 @@ const BACKOFF_CONFIG = {
 
 export class SlackAdapter implements ChannelAdapter {
   readonly name = 'slack';
+  readonly supportsEditing = true;
   connected = false;
   private appToken: string = '';
   private botToken: string = '';
@@ -151,7 +152,7 @@ export class SlackAdapter implements ChannelAdapter {
     console.log('[Slack] Disconnected');
   }
 
-  async send(to: string, content: string, options?: { replyToMessageId?: string; threadId?: string }): Promise<void> {
+  async send(to: string, content: string, options?: { replyToMessageId?: string; threadId?: string }): Promise<string> {
     if (!this.connected) {
       throw new Error('Slack not connected');
     }
@@ -171,10 +172,53 @@ export class SlackAdapter implements ChannelAdapter {
         body.thread_ts = options?.replyToMessageId || options?.threadId;
       }
 
-      await this.apiCall('chat.postMessage', body, this.botToken);
+      const result = await this.apiCall<{ ts: string }>('chat.postMessage', body, this.botToken);
+      return result.ts;
     } catch (error) {
       console.error('[Slack] Failed to send message:', error);
       throw error;
+    }
+  }
+  
+  /**
+   * Edit a Slack message
+   */
+  async edit(messageId: string, newContent: string, to?: string): Promise<boolean> {
+    if (!this.connected || !to) return false;
+    
+    try {
+      const mrkdwnContent = markdownToSlackMrkdwn(newContent);
+      
+      await this.apiCall('chat.update', {
+        channel: to,
+        ts: messageId,
+        text: mrkdwnContent,
+        mrkdwn: true,
+      }, this.botToken);
+      
+      return true;
+    } catch (error) {
+      console.error('[Slack] Failed to edit message:', error);
+      return false;
+    }
+  }
+  
+  /**
+   * Delete a Slack message
+   */
+  async delete(messageId: string, to?: string): Promise<boolean> {
+    if (!this.connected || !to) return false;
+    
+    try {
+      await this.apiCall('chat.delete', {
+        channel: to,
+        ts: messageId,
+      }, this.botToken);
+      
+      return true;
+    } catch (error) {
+      console.error('[Slack] Failed to delete message:', error);
+      return false;
     }
   }
 
