@@ -21,6 +21,14 @@ interface OpenAIApiResponse {
   usage?: { prompt_tokens: number; completion_tokens: number; total_tokens: number };
 }
 
+type OpenAIStreamToolCallDelta = {
+  index?: number;
+  function?: {
+    name?: string;
+    arguments?: string;
+  };
+};
+
 export class OpenAIProvider implements Provider {
   name = 'OpenAI';
   private apiKey: string;
@@ -134,14 +142,28 @@ export class OpenAIProvider implements Provider {
   }
 
   async *chatStream(request: ChatRequest): AsyncIterable<StreamChunk> {
+    const body: Record<string, any> = {
+      model: request.model || 'gpt-4o',
+      messages: request.messages,
+      max_tokens: 4096,
+      stream: true,
+    };
+
+    if (request.tools && request.tools.length > 0) {
+      body.tools = request.tools.map(t => ({
+        type: 'function',
+        function: {
+          name: t.name,
+          description: t.description,
+          parameters: t.parameters,
+        },
+      }));
+    }
+
     const response = await fetch(`${this.baseUrl}/chat/completions`, {
       method: 'POST',
       headers: this.getHeaders(),
-      body: JSON.stringify({
-        model: request.model || 'gpt-4o',
-        messages: request.messages,
-        stream: true,
-      }),
+      body: JSON.stringify(body),
     });
 
     if (!response.ok) {
@@ -154,6 +176,27 @@ export class OpenAIProvider implements Provider {
 
     const decoder = new TextDecoder();
     let buffer = '';
+    const pendingToolCalls = new Map<number, { name: string; args: string }>();
+
+    const flushToolCalls = function* (): Generator<StreamChunk> {
+      for (const [, toolCall] of pendingToolCalls) {
+        let args: any = {};
+        try {
+          args = toolCall.args ? JSON.parse(toolCall.args) : {};
+        } catch {
+          args = {};
+        }
+
+        if (toolCall.name) {
+          yield {
+            type: 'tool_call',
+            tool: toolCall.name,
+            args,
+          };
+        }
+      }
+      pendingToolCalls.clear();
+    };
 
     while (true) {
       const { done, value } = await reader.read();
@@ -166,14 +209,38 @@ export class OpenAIProvider implements Provider {
       for (const line of lines) {
         if (line.startsWith('data: ')) {
           const data = line.slice(6);
-          if (data === '[DONE]') return;
+          if (data === '[DONE]') {
+            yield* flushToolCalls();
+            return;
+          }
 
           try {
             const parsed = JSON.parse(data);
-            const delta = parsed.choices?.[0]?.delta;
+            const choice = parsed.choices?.[0];
+            const delta = choice?.delta;
 
             if (delta?.content) {
               yield { type: 'content', content: delta.content };
+            }
+
+            if (Array.isArray(delta?.tool_calls)) {
+              for (const toolCallDelta of delta.tool_calls as OpenAIStreamToolCallDelta[]) {
+                const index = toolCallDelta.index ?? 0;
+                const existing = pendingToolCalls.get(index) || { name: '', args: '' };
+
+                if (toolCallDelta.function?.name) {
+                  existing.name = toolCallDelta.function.name;
+                }
+                if (toolCallDelta.function?.arguments) {
+                  existing.args += toolCallDelta.function.arguments;
+                }
+
+                pendingToolCalls.set(index, existing);
+              }
+            }
+
+            if (choice?.finish_reason === 'tool_calls') {
+              yield* flushToolCalls();
             }
           } catch {
             // Ignore parse errors
@@ -181,6 +248,8 @@ export class OpenAIProvider implements Provider {
         }
       }
     }
+
+    yield* flushToolCalls();
   }
 
   async getStatus(): Promise<{ healthy: boolean; error?: string }> {

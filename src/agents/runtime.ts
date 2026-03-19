@@ -16,6 +16,14 @@ export function setDefaultProvider(providerId: string): void {
   defaultProviderId = providerId;
 }
 
+const isDebug = process.env.DEBUG === '1' || process.env.FOXFANG_DEBUG === '1' || process.env.LOG_LEVEL === 'debug';
+const debugLog = (...args: unknown[]) => {
+  if (isDebug) console.log(...args);
+};
+const debugWarn = (...args: unknown[]) => {
+  if (isDebug) console.warn(...args);
+};
+
 /**
  * Tool summaries for system prompt
  */
@@ -141,7 +149,7 @@ export async function runAgent(
     }));
 
   // Debug: log tools being sent
-  console.log(`[AgentRuntime] Agent ${agentId} has ${tools.length} tools:`, tools.map(t => t.name).join(', '));
+  debugLog(`[AgentRuntime] Agent ${agentId} has ${tools.length} tools:`, tools.map(t => t.name).join(', '));
 
   // Initialize messages array
   let messages: ChatMessage[] = [
@@ -179,7 +187,7 @@ export async function runAgent(
   // AGENT LOOP
   while (iteration < maxIterations) {
     iteration++;
-    console.log(`[AgentRuntime] Agent loop iteration ${iteration}`);
+    debugLog(`[AgentRuntime] Agent loop iteration ${iteration}`);
 
     // Call LLM
     let response;
@@ -195,11 +203,11 @@ export async function runAgent(
     }
 
     // Debug: log response
-    console.log(`[AgentRuntime] Response received, content length: ${response.content?.length || 0}, toolCalls: ${response.toolCalls?.length || 0}`);
+    debugLog(`[AgentRuntime] Response received, content length: ${response.content?.length || 0}, toolCalls: ${response.toolCalls?.length || 0}`);
 
     // If no tool calls, return the response
     if (!response.toolCalls || response.toolCalls.length === 0) {
-      console.log(`[AgentRuntime] No tool calls, returning final response`);
+      debugLog(`[AgentRuntime] No tool calls, returning final response`);
       return {
         content: response.content,
         toolCalls: allToolCalls.length > 0 ? allToolCalls : undefined,
@@ -208,7 +216,7 @@ export async function runAgent(
     }
 
     // Handle tool calls
-    console.log(`[AgentRuntime] Tool calls:`, response.toolCalls.map(tc => tc.name).join(', '));
+    debugLog(`[AgentRuntime] Tool calls:`, response.toolCalls.map(tc => tc.name).join(', '));
 
     // Convert provider tool calls to our format with IDs
     const toolCallsWithIds: ToolCall[] = response.toolCalls.map((tc, idx) => ({
@@ -222,7 +230,7 @@ export async function runAgent(
     const results = await executeToolCalls(toolCallsWithIds);
     
     // Debug: log tool results
-    console.log(`[AgentRuntime] Tool execution results:`, results.map(r => ({
+    debugLog(`[AgentRuntime] Tool execution results:`, results.map(r => ({
       toolCallId: r.toolCallId,
       hasData: !!r.data,
       hasOutput: !!r.output,
@@ -270,7 +278,7 @@ export async function runAgent(
   }
 
   // Max iterations reached
-  console.warn(`[AgentRuntime] Max iterations (${maxIterations}) reached`);
+  debugWarn(`[AgentRuntime] Max iterations (${maxIterations}) reached`);
   return {
     content: messages[messages.length - 1]?.content || 'Max iterations reached',
     toolCalls: allToolCalls,
@@ -341,7 +349,7 @@ export async function* runAgentStream(
   // AGENT LOOP
   while (iteration < maxIterations) {
     iteration++;
-    console.log(`[AgentRuntime] Stream loop iteration ${iteration}`);
+    debugLog(`[AgentRuntime] Stream loop iteration ${iteration}`);
 
     // Collect data for this iteration
     const pendingToolCalls: ToolCall[] = [];
@@ -372,13 +380,13 @@ export async function* runAgentStream(
 
       // If no tool calls in this iteration, we're done
       if (pendingToolCalls.length === 0) {
-        console.log(`[AgentRuntime] No tool calls in iteration ${iteration}, streaming complete`);
+        debugLog(`[AgentRuntime] No tool calls in iteration ${iteration}, streaming complete`);
         yield { type: 'done' };
         return;
       }
 
       // Execute pending tool calls
-      console.log(`[AgentRuntime] Executing ${pendingToolCalls.length} tool calls`);
+      debugLog(`[AgentRuntime] Executing ${pendingToolCalls.length} tool calls`);
       const results = await executeToolCalls(pendingToolCalls);
 
       const allErrors = results.length > 0 && results.every(r => r.error);
@@ -433,7 +441,7 @@ export async function* runAgentStream(
   }
 
   // Max iterations reached
-  console.warn(`[AgentRuntime] Stream max iterations (${maxIterations}) reached`);
+  debugWarn(`[AgentRuntime] Stream max iterations (${maxIterations}) reached`);
   yield { type: 'text', content: '\n[Max tool iterations reached]\n' };
   yield { type: 'done' };
 }

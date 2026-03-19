@@ -136,7 +136,7 @@ export async function registerChatCommand(program: Command): Promise<void> {
           const spinnerFrames = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
           let spinnerIndex = 0;
           let hasStarted = false;
-          let fullContent = '';
+          let currentSection: 'none' | 'agent' | 'tool' = 'none';
           
           // Write prefix and start spinner on same line
           process.stdout.write(chalk.blue('\nAgent: '));
@@ -170,17 +170,23 @@ export async function registerChatCommand(program: Command): Promise<void> {
                   // Clear the spinner by writing spaces, then reset to start
                   process.stdout.write('\r' + chalk.blue('Agent: ') + '                    ');
                   process.stdout.write('\r' + chalk.blue('Agent: '));
+                  currentSection = 'agent';
+                } else if (currentSection !== 'agent') {
+                  process.stdout.write('\n' + chalk.blue('Agent: '));
+                  currentSection = 'agent';
                 }
-                fullContent += chunk.content;
                 process.stdout.write(chunk.content);
               } else if (chunk.type === 'tool_call') {
-                // Show tool call inline (model is using a tool)
                 if (!hasStarted) {
                   hasStarted = true;
                   clearInterval(spinnerInterval);
                   process.stdout.write('\r' + chalk.blue('Agent: ') + '                    ');
+                  currentSection = 'none';
                 }
-                process.stdout.write(chalk.dim(` [tool: ${chunk.tool}] `));
+
+                const toolLabel = chunk.tool || 'unknown';
+                process.stdout.write('\n' + chalk.yellow(`Tool: ${toolLabel}`));
+                currentSection = 'tool';
               }
               // tool_result chunks are internal - model will generate text based on them
               // We don't display them to avoid duplication with model's response
