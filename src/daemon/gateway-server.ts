@@ -129,6 +129,22 @@ type SetupModelsPayload = {
   baseUrl?: string;
 };
 
+type SignalRegisterPayload = {
+  phoneNumber?: string;
+  useVoice?: boolean;
+  captcha?: string;
+};
+
+type SignalVerifyPayload = {
+  phoneNumber?: string;
+  code?: string;
+  pin?: string;
+};
+
+type SignalQrPayload = {
+  deviceName?: string;
+};
+
 interface ClientConnection {
   ws: WebSocket;
   id: string;
@@ -321,6 +337,61 @@ class GatewayServer {
         configPath,
         configSnapshot: this.createSetupConfigSnapshot(config),
       });
+      return;
+    }
+
+    if (method === 'GET' && pathname === '/setup/signal/status') {
+      try {
+        const status = await this.getSignalSetupStatus();
+        this.sendJson(res, 200, { ok: true, ...status });
+      } catch (error) {
+        this.sendJson(res, 400, {
+          ok: false,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+      return;
+    }
+
+    if (method === 'POST' && pathname === '/setup/signal/register') {
+      try {
+        const payload = await this.readJsonBody<SignalRegisterPayload>(req);
+        const result = await this.registerSignalAccount(payload);
+        this.sendJson(res, 200, { ok: true, ...result });
+      } catch (error) {
+        this.sendJson(res, 400, {
+          ok: false,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+      return;
+    }
+
+    if (method === 'POST' && pathname === '/setup/signal/verify') {
+      try {
+        const payload = await this.readJsonBody<SignalVerifyPayload>(req);
+        const result = await this.verifySignalAccount(payload);
+        this.sendJson(res, 200, { ok: true, ...result });
+      } catch (error) {
+        this.sendJson(res, 400, {
+          ok: false,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+      return;
+    }
+
+    if (method === 'POST' && pathname === '/setup/signal/qrcodelink') {
+      try {
+        const payload = await this.readJsonBody<SignalQrPayload>(req);
+        const result = await this.createSignalLinkQr(payload);
+        this.sendJson(res, 200, { ok: true, ...result });
+      } catch (error) {
+        this.sendJson(res, 400, {
+          ok: false,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
       return;
     }
 
@@ -839,6 +910,257 @@ class GatewayServer {
       return this.getDefaultSignalHttpUrl();
     }
     return normalized;
+  }
+
+  private normalizePhoneNumber(value: unknown): string {
+    return this.sanitizeString(value).replace(/\s+/g, '');
+  }
+
+  private async readHttpResponseBody(response: Response): Promise<unknown> {
+    const contentType = this.sanitizeString(response.headers.get('content-type') || '').toLowerCase();
+    if (contentType.includes('application/json')) {
+      return response.json().catch(() => ({}));
+    }
+    return response.text().catch(() => '');
+  }
+
+  private extractSignalApiError(payload: unknown): string {
+    if (typeof payload === 'string') {
+      return payload.trim();
+    }
+    if (payload && typeof payload === 'object') {
+      const errorValue = (payload as Record<string, unknown>).error;
+      if (typeof errorValue === 'string' && errorValue.trim()) {
+        return errorValue.trim();
+      }
+      return JSON.stringify(payload);
+    }
+    return '';
+  }
+
+  private async detectSignalApiMode(baseUrl: string): Promise<'rest-wrapper' | 'daemon-rpc' | 'unknown'> {
+    try {
+      const restHealth = await this.fetchWithTimeout(`${baseUrl}/v1/health`, { method: 'GET' }, 6000);
+      if (restHealth.ok) {
+        return 'rest-wrapper';
+      }
+    } catch {
+      // ignore
+    }
+
+    try {
+      const daemonHealth = await this.fetchWithTimeout(`${baseUrl}/api/v1/check`, { method: 'GET' }, 6000);
+      if (daemonHealth.ok) {
+        return 'daemon-rpc';
+      }
+    } catch {
+      // ignore
+    }
+
+    return 'unknown';
+  }
+
+  private normalizeSignalAccounts(payload: unknown): string[] {
+    if (!Array.isArray(payload)) return [];
+    return payload
+      .map((item) => {
+        if (typeof item === 'string') {
+          return this.normalizePhoneNumber(item);
+        }
+        if (item && typeof item === 'object') {
+          const raw = (item as Record<string, unknown>).number || (item as Record<string, unknown>).username;
+          return this.normalizePhoneNumber(raw);
+        }
+        return '';
+      })
+      .filter(Boolean);
+  }
+
+  private async getSignalSetupStatus(): Promise<{
+    baseUrl: string;
+    mode: 'rest-wrapper' | 'daemon-rpc' | 'unknown';
+    phoneNumber: string;
+    accounts: string[];
+    isRegistered: boolean;
+    supportsOnboarding: boolean;
+    accountsError?: string;
+  }> {
+    const config = await loadConfig();
+    const baseUrl = this.normalizeSignalHttpUrl(config.channels?.signal?.httpUrl);
+    const phoneNumber = this.normalizePhoneNumber(config.channels?.signal?.phoneNumber);
+    const mode = await this.detectSignalApiMode(baseUrl);
+
+    let accounts: string[] = [];
+    let accountsError = '';
+
+    if (mode === 'rest-wrapper') {
+      try {
+        const response = await this.fetchWithTimeout(`${baseUrl}/v1/accounts`, { method: 'GET' }, 10000);
+        const body = await this.readHttpResponseBody(response);
+        if (!response.ok) {
+          accountsError = this.extractSignalApiError(body) || `HTTP ${response.status}`;
+        } else {
+          accounts = this.normalizeSignalAccounts(body);
+        }
+      } catch (error) {
+        accountsError = error instanceof Error ? error.message : String(error);
+      }
+    }
+
+    const normalizedPhone = this.normalizePhoneNumber(phoneNumber);
+    const isRegistered = normalizedPhone ? accounts.includes(normalizedPhone) : false;
+
+    return {
+      baseUrl,
+      mode,
+      phoneNumber,
+      accounts,
+      isRegistered,
+      supportsOnboarding: mode === 'rest-wrapper',
+      ...(accountsError ? { accountsError } : {}),
+    };
+  }
+
+  private async requireSignalRestWrapper(): Promise<{
+    baseUrl: string;
+    phoneNumber: string;
+  }> {
+    const status = await this.getSignalSetupStatus();
+    if (status.mode !== 'rest-wrapper') {
+      throw new Error(
+        `Signal onboarding requires bbernhard/signal-cli-rest-api (/v1). Current mode: ${status.mode}.`
+      );
+    }
+    return {
+      baseUrl: status.baseUrl,
+      phoneNumber: status.phoneNumber,
+    };
+  }
+
+  private async registerSignalAccount(payload: SignalRegisterPayload): Promise<{
+    message: string;
+    phoneNumber: string;
+  }> {
+    const { baseUrl, phoneNumber: configPhone } = await this.requireSignalRestWrapper();
+    const phoneNumber = this.normalizePhoneNumber(payload.phoneNumber) || configPhone;
+    if (!phoneNumber) {
+      throw new Error('Signal phone number is required');
+    }
+
+    const requestBody: Record<string, unknown> = {};
+    if (payload.useVoice === true) requestBody.use_voice = true;
+    const captcha = this.sanitizeString(payload.captcha);
+    if (captcha) requestBody.captcha = captcha;
+
+    const response = await this.fetchWithTimeout(
+      `${baseUrl}/v1/register/${encodeURIComponent(phoneNumber)}`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(requestBody),
+      },
+      15000
+    );
+
+    const body = await this.readHttpResponseBody(response);
+    if (!response.ok) {
+      const error = this.extractSignalApiError(body) || `HTTP ${response.status}`;
+      throw new Error(error);
+    }
+
+    return {
+      message: 'Registration started. Check SMS/voice code and verify in setup.',
+      phoneNumber,
+    };
+  }
+
+  private async verifySignalAccount(payload: SignalVerifyPayload): Promise<{
+    message: string;
+    phoneNumber: string;
+  }> {
+    const { baseUrl, phoneNumber: configPhone } = await this.requireSignalRestWrapper();
+    const phoneNumber = this.normalizePhoneNumber(payload.phoneNumber) || configPhone;
+    const code = this.sanitizeString(payload.code);
+    if (!phoneNumber) {
+      throw new Error('Signal phone number is required');
+    }
+    if (!code) {
+      throw new Error('Verification code is required');
+    }
+
+    const pin = this.sanitizeString(payload.pin);
+    const requestBody = pin ? { pin } : {};
+
+    const response = await this.fetchWithTimeout(
+      `${baseUrl}/v1/register/${encodeURIComponent(phoneNumber)}/verify/${encodeURIComponent(code)}`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(requestBody),
+      },
+      15000
+    );
+
+    const body = await this.readHttpResponseBody(response);
+    if (!response.ok) {
+      const error = this.extractSignalApiError(body) || `HTTP ${response.status}`;
+      throw new Error(error);
+    }
+
+    return {
+      message: 'Signal number verified successfully.',
+      phoneNumber,
+    };
+  }
+
+  private async createSignalLinkQr(payload: SignalQrPayload): Promise<{
+    message: string;
+    deviceName: string;
+    imageDataUrl: string;
+  }> {
+    const { baseUrl } = await this.requireSignalRestWrapper();
+    const deviceName = this.sanitizeString(payload.deviceName) || 'FoxFang';
+    const response = await this.fetchWithTimeout(
+      `${baseUrl}/v1/qrcodelink?device_name=${encodeURIComponent(deviceName)}`,
+      { method: 'GET' },
+      15000
+    );
+
+    const contentType = this.sanitizeString(response.headers.get('content-type') || '') || 'image/png';
+    const buffer = Buffer.from(await response.arrayBuffer());
+
+    if (!response.ok) {
+      const raw = buffer.toString('utf8');
+      let parsed: unknown = raw;
+      try {
+        parsed = JSON.parse(raw);
+      } catch {
+        // leave raw text
+      }
+      const error = this.extractSignalApiError(parsed) || `HTTP ${response.status}`;
+      throw new Error(error);
+    }
+
+    if (contentType.toLowerCase().includes('application/json')) {
+      const raw = buffer.toString('utf8');
+      let parsed: unknown = raw;
+      try {
+        parsed = JSON.parse(raw);
+      } catch {
+        // leave raw text
+      }
+      const error = this.extractSignalApiError(parsed);
+      if (error) {
+        throw new Error(error);
+      }
+      throw new Error('Signal API did not return QR image data.');
+    }
+
+    return {
+      message: 'Scan this QR in Signal > Settings > Linked devices.',
+      deviceName,
+      imageDataUrl: `data:${contentType};base64,${buffer.toString('base64')}`,
+    };
   }
 
   private async resolveEnabledChannels(): Promise<string[]> {

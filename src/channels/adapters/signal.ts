@@ -6,7 +6,6 @@
  * - bbernhard/signal-cli-rest-api (`/v1`, `/v2`)
  */
 
-import { WebSocket } from 'ws';
 import type { ChannelAdapter, ChannelMessage, ChannelResponse } from '../types';
 import { loadConfig } from '../../config';
 import { stripMarkdown } from '../formatters';
@@ -28,7 +27,6 @@ export class SignalAdapter implements ChannelAdapter {
   private httpUrl: string = 'http://127.0.0.1:8686';
   private messageHandler?: (msg: ChannelMessage) => Promise<ChannelResponse | void>;
   private abortController?: AbortController;
-  private receiveSocket?: WebSocket;
 
   /** Track sent messages for editing support */
   private sentMessages: Map<string, { to: string; timestamp: number }> = new Map();
@@ -60,16 +58,27 @@ export class SignalAdapter implements ChannelAdapter {
     const connectionErrors: string[] = [];
 
     for (const candidate of candidateUrls) {
-      const mode = await this.detectApiMode(candidate);
-      if (mode) {
+      try {
+        const mode = await this.detectApiMode(candidate);
+        if (!mode) {
+          connectionErrors.push(
+            `${candidate} (expected /api/v1/check for daemon RPC or /v1/health for signal-cli-rest-api)`
+          );
+          continue;
+        }
+
+        if (mode === 'rest-wrapper') {
+          await this.ensureRestAccountRegistered(candidate);
+        }
+
         this.httpUrl = candidate;
         this.apiMode = mode;
         this.connected = true;
         break;
+      } catch (error) {
+        const reason = error instanceof Error ? error.message : String(error);
+        connectionErrors.push(`${candidate} (${reason})`);
       }
-      connectionErrors.push(
-        `${candidate} (expected /api/v1/check for daemon RPC or /v1/health for signal-cli-rest-api)`
-      );
     }
 
     if (!this.connected) {
@@ -88,8 +97,6 @@ export class SignalAdapter implements ChannelAdapter {
   async disconnect(): Promise<void> {
     this.connected = false;
     this.abortController?.abort();
-    this.receiveSocket?.close();
-    this.receiveSocket = undefined;
     console.log('[Signal] Disconnected');
   }
 
@@ -308,6 +315,34 @@ export class SignalAdapter implements ChannelAdapter {
     }
   }
 
+  private async ensureRestAccountRegistered(baseUrl: string): Promise<void> {
+    const response = await this.fetchWithTimeout(`${baseUrl}/v1/accounts`);
+    if (!response.ok) {
+      throw new Error(`cannot read registered accounts (HTTP ${response.status})`);
+    }
+
+    const payload: any = await response.json().catch(() => []);
+    const currentPhone = this.normalizePhone(this.phoneNumber);
+    const registeredPhones = Array.isArray(payload)
+      ? payload
+          .map((item) => {
+            if (typeof item === 'string') return this.normalizePhone(item);
+            if (item && typeof item === 'object') {
+              return this.normalizePhone((item as any).number || (item as any).username || '');
+            }
+            return '';
+          })
+          .filter(Boolean)
+      : [];
+
+    if (!registeredPhones.includes(currentPhone)) {
+      throw new Error(
+        `Signal account ${this.phoneNumber} is not registered on signal-api. ` +
+        `Register/link this number first, then restart FoxFang.`
+      );
+    }
+  }
+
   private async sendViaDaemonRpc(to: string, message: string): Promise<string> {
     const response = await this.callDaemonRpc('send', {
       account: this.phoneNumber,
@@ -385,6 +420,10 @@ export class SignalAdapter implements ChannelAdapter {
       }
     }
     return null;
+  }
+
+  private normalizePhone(value: string): string {
+    return value.trim().replace(/\s+/g, '');
   }
 
   private async remoteDelete(recipient: string, timestamp: number): Promise<boolean> {
@@ -482,67 +521,18 @@ export class SignalAdapter implements ChannelAdapter {
   }
 
   private async streamRestEvents(abortSignal: AbortSignal): Promise<void> {
-    const wsUrl = this.toWebSocketUrl(`/v1/receive/${encodeURIComponent(this.phoneNumber)}`);
+    const receiveUrl =
+      `${this.httpUrl}/v1/receive/${encodeURIComponent(this.phoneNumber)}` +
+      '?timeout=5&ignore_attachments=true';
+    const response = await this.fetchWithTimeout(receiveUrl, undefined, 15000);
+    if (!response.ok) {
+      const errorText = await response.text().catch(() => 'Unknown error');
+      throw new Error(`receive failed: HTTP ${response.status} ${errorText}`);
+    }
 
-    await new Promise<void>((resolve, reject) => {
-      let settled = false;
-      const settle = (error?: Error): void => {
-        if (settled) return;
-        settled = true;
-        this.receiveSocket = undefined;
-        if (error) reject(error);
-        else resolve();
-      };
-
-      const ws = new WebSocket(wsUrl);
-      this.receiveSocket = ws;
-
-      const abortHandler = (): void => {
-        try {
-          ws.close();
-        } catch {
-          // ignore
-        }
-        settle();
-      };
-
-      abortSignal.addEventListener('abort', abortHandler, { once: true });
-
-      ws.on('message', (raw: any) => {
-        const payload = typeof raw === 'string'
-          ? raw
-          : Buffer.isBuffer(raw)
-            ? raw.toString('utf8')
-            : String(raw);
-        this.handleIncomingPayload(payload);
-      });
-
-      ws.on('error', (error: Error) => {
-        abortSignal.removeEventListener('abort', abortHandler);
-        if (abortSignal.aborted) {
-          settle();
-          return;
-        }
-        settle(error);
-      });
-
-      ws.on('close', () => {
-        abortSignal.removeEventListener('abort', abortHandler);
-        if (abortSignal.aborted) {
-          settle();
-          return;
-        }
-        settle(new Error('Signal receive WebSocket closed'));
-      });
-    });
-  }
-
-  private toWebSocketUrl(pathname: string): string {
-    const url = new URL(this.httpUrl);
-    url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
-    url.pathname = pathname;
-    url.search = '';
-    return url.toString();
+    const payload = await response.json().catch(() => null);
+    this.handleIncomingPayload(payload);
+    await this.sleep(250, abortSignal);
   }
 
   private handleIncomingPayload(raw: unknown): void {

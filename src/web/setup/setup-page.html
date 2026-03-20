@@ -25,7 +25,10 @@
     .status.error { color: #b91c1c; }
     .status.ok { color: #166534; }
     .models-note { margin-top: 6px; font-size: 12px; color: #6b7280; }
+    .models-note.error { color: #b91c1c; }
+    .models-note.ok { color: #166534; }
     .config-preview { margin: 0; padding: 12px; border-radius: 10px; border: 1px solid #e5e7eb; background: #f9fafb; color: #111827; font-size: 12px; line-height: 1.45; overflow: auto; max-height: 320px; }
+    .signal-qr { margin-top: 10px; max-width: 320px; width: 100%; border: 1px solid #e5e7eb; border-radius: 10px; background: #fff; }
     code { background: #f3f4f6; border-radius: 6px; padding: 2px 6px; }
     @media (max-width: 760px) { .grid { grid-template-columns: 1fr; } }
   </style>
@@ -121,6 +124,39 @@
           </div>
           <div class="models-note">If Signal HTTP URL is empty, FoxFang uses <code>SIGNAL_HTTP_URL</code> env (Railway default: <code>http://signal-api:8080</code>, local default: <code>http://127.0.0.1:8686</code>).</div>
         </div>
+      </div>
+
+      <div class="card">
+        <h2>Signal Onboarding (optional)</h2>
+        <div class="models-note">Use this section for <code>bbernhard/signal-cli-rest-api</code>: register new number or link existing account by QR.</div>
+        <div class="grid">
+          <label>
+            Signal Number
+            <input id="signalSetupPhone" placeholder="+1234567890" />
+          </label>
+          <label>
+            Device Name (for QR link)
+            <input id="signalDeviceName" placeholder="FoxFang Railway" />
+          </label>
+          <label>
+            Verification Code
+            <input id="signalVerifyCode" placeholder="123-456" />
+          </label>
+          <label>
+            Captcha (optional)
+            <input id="signalCaptcha" placeholder="signal-hcaptcha-short.xxxxx.registration.yyyyy" />
+          </label>
+        </div>
+        <div class="actions">
+          <button type="button" id="signalRefreshBtn">Refresh Signal Status</button>
+          <button type="button" id="signalRegisterSmsBtn">Register SMS</button>
+          <button type="button" id="signalRegisterVoiceBtn">Register Voice</button>
+          <button type="button" id="signalVerifyBtn">Verify Code</button>
+          <button type="button" id="signalLinkQrBtn">Generate Link QR</button>
+        </div>
+        <div id="signalSetupStatus" class="models-note"></div>
+        <div id="signalAccountsStatus" class="models-note"></div>
+        <img id="signalQrImage" class="signal-qr" alt="Signal Link QR" style="display:none;" />
       </div>
 
       <div class="card">
@@ -223,6 +259,18 @@
     const slackAppTokenEl = document.getElementById('slackAppToken');
     const signalPhoneNumberEl = document.getElementById('signalPhoneNumber');
     const signalHttpUrlEl = document.getElementById('signalHttpUrl');
+    const signalSetupPhoneEl = document.getElementById('signalSetupPhone');
+    const signalDeviceNameEl = document.getElementById('signalDeviceName');
+    const signalVerifyCodeEl = document.getElementById('signalVerifyCode');
+    const signalCaptchaEl = document.getElementById('signalCaptcha');
+    const signalRefreshBtn = document.getElementById('signalRefreshBtn');
+    const signalRegisterSmsBtn = document.getElementById('signalRegisterSmsBtn');
+    const signalRegisterVoiceBtn = document.getElementById('signalRegisterVoiceBtn');
+    const signalVerifyBtn = document.getElementById('signalVerifyBtn');
+    const signalLinkQrBtn = document.getElementById('signalLinkQrBtn');
+    const signalSetupStatusEl = document.getElementById('signalSetupStatus');
+    const signalAccountsStatusEl = document.getElementById('signalAccountsStatus');
+    const signalQrImageEl = document.getElementById('signalQrImage');
     let githubPopup = null;
 
     function setStatus(message, type) {
@@ -248,6 +296,23 @@
     function setGitHubControls(connected) {
       githubConnectBtn.disabled = connected;
       githubDisconnectBtn.disabled = !connected;
+    }
+
+    function setSignalSetupStatus(message, type) {
+      signalSetupStatusEl.textContent = message || '';
+      signalSetupStatusEl.className = 'models-note' + (type ? ' ' + type : '');
+    }
+
+    function setSignalAccountsStatus(message, type) {
+      signalAccountsStatusEl.textContent = message || '';
+      signalAccountsStatusEl.className = 'models-note' + (type ? ' ' + type : '');
+    }
+
+    function setSignalOnboardingControlsEnabled(enabled) {
+      signalRegisterSmsBtn.disabled = !enabled;
+      signalRegisterVoiceBtn.disabled = !enabled;
+      signalVerifyBtn.disabled = !enabled;
+      signalLinkQrBtn.disabled = !enabled;
     }
 
     function renderConfigSnapshot(configPath, configSnapshot) {
@@ -415,6 +480,158 @@
       }
     }
 
+    function getSignalPhoneForSetup() {
+      return signalSetupPhoneEl.value.trim() || signalPhoneNumberEl.value.trim();
+    }
+
+    async function refreshSignalStatus() {
+      try {
+        signalRefreshBtn.disabled = true;
+        setSignalSetupStatus('Checking signal-api status...', '');
+
+        const response = await fetch('/setup/signal/status');
+        const data = await response.json();
+        if (!response.ok || !data.ok) {
+          throw new Error(data.error || 'Failed to load signal status');
+        }
+
+        if (!signalSetupPhoneEl.value.trim() && data.phoneNumber) {
+          signalSetupPhoneEl.value = data.phoneNumber;
+        }
+        if (!signalDeviceNameEl.value.trim()) {
+          signalDeviceNameEl.value = 'FoxFang Railway';
+        }
+
+        const modeText = `mode=${data.mode} · base=${data.baseUrl}`;
+        const registrationText = data.phoneNumber
+          ? (data.isRegistered
+              ? `registered (${data.phoneNumber})`
+              : `not registered (${data.phoneNumber})`)
+          : 'no signal phone set in config yet';
+
+        setSignalSetupStatus(`${modeText} · ${registrationText}`, data.isRegistered ? 'ok' : '');
+
+        const accounts = Array.isArray(data.accounts) ? data.accounts : [];
+        const accountsText = accounts.length ? accounts.join(', ') : 'none';
+        const accountsSuffix = data.accountsError ? ` · error: ${data.accountsError}` : '';
+        setSignalAccountsStatus(`Registered accounts: ${accountsText}${accountsSuffix}`, data.accountsError ? 'error' : '');
+
+        setSignalOnboardingControlsEnabled(Boolean(data.supportsOnboarding));
+        if (!data.supportsOnboarding) {
+          setSignalSetupStatus(
+            `${modeText} · onboarding API disabled (need signal-cli-rest-api /v1 endpoints)`,
+            'error'
+          );
+        }
+      } catch (error) {
+        setSignalSetupStatus(error.message || 'Failed to load signal status', 'error');
+        setSignalOnboardingControlsEnabled(false);
+      } finally {
+        signalRefreshBtn.disabled = false;
+      }
+    }
+
+    async function registerSignal(useVoice) {
+      const phoneNumber = getSignalPhoneForSetup();
+      if (!phoneNumber) {
+        setSignalSetupStatus('Signal number is required for register.', 'error');
+        return;
+      }
+
+      try {
+        signalRegisterSmsBtn.disabled = true;
+        signalRegisterVoiceBtn.disabled = true;
+        setSignalSetupStatus(`Starting Signal register (${useVoice ? 'voice' : 'sms'})...`, '');
+
+        const response = await fetch('/setup/signal/register', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            phoneNumber,
+            useVoice: !!useVoice,
+            captcha: signalCaptchaEl.value.trim(),
+          }),
+        });
+        const data = await response.json();
+        if (!response.ok || !data.ok) {
+          throw new Error(data.error || 'Failed to start registration');
+        }
+
+        setSignalSetupStatus(data.message || 'Registration started.', 'ok');
+        await refreshSignalStatus();
+      } catch (error) {
+        setSignalSetupStatus(error.message || 'Failed to start registration', 'error');
+      } finally {
+        signalRegisterSmsBtn.disabled = false;
+        signalRegisterVoiceBtn.disabled = false;
+      }
+    }
+
+    async function verifySignalRegistration() {
+      const phoneNumber = getSignalPhoneForSetup();
+      const code = signalVerifyCodeEl.value.trim();
+      if (!phoneNumber) {
+        setSignalSetupStatus('Signal number is required for verify.', 'error');
+        return;
+      }
+      if (!code) {
+        setSignalSetupStatus('Verification code is required.', 'error');
+        return;
+      }
+
+      try {
+        signalVerifyBtn.disabled = true;
+        setSignalSetupStatus('Verifying Signal code...', '');
+
+        const response = await fetch('/setup/signal/verify', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ phoneNumber, code }),
+        });
+        const data = await response.json();
+        if (!response.ok || !data.ok) {
+          throw new Error(data.error || 'Failed to verify Signal number');
+        }
+
+        setSignalSetupStatus(data.message || 'Signal verified.', 'ok');
+        signalVerifyCodeEl.value = '';
+        await refreshSignalStatus();
+      } catch (error) {
+        setSignalSetupStatus(error.message || 'Failed to verify Signal number', 'error');
+      } finally {
+        signalVerifyBtn.disabled = false;
+      }
+    }
+
+    async function generateSignalQrLink() {
+      try {
+        signalLinkQrBtn.disabled = true;
+        setSignalSetupStatus('Generating Signal link QR...', '');
+        signalQrImageEl.style.display = 'none';
+        signalQrImageEl.src = '';
+
+        const response = await fetch('/setup/signal/qrcodelink', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ deviceName: signalDeviceNameEl.value.trim() }),
+        });
+        const data = await response.json();
+        if (!response.ok || !data.ok) {
+          throw new Error(data.error || 'Failed to generate Signal QR');
+        }
+
+        if (data.imageDataUrl) {
+          signalQrImageEl.src = data.imageDataUrl;
+          signalQrImageEl.style.display = 'block';
+        }
+        setSignalSetupStatus(data.message || 'Scan QR to link device.', 'ok');
+      } catch (error) {
+        setSignalSetupStatus(error.message || 'Failed to generate Signal QR', 'error');
+      } finally {
+        signalLinkQrBtn.disabled = false;
+      }
+    }
+
     async function loadStatus() {
       try {
         refreshConfigBtn.disabled = true;
@@ -447,6 +664,7 @@
           slackAppTokenEl.value = data.channels.slack?.appToken || '';
           signalPhoneNumberEl.value = data.channels.signal?.phoneNumber || '';
           signalHttpUrlEl.value = data.channels.signal?.httpUrl || '';
+          signalSetupPhoneEl.value = data.channels.signal?.phoneNumber || signalSetupPhoneEl.value || '';
         }
 
         if (data.webTools) {
@@ -466,6 +684,7 @@
         renderConfigSnapshot(data.configPath, data.configSnapshot);
 
         await refreshModels(preferredModel);
+        await refreshSignalStatus();
         updateBaseUrlInputState();
         updateChannelInputState();
         setStatus(
@@ -499,6 +718,26 @@
     discordEnabledEl.addEventListener('change', updateChannelInputState);
     slackEnabledEl.addEventListener('change', updateChannelInputState);
     signalEnabledEl.addEventListener('change', updateChannelInputState);
+    signalPhoneNumberEl.addEventListener('input', () => {
+      if (!signalSetupPhoneEl.value.trim()) {
+        signalSetupPhoneEl.value = signalPhoneNumberEl.value.trim();
+      }
+    });
+    signalRefreshBtn.addEventListener('click', () => {
+      void refreshSignalStatus();
+    });
+    signalRegisterSmsBtn.addEventListener('click', () => {
+      void registerSignal(false);
+    });
+    signalRegisterVoiceBtn.addEventListener('click', () => {
+      void registerSignal(true);
+    });
+    signalVerifyBtn.addEventListener('click', () => {
+      void verifySignalRegistration();
+    });
+    signalLinkQrBtn.addEventListener('click', () => {
+      void generateSignalQrLink();
+    });
     githubConnectBtn.addEventListener('click', connectGitHub);
     githubDisconnectBtn.addEventListener('click', disconnectGitHub);
     refreshConfigBtn.addEventListener('click', () => {
@@ -600,6 +839,8 @@
     updateBaseUrlInputState();
     updateChannelInputState();
     setGitHubControls(false);
+    setSignalOnboardingControlsEnabled(false);
+    signalDeviceNameEl.value = 'FoxFang Railway';
     loadStatus();
   </script>
 </body>
