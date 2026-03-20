@@ -38,6 +38,7 @@ export interface AppConfig {
   // Optional web tool API keys (now stored in credentials, config keeps only ref)
   braveSearch?: { apiKey?: string; apiKeyRef?: string };
   firecrawl?: { apiKey?: string; apiKeyRef?: string; baseUrl?: string };
+  github?: { connected?: boolean; username?: string; connectedAt?: string };
 }
 
 export interface ProviderConfig {

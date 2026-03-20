@@ -39,7 +39,7 @@ export class SignalAdapter implements ChannelAdapter {
     }
 
     this.phoneNumber = signalConfig.phoneNumber;
-    this.httpUrl = signalConfig.httpUrl || 'http://127.0.0.1:8686';
+    this.httpUrl = signalConfig.httpUrl || process.env.SIGNAL_HTTP_URL || 'http://127.0.0.1:8686';
 
     // Check signal-cli HTTP API is accessible
     try {
@@ -52,7 +52,8 @@ export class SignalAdapter implements ChannelAdapter {
       throw new Error(
         `Cannot connect to signal-cli daemon at ${this.httpUrl}.\n` +
         `Make sure signal-cli is running:\n` +
-        `  signal-cli -a ${this.phoneNumber} daemon --http 127.0.0.1:8686`
+        `  signal-cli -a ${this.phoneNumber} daemon --http 127.0.0.1:8686\n` +
+        `Or set SIGNAL_HTTP_URL to your signal-cli-rest-api endpoint.`
       );
     }
 

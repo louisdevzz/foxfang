@@ -1,0 +1,548 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>FoxFang Setup</title>
+  <style>
+    :root { color-scheme: light; }
+    body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #f7f8fa; color: #111827; }
+    .wrap { max-width: 860px; margin: 24px auto; padding: 20px; }
+    .card { background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; padding: 20px; margin-bottom: 16px; }
+    h1 { margin: 0 0 8px 0; font-size: 28px; }
+    h2 { margin: 0 0 12px 0; font-size: 18px; }
+    .desc { color: #4b5563; margin-bottom: 16px; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .grid-1 { display: grid; grid-template-columns: 1fr; gap: 12px; }
+    label { display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: #374151; }
+    input, select { width: 100%; box-sizing: border-box; border: 1px solid #d1d5db; border-radius: 10px; padding: 10px 12px; font-size: 14px; }
+    .channel { display: grid; grid-template-columns: 180px 1fr; gap: 10px; align-items: center; margin: 6px 0; }
+    .inline { display: flex; align-items: center; gap: 8px; font-size: 14px; }
+    .actions { display: flex; gap: 10px; align-items: center; margin-top: 12px; }
+    button { background: #111827; color: #fff; border: 0; border-radius: 10px; padding: 10px 14px; cursor: pointer; font-weight: 600; }
+    button:disabled { opacity: 0.7; cursor: not-allowed; }
+    .status { font-size: 13px; color: #4b5563; }
+    .status.error { color: #b91c1c; }
+    .status.ok { color: #166534; }
+    .models-note { margin-top: 6px; font-size: 12px; color: #6b7280; }
+    code { background: #f3f4f6; border-radius: 6px; padding: 2px 6px; }
+    @media (max-width: 760px) { .grid { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <h1>FoxFang Web Setup</h1>
+      <div class="desc">This setup is protected by <code>SETUP_USERNAME</code>/<code>SETUP_PASSWORD</code>. Saving will restart FoxFang automatically.</div>
+      <div id="status" class="status">Loading current config...</div>
+    </div>
+
+    <form id="setup-form">
+      <div class="card">
+        <h2>Provider</h2>
+        <div class="grid">
+          <label>
+            Provider
+            <select id="providerId" required>
+              <option value="openai">openai</option>
+              <option value="anthropic">anthropic</option>
+              <option value="kimi">kimi</option>
+              <option value="kimi-coding">kimi-coding</option>
+              <option value="openrouter">openrouter</option>
+              <option value="ollama">ollama</option>
+              <option value="custom">custom</option>
+            </select>
+          </label>
+          <label>
+            Base URL (optional)
+            <input id="providerBaseUrl" placeholder="Managed by provider preset" />
+          </label>
+          <label>
+            API Key
+            <input id="providerApiKey" type="password" placeholder="sk-..." />
+          </label>
+          <label>
+            Default Model
+            <select id="defaultModel" required></select>
+            <div id="modelsStatus" class="models-note">Model list will load automatically for the selected provider.</div>
+          </label>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Channels (optional)</h2>
+        <div class="grid-1">
+          <div class="channel">
+            <label>
+              Telegram
+              <select id="telegramEnabled">
+                <option value="disabled">Disabled</option>
+                <option value="enabled">Enabled</option>
+              </select>
+            </label>
+            <input id="telegramBotToken" type="password" placeholder="Telegram bot token" />
+          </div>
+          <div class="channel">
+            <label>
+              Discord
+              <select id="discordEnabled">
+                <option value="disabled">Disabled</option>
+                <option value="enabled">Enabled</option>
+              </select>
+            </label>
+            <input id="discordBotToken" type="password" placeholder="Discord bot token" />
+          </div>
+          <div class="channel">
+            <label>
+              Slack
+              <select id="slackEnabled">
+                <option value="disabled">Disabled</option>
+                <option value="enabled">Enabled</option>
+              </select>
+            </label>
+            <div class="grid">
+              <input id="slackBotToken" type="password" placeholder="Slack bot token (xoxb-...)" />
+              <input id="slackAppToken" type="password" placeholder="Slack app token (xapp-...)" />
+            </div>
+          </div>
+          <div class="channel">
+            <label>
+              Signal
+              <select id="signalEnabled">
+                <option value="disabled">Disabled</option>
+                <option value="enabled">Enabled</option>
+              </select>
+            </label>
+            <input id="signalPhoneNumber" placeholder="+1234567890" />
+          </div>
+          <div class="models-note">Signal endpoint is managed by <code>SIGNAL_HTTP_URL</code> (Railway default: <code>http://signal-cli:8080</code>, local default: <code>http://127.0.0.1:8686</code>).</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Web Tools (optional)</h2>
+        <div class="grid">
+          <label>
+            Brave Search API Key
+            <input id="braveSearchApiKey" type="password" placeholder="BS-..." />
+          </label>
+          <label>
+            Firecrawl API Key
+            <input id="firecrawlApiKey" type="password" placeholder="fc-..." />
+          </label>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>GitHub (optional)</h2>
+        <div class="actions">
+          <button type="button" id="githubConnectBtn">Connect GitHub</button>
+          <button type="button" id="githubDisconnectBtn">Disconnect GitHub</button>
+        </div>
+        <div id="githubStatus" class="models-note"></div>
+      </div>
+
+      <div class="card">
+        <div class="actions">
+          <button type="submit" id="saveBtn">Save & Restart</button>
+          <span id="saveStatus" class="status"></span>
+        </div>
+      </div>
+    </form>
+  </div>
+
+  <script>
+    const PROVIDER_PRESETS = {
+      openai: {
+        baseUrl: 'https://api.openai.com/v1',
+        models: ['gpt-4o-mini', 'gpt-4o', 'gpt-4.1-mini', 'gpt-4.1'],
+      },
+      anthropic: {
+        baseUrl: 'https://api.anthropic.com/v1',
+        models: ['claude-3-7-sonnet-latest', 'claude-3-5-sonnet-latest', 'claude-3-5-haiku-latest'],
+      },
+      kimi: {
+        baseUrl: 'https://api.moonshot.cn/v1',
+        models: ['moonshot-v1-8k', 'moonshot-v1-32k', 'moonshot-v1-128k'],
+      },
+      'kimi-coding': {
+        baseUrl: 'https://api.kimi.com/coding/',
+        models: ['kimi-code', 'k2p5'],
+      },
+      openrouter: {
+        baseUrl: 'https://openrouter.ai/api/v1',
+        models: ['openai/gpt-4o-mini', 'anthropic/claude-3.5-sonnet', 'meta-llama/llama-3.1-70b-instruct'],
+      },
+      ollama: {
+        baseUrl: 'http://localhost:11434/v1',
+        models: ['llama3.1', 'qwen2.5', 'deepseek-coder'],
+      },
+      custom: {
+        baseUrl: '',
+        models: [],
+      },
+    };
+
+    const statusEl = document.getElementById('status');
+    const saveStatusEl = document.getElementById('saveStatus');
+    const modelsStatusEl = document.getElementById('modelsStatus');
+    const githubStatusEl = document.getElementById('githubStatus');
+    const form = document.getElementById('setup-form');
+    const saveBtn = document.getElementById('saveBtn');
+    const providerIdEl = document.getElementById('providerId');
+    const providerApiKeyEl = document.getElementById('providerApiKey');
+    const providerBaseUrlEl = document.getElementById('providerBaseUrl');
+    const defaultModelEl = document.getElementById('defaultModel');
+    const githubConnectBtn = document.getElementById('githubConnectBtn');
+    const githubDisconnectBtn = document.getElementById('githubDisconnectBtn');
+    const telegramEnabledEl = document.getElementById('telegramEnabled');
+    const discordEnabledEl = document.getElementById('discordEnabled');
+    const slackEnabledEl = document.getElementById('slackEnabled');
+    const signalEnabledEl = document.getElementById('signalEnabled');
+    const telegramBotTokenEl = document.getElementById('telegramBotToken');
+    const discordBotTokenEl = document.getElementById('discordBotToken');
+    const slackBotTokenEl = document.getElementById('slackBotToken');
+    const slackAppTokenEl = document.getElementById('slackAppToken');
+    const signalPhoneNumberEl = document.getElementById('signalPhoneNumber');
+    let githubPopup = null;
+
+    function setStatus(message, type) {
+      statusEl.textContent = message;
+      statusEl.className = 'status' + (type ? ' ' + type : '');
+    }
+
+    function setSaveStatus(message, type) {
+      saveStatusEl.textContent = message;
+      saveStatusEl.className = 'status' + (type ? ' ' + type : '');
+    }
+
+    function setModelsStatus(message, type) {
+      modelsStatusEl.textContent = message;
+      modelsStatusEl.className = 'models-note' + (type ? ' ' + type : '');
+    }
+
+    function setGitHubStatus(message, type) {
+      githubStatusEl.textContent = message;
+      githubStatusEl.className = 'models-note' + (type ? ' ' + type : '');
+    }
+
+    function setGitHubControls(connected) {
+      githubConnectBtn.disabled = connected;
+      githubDisconnectBtn.disabled = !connected;
+    }
+
+    async function connectGitHub() {
+      try {
+        setGitHubStatus('Opening GitHub OAuth...', '');
+        githubConnectBtn.disabled = true;
+
+        const response = await fetch('/setup/github/connect-url', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({}),
+        });
+        const data = await response.json();
+        if (!response.ok || !data.authUrl) {
+          throw new Error(data.error || 'Failed to start GitHub OAuth');
+        }
+
+        githubPopup = window.open(data.authUrl, 'foxfang_github_oauth', 'popup,width=640,height=760');
+        if (!githubPopup) {
+          setGitHubStatus('Popup blocked. Please allow popups and try again.', 'error');
+          setGitHubControls(false);
+          return;
+        }
+        setGitHubStatus('Complete GitHub authorization in popup...', '');
+      } catch (error) {
+        setGitHubStatus(error.message || 'Failed to connect GitHub', 'error');
+        setGitHubControls(false);
+      }
+    }
+
+    async function disconnectGitHub() {
+      try {
+        githubDisconnectBtn.disabled = true;
+        const response = await fetch('/setup/github/disconnect', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({}),
+        });
+        const data = await response.json();
+        if (!response.ok) {
+          throw new Error(data.error || 'Failed to disconnect GitHub');
+        }
+        setGitHubStatus('Not connected.', '');
+        setGitHubControls(false);
+      } catch (error) {
+        setGitHubStatus(error.message || 'Failed to disconnect GitHub', 'error');
+      } finally {
+        setGitHubControls(false);
+      }
+    }
+
+    function boolToMode(value) {
+      return value ? 'enabled' : 'disabled';
+    }
+
+    function modeToBool(value) {
+      return value === 'enabled';
+    }
+
+    function updateChannelInputState() {
+      telegramBotTokenEl.disabled = !modeToBool(telegramEnabledEl.value);
+      discordBotTokenEl.disabled = !modeToBool(discordEnabledEl.value);
+      const slackEnabled = modeToBool(slackEnabledEl.value);
+      slackBotTokenEl.disabled = !slackEnabled;
+      slackAppTokenEl.disabled = !slackEnabled;
+      signalPhoneNumberEl.disabled = !modeToBool(signalEnabledEl.value);
+    }
+
+    function getPreset(providerId) {
+      return PROVIDER_PRESETS[providerId] || { baseUrl: '', models: [] };
+    }
+
+    function canEditBaseUrl(providerId) {
+      return providerId === 'custom' || providerId === 'ollama';
+    }
+
+    function updateBaseUrlInputState() {
+      const editable = canEditBaseUrl(providerIdEl.value);
+      providerBaseUrlEl.disabled = !editable;
+      providerBaseUrlEl.placeholder = editable
+        ? 'https://your-provider.example/v1'
+        : 'Managed by provider preset';
+    }
+
+    function ensureBaseUrlDefault(force = false) {
+      const preset = getPreset(providerIdEl.value);
+      if (force || !providerBaseUrlEl.value.trim() || !canEditBaseUrl(providerIdEl.value)) {
+        providerBaseUrlEl.value = preset.baseUrl || '';
+      }
+    }
+
+    function renderModelOptions(models, preferredModel) {
+      const unique = [...new Set((models || []).filter(Boolean))];
+      defaultModelEl.innerHTML = '';
+
+      if (!unique.length) {
+        unique.push('gpt-4o-mini');
+      }
+
+      if (preferredModel && !unique.includes(preferredModel)) {
+        unique.unshift(preferredModel);
+      }
+
+      for (const model of unique) {
+        const option = document.createElement('option');
+        option.value = model;
+        option.textContent = model;
+        defaultModelEl.appendChild(option);
+      }
+
+      defaultModelEl.value = preferredModel && unique.includes(preferredModel)
+        ? preferredModel
+        : unique[0];
+    }
+
+    async function refreshModels(preferredModel = '') {
+      const providerId = providerIdEl.value.trim();
+      const apiKey = providerApiKeyEl.value.trim();
+      const baseUrl = providerBaseUrlEl.value.trim();
+      const preset = getPreset(providerId);
+
+      try {
+        const response = await fetch('/setup/models', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ providerId, apiKey, baseUrl }),
+        });
+        const data = await response.json();
+        if (!response.ok) {
+          throw new Error(data.error || 'Failed to load model list');
+        }
+
+        const models = Array.isArray(data.models) && data.models.length ? data.models : preset.models;
+        renderModelOptions(models, preferredModel);
+
+        if (data.source === 'remote') {
+          setModelsStatus(`Loaded ${models.length} model(s) from provider API.`, 'ok');
+        } else if (data.error) {
+          setModelsStatus(`Using preset model list (${data.error}).`, 'error');
+        } else {
+          setModelsStatus('Using preset model list.', '');
+        }
+
+        if (!providerBaseUrlEl.value.trim() && data.baseUrl) {
+          providerBaseUrlEl.value = data.baseUrl;
+        }
+      } catch (error) {
+        renderModelOptions(preset.models, preferredModel);
+        setModelsStatus(error.message || 'Failed to load model list. Using preset models.', 'error');
+      }
+    }
+
+    async function loadStatus() {
+      try {
+        const response = await fetch('/setup/status');
+        const data = await response.json();
+        if (!response.ok) {
+          throw new Error(data.error || 'Failed to load setup status');
+        }
+
+        let preferredModel = '';
+        if (Array.isArray(data.providers) && data.providers.length > 0) {
+          const provider = data.providers[0];
+          providerIdEl.value = provider.id || 'openai';
+          providerBaseUrlEl.value = provider.baseUrl || '';
+          preferredModel = data.defaultModel || provider.defaultModel || '';
+        } else {
+          ensureBaseUrlDefault(true);
+        }
+
+        if (data.channels) {
+          telegramEnabledEl.value = boolToMode(!!data.channels.telegram?.enabled);
+          discordEnabledEl.value = boolToMode(!!data.channels.discord?.enabled);
+          slackEnabledEl.value = boolToMode(!!data.channels.slack?.enabled);
+          signalEnabledEl.value = boolToMode(!!data.channels.signal?.enabled);
+          signalPhoneNumberEl.value = data.channels.signal?.phoneNumber || '';
+        }
+
+        if (data.github?.connected) {
+          const username = data.github.username || 'unknown';
+          setGitHubStatus(`Connected as ${username}.`, 'ok');
+          setGitHubControls(true);
+        } else {
+          setGitHubStatus('Not connected.', '');
+          setGitHubControls(false);
+        }
+
+        await refreshModels(preferredModel);
+        updateBaseUrlInputState();
+        updateChannelInputState();
+        setStatus(
+          data.ready
+            ? 'FoxFang is configured. Update settings below if needed.'
+            : 'FoxFang is not configured yet. Fill the form and save.',
+          data.ready ? 'ok' : '',
+        );
+      } catch (error) {
+        setStatus(error.message || 'Failed to load setup status', 'error');
+      }
+    }
+
+    providerIdEl.addEventListener('change', async () => {
+      ensureBaseUrlDefault(true);
+      updateBaseUrlInputState();
+      await refreshModels('');
+    });
+
+    providerApiKeyEl.addEventListener('blur', async () => {
+      await refreshModels(defaultModelEl.value.trim());
+    });
+
+    providerBaseUrlEl.addEventListener('blur', async () => {
+      await refreshModels(defaultModelEl.value.trim());
+    });
+
+    telegramEnabledEl.addEventListener('change', updateChannelInputState);
+    discordEnabledEl.addEventListener('change', updateChannelInputState);
+    slackEnabledEl.addEventListener('change', updateChannelInputState);
+    signalEnabledEl.addEventListener('change', updateChannelInputState);
+    githubConnectBtn.addEventListener('click', connectGitHub);
+    githubDisconnectBtn.addEventListener('click', disconnectGitHub);
+
+    window.addEventListener('message', async (event) => {
+      if (event.origin !== window.location.origin) return;
+      if (!event.data || event.data.type !== 'foxfang-github-oauth') return;
+
+      if (event.data.ok) {
+        setGitHubStatus(event.data.message || 'GitHub connected.', 'ok');
+        await loadStatus();
+      } else {
+        setGitHubStatus(event.data.message || 'GitHub connection failed.', 'error');
+        setGitHubControls(false);
+      }
+
+      if (githubPopup && !githubPopup.closed) {
+        githubPopup.close();
+      }
+      githubPopup = null;
+    });
+
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      setSaveStatus('', '');
+      saveBtn.disabled = true;
+
+      const providerId = providerIdEl.value.trim();
+      const providerApiKey = providerApiKeyEl.value.trim();
+      const providerBaseUrl = providerBaseUrlEl.value.trim();
+      const defaultModel = defaultModelEl.value.trim();
+
+      if (!providerId) {
+        setSaveStatus('Provider is required.', 'error');
+        saveBtn.disabled = false;
+        return;
+      }
+
+      const payload = {
+        defaultProvider: providerId,
+        defaultModel,
+        providers: [
+          {
+            id: providerId,
+            apiKey: providerApiKey,
+            baseUrl: providerBaseUrl,
+            model: defaultModel,
+            enabled: true,
+          },
+        ],
+        channels: {
+          telegram: {
+            enabled: modeToBool(telegramEnabledEl.value),
+            botToken: telegramBotTokenEl.value.trim(),
+          },
+          discord: {
+            enabled: modeToBool(discordEnabledEl.value),
+            botToken: discordBotTokenEl.value.trim(),
+          },
+          slack: {
+            enabled: modeToBool(slackEnabledEl.value),
+            botToken: slackBotTokenEl.value.trim(),
+            appToken: slackAppTokenEl.value.trim(),
+          },
+          signal: {
+            enabled: modeToBool(signalEnabledEl.value),
+            phoneNumber: signalPhoneNumberEl.value.trim(),
+          },
+        },
+        braveSearchApiKey: document.getElementById('braveSearchApiKey').value.trim(),
+        firecrawlApiKey: document.getElementById('firecrawlApiKey').value.trim(),
+      };
+
+      try {
+        const response = await fetch('/setup/config', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        const data = await response.json();
+        if (!response.ok) {
+          throw new Error(data.error || 'Failed to save setup');
+        }
+        setSaveStatus(data.message || 'Saved. Restarting...', 'ok');
+      } catch (error) {
+        setSaveStatus(error.message || 'Failed to save setup', 'error');
+      } finally {
+        saveBtn.disabled = false;
+      }
+    });
+
+    ensureBaseUrlDefault(true);
+    updateBaseUrlInputState();
+    updateChannelInputState();
+    setGitHubControls(false);
+    loadStatus();
+  </script>
+</body>
+</html>

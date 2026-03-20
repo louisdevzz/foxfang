@@ -4,7 +4,8 @@ Welcome to the FoxFang documentation!
 
 ## Quick Links
 
-- [Commands Reference](./commands.md) - Complete CLI command reference
+- [Commands Reference](./COMMANDS.md) - Complete CLI command reference
+- [Deploy on Railway](./RAILWAY.md) - Railway template setup for FoxFang
 
 ## Getting Started
 

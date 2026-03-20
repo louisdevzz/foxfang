@@ -9,7 +9,7 @@ import { createServer, IncomingMessage, ServerResponse } from 'http';
 import { saveCredential, getCredential, deleteCredential } from '../credentials';
 
 const GITHUB_API_BASE = 'https://api.github.com';
-const GITHUB_OAUTH_PROXY = 'https://foxfang-oauth-proxy.githubz.workers.dev';
+export const GITHUB_OAUTH_PROXY = 'https://foxfang-oauth-proxy.githubz.workers.dev';
 
 export interface GitHubToken {
   token: string;
