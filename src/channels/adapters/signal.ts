@@ -39,23 +39,45 @@ export class SignalAdapter implements ChannelAdapter {
     }
 
     this.phoneNumber = signalConfig.phoneNumber;
-    this.httpUrl = signalConfig.httpUrl || process.env.SIGNAL_HTTP_URL || 'http://127.0.0.1:8686';
 
-    // Check signal-cli HTTP API is accessible
-    try {
-      const response = await fetch(`${this.httpUrl}/api/v1/check`);
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
+    const normalizeUrl = (value: string): string => value.replace(/\/+$/, '');
+    const candidateUrls = [
+      process.env.SIGNAL_HTTP_URL || '',
+      signalConfig.httpUrl || '',
+      'http://signal-api:8080',
+      'http://signal-cli:8080',
+      'http://127.0.0.1:8686',
+    ]
+      .map((value) => value.trim())
+      .filter((value, index, array) => value.length > 0 && array.indexOf(value) === index)
+      .map(normalizeUrl);
+
+    let connected = false;
+    const connectionErrors: string[] = [];
+    for (const candidate of candidateUrls) {
+      try {
+        const response = await fetch(`${candidate}/api/v1/check`);
+        if (!response.ok) {
+          connectionErrors.push(`${candidate} (HTTP ${response.status})`);
+          continue;
+        }
+        this.httpUrl = candidate;
+        connected = true;
+        break;
+      } catch {
+        connectionErrors.push(`${candidate} (unreachable)`);
       }
-      console.log(`[Signal] ✅ Connected to signal-cli at ${this.httpUrl}`);
-    } catch (error) {
+    }
+
+    if (!connected) {
       throw new Error(
-        `Cannot connect to signal-cli daemon at ${this.httpUrl}.\n` +
-        `Make sure signal-cli is running:\n` +
-        `  signal-cli -a ${this.phoneNumber} daemon --http 127.0.0.1:8686\n` +
-        `Or set SIGNAL_HTTP_URL to your signal-cli-rest-api endpoint.`
+        `Cannot connect to signal-cli REST API.\n` +
+        `Tried:\n  - ${connectionErrors.join('\n  - ')}\n` +
+        `Set SIGNAL_HTTP_URL to your Railway private host, e.g. http://signal-api:8080`
       );
     }
+
+    console.log(`[Signal] ✅ Connected to signal-cli at ${this.httpUrl}`);
 
     this.connected = true;
     

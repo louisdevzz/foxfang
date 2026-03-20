@@ -38,7 +38,7 @@ Optional:
 - `FOXFANG_DEFAULT_PROVIDER` (`openai`, `anthropic`, `kimi`, `openrouter`)
 - `FOXFANG_DEFAULT_MODEL`
 - `FOXFANG_CHANNELS` (comma-separated channels, e.g. `telegram,discord`)
-- `SIGNAL_HTTP_URL` (default `http://signal-cli:8080`, for Signal sidecar)
+- `SIGNAL_HTTP_URL` (default `http://signal-api:8080`, for Signal sidecar)
 
 ## 4) Optional: add Signal sidecar service
 
@@ -55,9 +55,9 @@ Recommended in Railway dashboard:
 
 1. Add new service in the same project.
 2. Deploy from Docker image: `bbernhard/signal-cli-rest-api:latest`.
-3. Name the service `signal-cli`.
+3. Name the service `signal-api`.
 4. Set service env/volume for Signal account data per image docs.
-5. Keep FoxFang `SIGNAL_HTTP_URL=http://signal-cli:8080` (or set to your service URL).
+5. Keep FoxFang `SIGNAL_HTTP_URL=http://signal-api:8080` (or set to your service URL, e.g. `http://signal-api.railway.internal:8080`).
 
 Then in FoxFang `/setup`:
 
@@ -85,7 +85,7 @@ On first startup, `scripts/start-railway.sh` will:
 
 1. Map Railway `PORT` to `FOXFANG_GATEWAY_PORT`
 2. Set `HOME=/data` and `FOXFANG_HOME=/data/.foxfang`
-3. Set `SIGNAL_HTTP_URL` default to `http://signal-cli:8080` (override if needed)
+3. Set `SIGNAL_HTTP_URL` default to `http://signal-api:8080` (override if needed)
 4. Optionally bootstrap `foxfang.json` from provider env vars if config does not exist
 5. Start `dist/daemon/gateway-server.js`
 
@@ -157,7 +157,7 @@ railway variables set OPENROUTER_API_KEY=<your_key>
 Optional Signal endpoint:
 
 ```bash
-railway variables set SIGNAL_HTTP_URL=http://signal-cli:8080
+railway variables set SIGNAL_HTTP_URL=http://signal-api:8080
 ```
 
 Attach a persistent volume mounted at `/data`:

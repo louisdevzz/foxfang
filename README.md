@@ -336,7 +336,7 @@ FoxFang now includes a Railway template in this repo (`railway.toml` + `Dockerfi
 4. Open setup page and login:
    - `https://<your-domain>/setup`
 5. Configure provider/channels in the web form (optionally click `Connect GitHub` OAuth), then save.
-6. Optional Signal channel on Railway: deploy sidecar image `bbernhard/signal-cli-rest-api` and set `SIGNAL_HTTP_URL` (default `http://signal-cli:8080`).
+6. Optional Signal channel on Railway: deploy sidecar image `bbernhard/signal-cli-rest-api` and set `SIGNAL_HTTP_URL` (default `http://signal-api:8080`).
 7. FoxFang will auto-restart after each save and persist config to `/data/.foxfang/foxfang.json`.
 
 Optional (bootstrap from env, no manual setup):
@@ -352,7 +352,7 @@ Optional (bootstrap from env, no manual setup):
 - App starts with `scripts/start-railway.sh`
 - Railway `PORT` is mapped to `FOXFANG_GATEWAY_PORT`
 - State is persisted at `/data/.foxfang` (via `HOME=/data`)
-- `SIGNAL_HTTP_URL` defaults to `http://signal-cli:8080` in Railway start script
+- `SIGNAL_HTTP_URL` defaults to `http://signal-api:8080` in Railway start script
 - Web setup is protected by HTTP Basic Auth (`SETUP_USERNAME`/`SETUP_PASSWORD`)
 - Web setup saves runtime config to `foxfang.json`; GitHub OAuth token (if connected) is saved in FoxFang credentials storage
 - Signal channel setup only requires phone number in web setup; endpoint comes from `SIGNAL_HTTP_URL`

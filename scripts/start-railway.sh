@@ -5,7 +5,7 @@ export NODE_ENV="${NODE_ENV:-production}"
 export HOME="${HOME:-/data}"
 export FOXFANG_HOME="${FOXFANG_HOME:-${HOME}/.foxfang}"
 export FOXFANG_GATEWAY_PORT="${FOXFANG_GATEWAY_PORT:-${PORT:-8080}}"
-export SIGNAL_HTTP_URL="${SIGNAL_HTTP_URL:-http://signal-cli:8080}"
+export SIGNAL_HTTP_URL="${SIGNAL_HTTP_URL:-http://signal-api:8080}"
 
 mkdir -p "${HOME}" "${FOXFANG_HOME}"
 

@@ -825,7 +825,7 @@ class GatewayServer {
     if (configured) {
       return configured;
     }
-    return 'http://127.0.0.1:8686';
+    return 'http://signal-api:8080';
   }
 
   private async persistSetupConfig(payload: SetupPayload): Promise<void> {
