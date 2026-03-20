@@ -305,6 +305,7 @@ class GatewayServer {
           signal: {
             enabled: Boolean(config.channels?.signal?.enabled),
             phoneNumber: config.channels?.signal?.phoneNumber || '',
+            httpUrl: config.channels?.signal?.httpUrl || '',
           },
         },
         webTools: {
@@ -817,6 +818,7 @@ class GatewayServer {
       channels.signal = {
         enabled: Boolean(input.signal.enabled),
         phoneNumber: this.sanitizeString(input.signal.phoneNumber),
+        httpUrl: this.sanitizeString(input.signal.httpUrl),
       };
     }
 

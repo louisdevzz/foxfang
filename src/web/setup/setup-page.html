@@ -114,9 +114,12 @@
                 <option value="enabled">Enabled</option>
               </select>
             </label>
-            <input id="signalPhoneNumber" placeholder="+1234567890" />
+            <div class="grid">
+              <input id="signalPhoneNumber" placeholder="+1234567890" />
+              <input id="signalHttpUrl" placeholder="Signal HTTP URL (optional)" />
+            </div>
           </div>
-          <div class="models-note">Signal endpoint is managed by <code>SIGNAL_HTTP_URL</code> (Railway default: <code>http://signal-api:8080</code>, local default: <code>http://127.0.0.1:8686</code>).</div>
+          <div class="models-note">If Signal HTTP URL is empty, FoxFang uses <code>SIGNAL_HTTP_URL</code> env (Railway default: <code>http://signal-api:8080</code>, local default: <code>http://127.0.0.1:8686</code>).</div>
         </div>
       </div>
 
@@ -219,6 +222,7 @@
     const slackBotTokenEl = document.getElementById('slackBotToken');
     const slackAppTokenEl = document.getElementById('slackAppToken');
     const signalPhoneNumberEl = document.getElementById('signalPhoneNumber');
+    const signalHttpUrlEl = document.getElementById('signalHttpUrl');
     let githubPopup = null;
 
     function setStatus(message, type) {
@@ -322,7 +326,9 @@
       const slackEnabled = modeToBool(slackEnabledEl.value);
       slackBotTokenEl.disabled = !slackEnabled;
       slackAppTokenEl.disabled = !slackEnabled;
-      signalPhoneNumberEl.disabled = !modeToBool(signalEnabledEl.value);
+      const signalEnabled = modeToBool(signalEnabledEl.value);
+      signalPhoneNumberEl.disabled = !signalEnabled;
+      signalHttpUrlEl.disabled = !signalEnabled;
     }
 
     function getPreset(providerId) {
@@ -440,6 +446,7 @@
           slackBotTokenEl.value = data.channels.slack?.botToken || '';
           slackAppTokenEl.value = data.channels.slack?.appToken || '';
           signalPhoneNumberEl.value = data.channels.signal?.phoneNumber || '';
+          signalHttpUrlEl.value = data.channels.signal?.httpUrl || '';
         }
 
         if (data.webTools) {
@@ -561,6 +568,7 @@
           signal: {
             enabled: modeToBool(signalEnabledEl.value),
             phoneNumber: signalPhoneNumberEl.value.trim(),
+            httpUrl: signalHttpUrlEl.value.trim(),
           },
         },
         braveSearchApiKey: braveSearchApiKeyEl.value.trim(),
