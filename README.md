@@ -37,7 +37,6 @@ pnpm run build
 
 # Run the setup wizard
 pnpm foxfang onboard
-# Alias: pnpm foxfang wizard setup
 ```
 
 The onboard wizard will guide you through:
@@ -320,6 +319,46 @@ All data is stored in `~/.foxfang/foxfang.json` — no environment variables nee
 | `pnpm foxfang onboard` | Run setup wizard |
 | `pnpm foxfang status` | Show system status |
 | `pnpm foxfang config edit` | Edit configuration |
+
+---
+
+## Deploy on Railway
+
+FoxFang now includes a Railway template in this repo (`railway.toml` + `Dockerfile`).
+
+### Quick checklist
+
+1. Create a Railway project from this repository.
+2. Attach a Volume mounted at `/data` (quick CLI: `railway volume add -m /data`).
+3. Set setup auth envs:
+   - `SETUP_USERNAME`
+   - `SETUP_PASSWORD`
+4. Open setup page and login:
+   - `https://<your-domain>/setup`
+5. Configure provider/channels in the web form (optionally click `Connect GitHub` OAuth), then save.
+6. Optional Signal channel on Railway: deploy sidecar image `bbernhard/signal-cli-rest-api` and set `SIGNAL_HTTP_URL` (default `http://signal-api:8080`).
+7. FoxFang will auto-restart after each save and persist config to `/data/.foxfang/foxfang.json`.
+
+Optional (bootstrap from env, no manual setup):
+   - `OPENAI_API_KEY` or
+   - `ANTHROPIC_API_KEY` or
+   - `KIMI_API_KEY` or
+   - `OPENROUTER_API_KEY`
+8. Deploy and verify health endpoint:
+   - `https://<your-domain>/healthz`
+
+### Runtime notes
+
+- App starts with `scripts/start-railway.sh`
+- Railway `PORT` is mapped to `FOXFANG_GATEWAY_PORT`
+- State is persisted at `/data/.foxfang` (via `HOME=/data`)
+- `SIGNAL_HTTP_URL` defaults to `http://signal-api:8080` in Railway start script
+- Web setup is protected by HTTP Basic Auth (`SETUP_USERNAME`/`SETUP_PASSWORD`)
+- Web setup saves runtime config to `foxfang.json`; GitHub OAuth token (if connected) is saved in FoxFang credentials storage
+- Signal channel setup only requires phone number in web setup; endpoint comes from `SIGNAL_HTTP_URL`
+- On first boot, FoxFang can auto-create `foxfang.json` from provider env vars (optional)
+
+See full guide: [`docs/RAILWAY.md`](./docs/RAILWAY.md)
 
 ---
 

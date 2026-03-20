@@ -1,8 +1,9 @@
 /**
- * Signal Channel Adapter using signal-cli HTTP API (JSON-RPC)
- * 
- * Requires signal-cli daemon running:
- *   signal-cli -a +YOUR_NUMBER daemon --http 127.0.0.1:8686
+ * Signal Channel Adapter
+ *
+ * Supports both APIs:
+ * - signal-cli daemon JSON-RPC (`/api/v1/...`)
+ * - bbernhard/signal-cli-rest-api (`/v1`, `/v2`)
  */
 
 import type { ChannelAdapter, ChannelMessage, ChannelResponse } from '../types';
@@ -15,51 +16,89 @@ interface SignalSseEvent {
   id?: string;
 }
 
+type SignalApiMode = 'daemon-rpc' | 'rest-wrapper';
+
 export class SignalAdapter implements ChannelAdapter {
   readonly name = 'signal';
   readonly supportsEditing = true;
   connected = false;
+  private apiMode: SignalApiMode = 'daemon-rpc';
   private phoneNumber: string = '';
   private httpUrl: string = 'http://127.0.0.1:8686';
   private messageHandler?: (msg: ChannelMessage) => Promise<ChannelResponse | void>;
   private abortController?: AbortController;
-  
+
   /** Track sent messages for editing support */
   private sentMessages: Map<string, { to: string; timestamp: number }> = new Map();
 
   constructor() {}
 
   async connect(): Promise<void> {
-    // Load config
     const config = await loadConfig();
     const signalConfig = config.channels?.signal;
-    
+
     if (!signalConfig?.enabled || !signalConfig?.phoneNumber) {
       throw new Error('Signal not configured. Run: foxfang channel setup signal');
     }
 
     this.phoneNumber = signalConfig.phoneNumber;
-    this.httpUrl = signalConfig.httpUrl || 'http://127.0.0.1:8686';
 
-    // Check signal-cli HTTP API is accessible
-    try {
-      const response = await fetch(`${this.httpUrl}/api/v1/check`);
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
+    const normalizeUrl = (value: string): string => value.replace(/\/+$/, '');
+    const candidateUrls = [
+      process.env.SIGNAL_HTTP_URL || '',
+      signalConfig.httpUrl || '',
+      'http://signal-api:8080',
+      'http://signal-cli:8080',
+      'http://127.0.0.1:8686',
+    ]
+      .map((value) => value.trim())
+      .filter((value, index, array) => value.length > 0 && array.indexOf(value) === index)
+      .map(normalizeUrl);
+
+    const connectionErrors: string[] = [];
+    let notRegisteredError = '';
+
+    for (const candidate of candidateUrls) {
+      try {
+        const mode = await this.detectApiMode(candidate);
+        if (!mode) {
+          connectionErrors.push(
+            `${candidate} (expected /api/v1/check for daemon RPC or /v1/health for signal-cli-rest-api)`
+          );
+          continue;
+        }
+
+        if (mode === 'rest-wrapper') {
+          await this.ensureRestAccountRegistered(candidate);
+        }
+
+        this.httpUrl = candidate;
+        this.apiMode = mode;
+        this.connected = true;
+        break;
+      } catch (error) {
+        const reason = error instanceof Error ? error.message : String(error);
+        if (!notRegisteredError && reason.includes('not registered on signal-api')) {
+          notRegisteredError = reason;
+        }
+        connectionErrors.push(`${candidate} (${reason})`);
       }
-      console.log(`[Signal] ✅ Connected to signal-cli at ${this.httpUrl}`);
-    } catch (error) {
+    }
+
+    if (!this.connected) {
+      if (notRegisteredError) {
+        throw new Error(notRegisteredError);
+      }
       throw new Error(
-        `Cannot connect to signal-cli daemon at ${this.httpUrl}.\n` +
-        `Make sure signal-cli is running:\n` +
-        `  signal-cli -a ${this.phoneNumber} daemon --http 127.0.0.1:8686`
+        `Cannot connect to Signal API.\n` +
+        `Tried:\n  - ${connectionErrors.join('\n  - ')}\n` +
+        `Set SIGNAL_HTTP_URL to your Signal host, e.g. http://signal-api:8080`
       );
     }
 
-    this.connected = true;
-    
-    // Start SSE loop
-    this.startSseLoop();
+    console.log(`[Signal] ✅ Connected to ${this.httpUrl} (${this.apiMode})`);
+
+    this.startReceiveLoop();
   }
 
   async disconnect(): Promise<void> {
@@ -74,171 +113,79 @@ export class SignalAdapter implements ChannelAdapter {
     }
 
     try {
-      // Strip markdown for plain text output (Signal doesn't support formatting)
       const plainContent = stripMarkdown(content);
-      
-      // Generate a unique ID for tracking
-      const messageId = Date.now().toString();
+      const messageId = this.apiMode === 'daemon-rpc'
+        ? await this.sendViaDaemonRpc(to, plainContent)
+        : await this.sendViaRestWrapper(to, plainContent);
 
-      // JSON-RPC call to send message
-      const response = await fetch(`${this.httpUrl}/api/v1/rpc`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          jsonrpc: '2.0',
-          method: 'send',
-          params: {
-            account: this.phoneNumber,
-            recipient: [to],
-            message: plainContent,
-          },
-          id: Math.random().toString(36).substr(2, 9),
-        }),
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text().catch(() => 'Unknown error');
-        throw new Error(`HTTP ${response.status}: ${errorText}`);
-      }
-      
-      // Store message for editing support
-      // Note: Signal doesn't return the actual timestamp in response, we use our own ID
-      this.sentMessages.set(messageId, { to, timestamp: Date.now() });
-      
+      const parsedTimestamp = this.parseTimestamp(messageId) || Date.now();
+      this.sentMessages.set(messageId, { to, timestamp: parsedTimestamp });
       return messageId;
     } catch (error) {
       console.error('[Signal] Failed to send message:', error);
       throw error;
     }
   }
-  
-  /**
-   * Edit a message by deleting the original and sending a new one
-   * Signal doesn't support native editing, so we use remoteDelete + resend
-   */
+
   async edit(messageId: string, newContent: string, to?: string): Promise<boolean> {
     if (!this.connected) {
       console.error('[Signal] Not connected');
       return false;
     }
-    
+
     const sentMsg = this.sentMessages.get(messageId);
     if (!sentMsg) {
       console.error(`[Signal] Message ${messageId} not found in sent messages store`);
       return false;
     }
-    
+
     const recipient = to || sentMsg.to;
     if (!recipient) {
       console.error('[Signal] No recipient specified for edit');
       return false;
     }
-    
+
     try {
-      // First, try to delete the original message using remoteDelete
-      // Note: This only works if the message was sent recently and hasn't been read
-      const deleteResponse = await fetch(`${this.httpUrl}/api/v1/rpc`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          jsonrpc: '2.0',
-          method: 'remoteDelete',
-          params: {
-            account: this.phoneNumber,
-            recipient: [recipient],
-            targetTimestamp: sentMsg.timestamp,
-          },
-          id: Math.random().toString(36).substr(2, 9),
-        }),
-      });
-      
-      // Even if delete fails (e.g., message too old), we still send the edited version
-      if (!deleteResponse.ok) {
+      const deleted = await this.remoteDelete(recipient, sentMsg.timestamp);
+      if (!deleted) {
         console.warn('[Signal] Could not delete original message, sending edited version anyway');
       }
-      
-      // Send the edited message with prefix
+
       const editedContent = `✏️ Edited: ${stripMarkdown(newContent)}`;
-      
-      const sendResponse = await fetch(`${this.httpUrl}/api/v1/rpc`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          jsonrpc: '2.0',
-          method: 'send',
-          params: {
-            account: this.phoneNumber,
-            recipient: [recipient],
-            message: editedContent,
-          },
-          id: Math.random().toString(36).substr(2, 9),
-        }),
-      });
-      
-      if (!sendResponse.ok) {
-        const errorText = await sendResponse.text().catch(() => 'Unknown error');
-        throw new Error(`HTTP ${sendResponse.status}: ${errorText}`);
-      }
-      
-      // Update the stored message with new timestamp
-      const newMessageId = Date.now().toString();
+      const newMessageId = await this.send(recipient, editedContent);
       this.sentMessages.delete(messageId);
-      this.sentMessages.set(newMessageId, { to: recipient, timestamp: Date.now() });
-      
-      console.log(`[Signal] Message edited and resent to ${recipient}`);
-      return true;
+      return Boolean(newMessageId);
     } catch (error) {
       console.error('[Signal] Failed to edit message:', error);
       return false;
     }
   }
-  
-  /**
-   * Delete/unsend a message
-   * Uses remoteDelete which only works for recent messages
-   */
+
   async delete(messageId: string, to?: string): Promise<boolean> {
     if (!this.connected) {
       console.error('[Signal] Not connected');
       return false;
     }
-    
+
     const sentMsg = this.sentMessages.get(messageId);
     if (!sentMsg) {
       console.error(`[Signal] Message ${messageId} not found in sent messages store`);
       return false;
     }
-    
+
     const recipient = to || sentMsg.to;
     if (!recipient) {
       console.error('[Signal] No recipient specified for delete');
       return false;
     }
-    
+
     try {
-      const response = await fetch(`${this.httpUrl}/api/v1/rpc`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          jsonrpc: '2.0',
-          method: 'remoteDelete',
-          params: {
-            account: this.phoneNumber,
-            recipient: [recipient],
-            targetTimestamp: sentMsg.timestamp,
-          },
-          id: Math.random().toString(36).substr(2, 9),
-        }),
-      });
-      
-      if (!response.ok) {
-        const errorText = await response.text().catch(() => 'Unknown error');
-        throw new Error(`HTTP ${response.status}: ${errorText}`);
+      const ok = await this.remoteDelete(recipient, sentMsg.timestamp);
+      if (ok) {
+        this.sentMessages.delete(messageId);
+        console.log(`[Signal] Message deleted from ${recipient}`);
       }
-      
-      this.sentMessages.delete(messageId);
-      console.log(`[Signal] Message deleted from ${recipient}`);
-      return true;
+      return ok;
     } catch (error) {
       console.error('[Signal] Failed to delete message:', error);
       return false;
@@ -249,44 +196,48 @@ export class SignalAdapter implements ChannelAdapter {
     if (!this.connected) return;
 
     try {
-      // JSON-RPC call to send typing indicator
-      // Note: signal-cli doesn't have stop-typing, indicators auto-expire after ~15s
-      await fetch(`${this.httpUrl}/api/v1/rpc`, {
-        method: 'POST',
+      if (this.apiMode === 'daemon-rpc') {
+        await this.callDaemonRpc('sendTyping', {
+          account: this.phoneNumber,
+          recipient: [to],
+        });
+        return;
+      }
+
+      await fetch(`${this.httpUrl}/v1/typing-indicator/${encodeURIComponent(this.phoneNumber)}`, {
+        method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          jsonrpc: '2.0',
-          method: 'sendTyping',
-          params: {
-            account: this.phoneNumber,
-            recipient: [to],
-          },
-          id: Math.random().toString(36).substr(2, 9),
-        }),
+        body: JSON.stringify({ recipient: to }),
       });
     } catch {
-      // Ignore errors for typing indicators
+      // Ignore typing errors
     }
   }
 
   async reactToMessage(messageId: string, emoji: string, to?: string): Promise<void> {
     if (!this.connected || !to) return;
+    const timestamp = this.parseTimestamp(messageId);
+    if (!timestamp) return;
 
     try {
-      // JSON-RPC call to send reaction
-      await fetch(`${this.httpUrl}/api/v1/rpc`, {
+      if (this.apiMode === 'daemon-rpc') {
+        await this.callDaemonRpc('sendReaction', {
+          account: this.phoneNumber,
+          recipient: [to],
+          targetTimestamp: timestamp,
+          emoji,
+        });
+        return;
+      }
+
+      await fetch(`${this.httpUrl}/v1/reactions/${encodeURIComponent(this.phoneNumber)}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          jsonrpc: '2.0',
-          method: 'sendReaction',
-          params: {
-            account: this.phoneNumber,
-            recipient: [to],
-            targetTimestamp: parseInt(messageId, 10),
-            emoji: emoji,
-          },
-          id: Math.random().toString(36).substr(2, 9),
+          recipient: to,
+          reaction: emoji,
+          target_author: to,
+          timestamp,
         }),
       });
     } catch {
@@ -296,23 +247,29 @@ export class SignalAdapter implements ChannelAdapter {
 
   async removeReaction(messageId: string, to?: string): Promise<void> {
     if (!this.connected || !to) return;
+    const timestamp = this.parseTimestamp(messageId);
+    if (!timestamp) return;
 
     try {
-      // Remove reaction by sending empty emoji
-      await fetch(`${this.httpUrl}/api/v1/rpc`, {
-        method: 'POST',
+      if (this.apiMode === 'daemon-rpc') {
+        await this.callDaemonRpc('sendReaction', {
+          account: this.phoneNumber,
+          recipient: [to],
+          targetTimestamp: timestamp,
+          emoji: '',
+          remove: true,
+        });
+        return;
+      }
+
+      await fetch(`${this.httpUrl}/v1/reactions/${encodeURIComponent(this.phoneNumber)}`, {
+        method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          jsonrpc: '2.0',
-          method: 'sendReaction',
-          params: {
-            account: this.phoneNumber,
-            recipient: [to],
-            targetTimestamp: parseInt(messageId, 10),
-            emoji: '',
-            remove: true,
-          },
-          id: Math.random().toString(36).substr(2, 9),
+          recipient: to,
+          reaction: '',
+          target_author: to,
+          timestamp,
         }),
       });
     } catch {
@@ -324,7 +281,187 @@ export class SignalAdapter implements ChannelAdapter {
     this.messageHandler = handler;
   }
 
-  private startSseLoop(): void {
+  private async detectApiMode(baseUrl: string): Promise<SignalApiMode | null> {
+    try {
+      const daemonCheck = await this.fetchWithTimeout(`${baseUrl}/api/v1/check`);
+      if (daemonCheck.ok) {
+        return 'daemon-rpc';
+      }
+    } catch {
+      // ignore
+    }
+
+    try {
+      const restHealth = await this.fetchWithTimeout(`${baseUrl}/v1/health`);
+      if (restHealth.ok) {
+        return 'rest-wrapper';
+      }
+    } catch {
+      // ignore
+    }
+
+    try {
+      const restAbout = await this.fetchWithTimeout(`${baseUrl}/v1/about`);
+      if (restAbout.ok) {
+        return 'rest-wrapper';
+      }
+    } catch {
+      // ignore
+    }
+
+    return null;
+  }
+
+  private async fetchWithTimeout(url: string, init?: RequestInit, timeoutMs = 8000): Promise<Response> {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      return await fetch(url, { ...(init || {}), signal: controller.signal });
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  private async ensureRestAccountRegistered(baseUrl: string): Promise<void> {
+    const response = await this.fetchWithTimeout(`${baseUrl}/v1/accounts`);
+    if (!response.ok) {
+      throw new Error(`cannot read registered accounts (HTTP ${response.status})`);
+    }
+
+    const payload: any = await response.json().catch(() => []);
+    const currentPhone = this.normalizePhone(this.phoneNumber);
+    const registeredPhones = Array.isArray(payload)
+      ? payload
+          .map((item) => {
+            if (typeof item === 'string') return this.normalizePhone(item);
+            if (item && typeof item === 'object') {
+              return this.normalizePhone((item as any).number || (item as any).username || '');
+            }
+            return '';
+          })
+          .filter(Boolean)
+      : [];
+
+    if (!registeredPhones.includes(currentPhone)) {
+      throw new Error(
+        `Signal account ${this.phoneNumber} is not registered on signal-api. ` +
+        `Register/link this number first, then restart FoxFang.`
+      );
+    }
+  }
+
+  private async sendViaDaemonRpc(to: string, message: string): Promise<string> {
+    const response = await this.callDaemonRpc('send', {
+      account: this.phoneNumber,
+      recipient: [to],
+      message,
+    });
+
+    const fromResult = this.extractJsonRpcTimestamp(response);
+    return String(fromResult || Date.now());
+  }
+
+  private async sendViaRestWrapper(to: string, message: string): Promise<string> {
+    const response = await fetch(`${this.httpUrl}/v2/send`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        number: this.phoneNumber,
+        recipients: [to],
+        message,
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text().catch(() => 'Unknown error');
+      throw new Error(`HTTP ${response.status}: ${errorText}`);
+    }
+
+    const payload: any = await response.json().catch(() => null);
+    const timestamp = this.parseTimestamp(payload?.timestamp) || Date.now();
+    return String(timestamp);
+  }
+
+  private async callDaemonRpc(method: string, params: Record<string, unknown>): Promise<any> {
+    const response = await fetch(`${this.httpUrl}/api/v1/rpc`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        method,
+        params,
+        id: Math.random().toString(36).slice(2, 11),
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text().catch(() => 'Unknown error');
+      throw new Error(`HTTP ${response.status}: ${errorText}`);
+    }
+
+    return response.json().catch(() => ({}));
+  }
+
+  private extractJsonRpcTimestamp(payload: any): number | null {
+    const result = payload?.result;
+    if (!result) return null;
+
+    const direct = this.parseTimestamp(result?.timestamp || result?.id);
+    if (direct) return direct;
+
+    if (Array.isArray(result?.timestamps) && result.timestamps.length > 0) {
+      return this.parseTimestamp(result.timestamps[0]);
+    }
+
+    return null;
+  }
+
+  private parseTimestamp(value: unknown): number | null {
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      return Math.trunc(value);
+    }
+    if (typeof value === 'string') {
+      const parsed = Number.parseInt(value, 10);
+      if (Number.isFinite(parsed)) {
+        return parsed;
+      }
+    }
+    return null;
+  }
+
+  private normalizePhone(value: string): string {
+    return value.trim().replace(/\s+/g, '');
+  }
+
+  private async remoteDelete(recipient: string, timestamp: number): Promise<boolean> {
+    if (this.apiMode === 'daemon-rpc') {
+      await this.callDaemonRpc('remoteDelete', {
+        account: this.phoneNumber,
+        recipient: [recipient],
+        targetTimestamp: timestamp,
+      });
+      return true;
+    }
+
+    const response = await fetch(`${this.httpUrl}/v1/remote-delete/${encodeURIComponent(this.phoneNumber)}`, {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        recipient,
+        timestamp,
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text().catch(() => 'Unknown error');
+      console.warn(`[Signal] remote-delete failed: HTTP ${response.status} ${errorText}`);
+      return false;
+    }
+
+    return true;
+  }
+
+  private startReceiveLoop(): void {
     this.abortController = new AbortController();
     const { signal } = this.abortController;
 
@@ -333,11 +470,14 @@ export class SignalAdapter implements ChannelAdapter {
 
       while (this.connected && !signal.aborted) {
         try {
-          await this.streamEvents(signal);
+          if (this.apiMode === 'daemon-rpc') {
+            await this.streamDaemonEvents(signal);
+          } else {
+            await this.streamRestEvents(signal);
+          }
           reconnectDelay = 1000;
         } catch (error) {
           if (signal.aborted) return;
-          
           console.log(`[Signal] Connection lost, reconnecting in ${reconnectDelay}ms...`);
           await this.sleep(reconnectDelay, signal);
           reconnectDelay = Math.min(reconnectDelay * 2, 30000);
@@ -345,16 +485,12 @@ export class SignalAdapter implements ChannelAdapter {
       }
     };
 
-    runLoop();
+    void runLoop();
   }
 
-  private async streamEvents(abortSignal: AbortSignal): Promise<void> {
-    // signal-cli SSE: /api/v1/events?account=PHONE_NUMBER
+  private async streamDaemonEvents(abortSignal: AbortSignal): Promise<void> {
     const url = `${this.httpUrl}/api/v1/events?account=${encodeURIComponent(this.phoneNumber)}`;
-
-    const response = await fetch(url, {
-      signal: abortSignal,
-    });
+    const response = await fetch(url, { signal: abortSignal });
 
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}`);
@@ -384,50 +520,113 @@ export class SignalAdapter implements ChannelAdapter {
         } else if (line.startsWith('id:')) {
           currentEvent.id = line.slice(3).trim();
         } else if (line === '' && currentEvent.data) {
-          this.handleSseEvent(currentEvent);
+          this.handleIncomingPayload(currentEvent.data);
           currentEvent = {};
         }
       }
     }
   }
 
-  private handleSseEvent(event: SignalSseEvent): void {
-    if (!event.data) return;
+  private async streamRestEvents(abortSignal: AbortSignal): Promise<void> {
+    const receiveUrl =
+      `${this.httpUrl}/v1/receive/${encodeURIComponent(this.phoneNumber)}` +
+      '?timeout=5&ignore_attachments=true';
+
+    // Combine the caller's abortSignal with a per-request timeout so that
+    // disconnect() promptly stops an in-flight receive request.
+    const timeoutController = new AbortController();
+    const timeoutId = setTimeout(() => timeoutController.abort(), 15000);
+
+    const onCallerAbort = (): void => timeoutController.abort(abortSignal.reason ?? 'Signal disconnected');
+    if (abortSignal.aborted) {
+      timeoutController.abort(abortSignal.reason ?? 'Signal disconnected');
+    } else {
+      abortSignal.addEventListener('abort', onCallerAbort, { once: true });
+    }
 
     try {
-      const data = JSON.parse(event.data);
-      
-      // Parse signal-cli envelope format
-      if (data.envelope?.dataMessage) {
-        const msg = data.envelope.dataMessage;
-        const source = data.envelope.source;
-        const sourceName = data.envelope.sourceName || source;
-        
-        if (msg.message && this.messageHandler) {
-          const isGroup = !!msg.groupInfo?.groupId;
-          const channelMsg: ChannelMessage = {
-            id: data.envelope.timestamp.toString(),
-            channel: 'signal',
-            from: `${sourceName} (${source})`,
-            content: msg.message,
-            timestamp: new Date(data.envelope.timestamp),
-            threadId: msg.groupInfo?.groupId,
-            metadata: {
-              chatId: isGroup ? msg.groupInfo.groupId : source,
-              chatType: isGroup ? 'group' : 'private',
-              sourcePhone: source,
-            },
-          };
-
-          // Process through agent (ChannelManager handles logging)
-          this.messageHandler(channelMsg).catch(err => {
-            console.error('[Signal] Error:', err);
-          });
-        }
+      const response = await fetch(receiveUrl, { signal: timeoutController.signal });
+      if (!response.ok) {
+        const errorText = await response.text().catch(() => 'Unknown error');
+        throw new Error(`receive failed: HTTP ${response.status} ${errorText}`);
       }
-    } catch (error) {
-      // Ignore parse errors
+
+      const payload = await response.json().catch(() => null);
+      this.handleIncomingPayload(payload);
+    } finally {
+      clearTimeout(timeoutId);
+      abortSignal.removeEventListener('abort', onCallerAbort);
     }
+
+    await this.sleep(250, abortSignal);
+  }
+
+  private handleIncomingPayload(raw: unknown): void {
+    let data: any = raw;
+    try {
+      if (typeof raw === 'string') {
+        data = JSON.parse(raw);
+      }
+    } catch {
+      return;
+    }
+
+    if (Array.isArray(data)) {
+      for (const item of data) {
+        this.handleIncomingPayload(item);
+      }
+      return;
+    }
+
+    if (Array.isArray(data?.messages)) {
+      for (const item of data.messages) {
+        this.handleIncomingPayload(item);
+      }
+      return;
+    }
+
+    if (data?.envelope) {
+      this.handleEnvelope(data.envelope);
+      return;
+    }
+
+    if (data?.data?.envelope) {
+      this.handleEnvelope(data.data.envelope);
+    }
+  }
+
+  private handleEnvelope(envelope: any): void {
+    if (!this.messageHandler) return;
+
+    const dataMessage = envelope?.dataMessage;
+    if (!dataMessage?.message) return;
+
+    const source = envelope?.source || envelope?.sourceNumber || '';
+    const sourceName = envelope?.sourceName || source || 'Signal';
+    const groupId = dataMessage?.groupInfo?.groupId || dataMessage?.groupV2?.id || '';
+    const timestamp = this.parseTimestamp(envelope?.timestamp) || Date.now();
+    const chatId = groupId || source || sourceName;
+    const from = source && sourceName !== source
+      ? `${sourceName} (${source})`
+      : sourceName;
+
+    const channelMsg: ChannelMessage = {
+      id: String(timestamp),
+      channel: 'signal',
+      from,
+      content: dataMessage.message,
+      timestamp: new Date(timestamp),
+      threadId: groupId || undefined,
+      metadata: {
+        chatId,
+        chatType: groupId ? 'group' : 'private',
+        sourcePhone: source,
+      },
+    };
+
+    this.messageHandler(channelMsg).catch((err) => {
+      console.error('[Signal] Error:', err);
+    });
   }
 
   private sleep(ms: number, abortSignal: AbortSignal): Promise<void> {

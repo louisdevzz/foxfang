@@ -116,6 +116,13 @@ export interface BraveSearchConfig {
   apiKey?: string;
 }
 
+// GitHub integration metadata (optional)
+export interface GitHubConfig {
+  connected?: boolean;
+  username?: string;
+  connectedAt?: string;
+}
+
 // Main application configuration
 export interface AppConfig {
   // Server settings
@@ -156,6 +163,7 @@ export interface AppConfig {
   // Web tools (optional)
   firecrawl?: FirecrawlConfig;
   braveSearch?: BraveSearchConfig;
+  github?: GitHubConfig;
 
   // Agent defaults
   defaultSystemPrompt?: string;
