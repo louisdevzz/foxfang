@@ -5,7 +5,7 @@
  * For Signal: Uses message deletion + resend pattern since Signal
  * doesn't support native message editing.
  * 
- * Inspired by OpenClaw's draft-stream implementation
+ * Inspired by earlier draft-stream implementations
  */
 
 export interface DraftStreamConfig {

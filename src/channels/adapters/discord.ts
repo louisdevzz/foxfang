@@ -52,6 +52,10 @@ interface DiscordMessage {
     discriminator?: string;
     global_name?: string;
   };
+  mentions?: Array<{
+    id: string;
+    username: string;
+  }>;
   channel_id: string;
   guild_id?: string;
   timestamp: string;
@@ -369,18 +373,34 @@ export class DiscordAdapter implements ChannelAdapter {
     // Skip messages without content
     if (!message.content?.trim()) return;
 
+    const botId = this.botInfo?.id;
+    const explicitMention =
+      Boolean(botId) && Array.isArray(message.mentions)
+        ? message.mentions.some((mention) => mention.id === botId)
+        : false;
+    const implicitMention =
+      Boolean(botId) &&
+      (message.content.includes(`<@${botId}>`) || message.content.includes(`<@!${botId}>`));
+    const wasMentioned = explicitMention || implicitMention;
+    const canDetectMention = Boolean(botId);
+
     const channelMsg: ChannelMessage = {
       id: message.id,
       channel: 'discord',
-      from: `${message.author.username}#${message.author.discriminator || '0000'}`,
-      content: message.content,
+      from: message.author.id,
+      content: this.cleanMessageText(message.content),
       timestamp: new Date(message.timestamp),
       metadata: {
+        chatId: message.channel_id,
+        chatType: message.guild_id ? 'channel' : 'private',
         channelId: message.channel_id,
         guildId: message.guild_id,
         authorId: message.author.id,
+        authorTag: `${message.author.username}#${message.author.discriminator || '0000'}`,
         isReply: !!message.referenced_message,
         replyToMessageId: message.referenced_message?.id,
+        wasMentioned,
+        canDetectMention,
       },
     };
 
@@ -495,5 +515,13 @@ export class DiscordAdapter implements ChannelAdapter {
     }
 
     return response.json() as Promise<T>;
+  }
+
+  private cleanMessageText(text: string): string {
+    const botId = this.botInfo?.id;
+    if (!botId) return text;
+    return text
+      .replace(new RegExp(`<@!?${botId}>`, 'g'), '')
+      .trim();
   }
 }

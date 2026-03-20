@@ -113,13 +113,21 @@ export class SignalAdapter implements ChannelAdapter {
     }
 
     try {
+      const recipient = this.normalizeRecipient(to);
+      if (!recipient) {
+        throw new Error('Signal recipient is empty');
+      }
+
+      const targetType = this.isLikelyGroupId(recipient) ? 'group' : 'dm';
+      console.log(`[Signal] 📤 Sending ${targetType} reply`);
+
       const plainContent = stripMarkdown(content);
       const messageId = this.apiMode === 'daemon-rpc'
-        ? await this.sendViaDaemonRpc(to, plainContent)
-        : await this.sendViaRestWrapper(to, plainContent);
+        ? await this.sendViaDaemonRpc(recipient, plainContent)
+        : await this.sendViaRestWrapper(recipient, plainContent);
 
       const parsedTimestamp = this.parseTimestamp(messageId) || Date.now();
-      this.sentMessages.set(messageId, { to, timestamp: parsedTimestamp });
+      this.sentMessages.set(messageId, { to: recipient, timestamp: parsedTimestamp });
       return messageId;
     } catch (error) {
       console.error('[Signal] Failed to send message:', error);
@@ -351,25 +359,39 @@ export class SignalAdapter implements ChannelAdapter {
   }
 
   private async sendViaDaemonRpc(to: string, message: string): Promise<string> {
-    const response = await this.callDaemonRpc('send', {
+    const params: Record<string, unknown> = {
       account: this.phoneNumber,
-      recipient: [to],
       message,
-    });
+    };
+
+    if (this.isLikelyGroupId(to)) {
+      params.groupId = to;
+    } else {
+      params.recipient = [to];
+    }
+
+    const response = await this.callDaemonRpc('send', params);
 
     const fromResult = this.extractJsonRpcTimestamp(response);
     return String(fromResult || Date.now());
   }
 
   private async sendViaRestWrapper(to: string, message: string): Promise<string> {
+    const body: Record<string, unknown> = {
+      number: this.phoneNumber,
+      message,
+    };
+
+    if (this.isLikelyGroupId(to)) {
+      body.groupId = to;
+    } else {
+      body.recipients = [to];
+    }
+
     const response = await fetch(`${this.httpUrl}/v2/send`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        number: this.phoneNumber,
-        recipients: [to],
-        message,
-      }),
+      body: JSON.stringify(body),
     });
 
     if (!response.ok) {
@@ -431,6 +453,45 @@ export class SignalAdapter implements ChannelAdapter {
 
   private normalizePhone(value: string): string {
     return value.trim().replace(/\s+/g, '');
+  }
+
+  private isUuid(value: string): boolean {
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[089ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value.trim());
+  }
+
+  private isPhoneLike(value: string): boolean {
+    return /^\+?\d{6,20}$/.test(value.trim());
+  }
+
+  private normalizeRecipient(value: string): string {
+    const trimmed = value.trim();
+    if (!trimmed) return '';
+    if (this.isUuid(trimmed)) return trimmed;
+
+    // Accept raw E.164 or noisy display forms like "Louis (+15551234567)".
+    const phoneMatch = trimmed.match(/\+?\d[\d\s().-]{5,}\d/);
+    if (phoneMatch) {
+      const candidate = phoneMatch[0].replace(/[^\d+]/g, '');
+      if (this.isPhoneLike(candidate)) return candidate;
+    }
+
+    if (this.isLikelyGroupId(trimmed)) return trimmed;
+
+    const normalized = this.normalizePhone(trimmed);
+    if (this.isPhoneLike(normalized) || this.isUuid(normalized)) return normalized;
+    return trimmed;
+  }
+
+  private isLikelyGroupId(target: string): boolean {
+    const trimmed = target.trim();
+    if (!trimmed) return false;
+
+    // E.164-ish recipient: +15551234567 or 15551234567
+    if (this.isPhoneLike(trimmed)) return false;
+    if (this.isUuid(trimmed)) return false;
+
+    // Group ids are usually opaque/base64-like and non-numeric.
+    return true;
   }
 
   private async remoteDelete(recipient: string, timestamp: number): Promise<boolean> {
@@ -601,14 +662,25 @@ export class SignalAdapter implements ChannelAdapter {
     const dataMessage = envelope?.dataMessage;
     if (!dataMessage?.message) return;
 
-    const source = envelope?.source || envelope?.sourceNumber || '';
-    const sourceName = envelope?.sourceName || source || 'Signal';
+    const rawSource = String(envelope?.sourceNumber || envelope?.source || '').trim();
+    const normalizedSource = this.normalizeRecipient(rawSource);
+    const sourcePhone = this.isPhoneLike(normalizedSource) ? normalizedSource : '';
+    const sourceUuid = String(
+      envelope?.sourceUuid || envelope?.sourceServiceId || envelope?.source_uuid || ''
+    ).trim();
+    const sourceAddress = sourcePhone || sourceUuid || (this.isUuid(normalizedSource) ? normalizedSource : '');
+    const sourceLabel = sourceAddress || rawSource;
+    const sourceName = String(envelope?.sourceName || sourceLabel || 'Signal').trim();
     const groupId = dataMessage?.groupInfo?.groupId || dataMessage?.groupV2?.id || '';
     const timestamp = this.parseTimestamp(envelope?.timestamp) || Date.now();
-    const chatId = groupId || source || sourceName;
-    const from = source && sourceName !== source
-      ? `${sourceName} (${source})`
+    const replyTarget = groupId || sourceAddress;
+    const chatId = groupId || sourceAddress || sourceName;
+    const from = sourceLabel && sourceName !== sourceLabel
+      ? `${sourceName} (${sourceLabel})`
       : sourceName;
+
+    const chatType = groupId ? 'group' : 'private';
+    console.log(`[Signal] 📨 inbound type=${chatType} from=${from}`);
 
     const channelMsg: ChannelMessage = {
       id: String(timestamp),
@@ -619,8 +691,12 @@ export class SignalAdapter implements ChannelAdapter {
       threadId: groupId || undefined,
       metadata: {
         chatId,
-        chatType: groupId ? 'group' : 'private',
-        sourcePhone: source,
+        chatType,
+        sourcePhone,
+        sourceUuid,
+        replyTarget,
+        wasMentioned: false,
+        canDetectMention: false,
       },
     };
 

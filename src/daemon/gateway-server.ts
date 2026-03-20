@@ -107,6 +107,8 @@ type ChannelSetupInput = {
   appToken?: string;
   phoneNumber?: string;
   httpUrl?: string;
+  requireMentionInGroups?: boolean;
+  groupActivation?: string;
 };
 
 type SetupPayload = {
@@ -176,7 +178,14 @@ class GatewayServer {
       });
     });
     this.wss = new WebSocketServer({ server });
-    this.channelManager = new ChannelManager(this.enabledChannels);
+    this.channelManager = new ChannelManager(this.enabledChannels, {
+      autoReply: {
+        enabled: true,
+        defaultAgent: 'orchestrator',
+        requireMention: false,
+        replyToMessage: true,
+      },
+    });
     
     // Initialize cron tables
     initCronTables();
@@ -306,20 +315,24 @@ class GatewayServer {
           telegram: {
             enabled: Boolean(config.channels?.telegram?.enabled),
             hasBotToken: Boolean(config.channels?.telegram?.botToken),
+            groupActivation: this.resolveChannelGroupActivation(config, 'telegram'),
           },
           discord: {
             enabled: Boolean(config.channels?.discord?.enabled),
             hasBotToken: Boolean(config.channels?.discord?.botToken),
+            groupActivation: this.resolveChannelGroupActivation(config, 'discord'),
           },
           slack: {
             enabled: Boolean(config.channels?.slack?.enabled),
             hasBotToken: Boolean(config.channels?.slack?.botToken),
             hasAppToken: Boolean(config.channels?.slack?.appToken),
+            groupActivation: this.resolveChannelGroupActivation(config, 'slack'),
           },
           signal: {
             enabled: Boolean(config.channels?.signal?.enabled),
             phoneNumber: config.channels?.signal?.phoneNumber || '',
             httpUrl: config.channels?.signal?.httpUrl || '',
+            groupActivation: this.resolveChannelGroupActivation(config, 'signal'),
           },
         },
         webTools: {
@@ -888,36 +901,111 @@ class GatewayServer {
     const channels: Record<string, any> = {};
 
     if (input.telegram) {
+      const groupActivation = this.normalizeGroupActivation(
+        input.telegram.groupActivation,
+        input.telegram.requireMentionInGroups
+      );
       channels.telegram = {
         enabled: Boolean(input.telegram.enabled),
         botToken: this.sanitizeString(input.telegram.botToken),
+        groupActivation,
+        requireMentionInGroups: groupActivation === 'mention',
       };
     }
 
     if (input.discord) {
+      const groupActivation = this.normalizeGroupActivation(
+        input.discord.groupActivation,
+        input.discord.requireMentionInGroups
+      );
       channels.discord = {
         enabled: Boolean(input.discord.enabled),
         botToken: this.sanitizeString(input.discord.botToken),
+        groupActivation,
+        requireMentionInGroups: groupActivation === 'mention',
       };
     }
 
     if (input.slack) {
+      const groupActivation = this.normalizeGroupActivation(
+        input.slack.groupActivation,
+        input.slack.requireMentionInGroups
+      );
       channels.slack = {
         enabled: Boolean(input.slack.enabled),
         botToken: this.sanitizeString(input.slack.botToken),
         appToken: this.sanitizeString(input.slack.appToken),
+        groupActivation,
+        requireMentionInGroups: groupActivation === 'mention',
       };
     }
 
     if (input.signal) {
+      const groupActivation = this.normalizeGroupActivation(
+        input.signal.groupActivation,
+        input.signal.requireMentionInGroups
+      );
       channels.signal = {
         enabled: Boolean(input.signal.enabled),
         phoneNumber: this.sanitizeString(input.signal.phoneNumber),
         httpUrl: this.sanitizeString(input.signal.httpUrl),
+        groupActivation,
+        requireMentionInGroups: groupActivation === 'mention',
       };
     }
 
     return channels;
+  }
+
+  private normalizeGroupActivation(
+    activationInput?: string,
+    requireMentionInput?: boolean
+  ): 'mention' | 'always' {
+    const normalized = this.sanitizeString(activationInput).toLowerCase();
+    if (normalized === 'mention') return 'mention';
+    if (normalized === 'always') return 'always';
+    if (typeof requireMentionInput === 'boolean') {
+      return requireMentionInput ? 'mention' : 'always';
+    }
+    return 'always';
+  }
+
+  private resolveGlobalGroupActivation(config: any): 'mention' | 'always' {
+    const normalized = this.sanitizeString(config?.autoReply?.groupActivation).toLowerCase();
+    if (normalized === 'mention') return 'mention';
+    if (normalized === 'always') return 'always';
+    if (typeof config?.autoReply?.requireMentionInGroups === 'boolean') {
+      return config.autoReply.requireMentionInGroups ? 'mention' : 'always';
+    }
+    return 'always';
+  }
+
+  private resolveChannelGroupActivation(
+    config: any,
+    channelName: 'telegram' | 'discord' | 'slack' | 'signal'
+  ): 'mention' | 'always' {
+    const channelConfig = config?.channels?.[channelName];
+    const normalized = this.sanitizeString(channelConfig?.groupActivation).toLowerCase();
+    if (normalized === 'mention') return 'mention';
+    if (normalized === 'always') return 'always';
+    if (typeof channelConfig?.requireMentionInGroups === 'boolean') {
+      return channelConfig.requireMentionInGroups ? 'mention' : 'always';
+    }
+    return this.resolveGlobalGroupActivation(config);
+  }
+
+  private resolveRequireMentionByChannel(config: any): {
+    telegram: boolean;
+    discord: boolean;
+    slack: boolean;
+    signal: boolean;
+  } {
+    return {
+      telegram: this.resolveChannelGroupActivation(config, 'telegram') === 'mention',
+      discord: this.resolveChannelGroupActivation(config, 'discord') === 'mention',
+      slack: this.resolveChannelGroupActivation(config, 'slack') === 'mention',
+      signal: this.resolveChannelGroupActivation(config, 'signal') === 'mention',
+    };
   }
 
   private getDefaultSignalHttpUrl(): string {
@@ -1343,8 +1431,24 @@ class GatewayServer {
 
   private async initialize(): Promise<void> {
     this.enabledChannels = await this.resolveEnabledChannels();
-    this.channelManager = new ChannelManager(this.enabledChannels);
+    const config = await loadConfig().catch(() => ({} as any));
+    const requireMentionByChannel = this.resolveRequireMentionByChannel(config);
+    this.channelManager = new ChannelManager(this.enabledChannels, {
+      autoReply: {
+        enabled: true,
+        defaultAgent: 'orchestrator',
+        requireMention: false,
+        requireMentionByChannel,
+        replyToMessage: true,
+      },
+    });
     console.log(`[Gateway] Channels enabled: ${this.enabledChannels.join(', ') || 'none'}`);
+    console.log(
+      `[Gateway] Group reply mode: telegram=${requireMentionByChannel.telegram ? 'mention' : 'always'}, ` +
+      `discord=${requireMentionByChannel.discord ? 'mention' : 'always'}, ` +
+      `slack=${requireMentionByChannel.slack ? 'mention' : 'always'}, ` +
+      `signal=${requireMentionByChannel.signal ? 'mention' : 'always'}`
+    );
 
     // Initialize agents
     await this.initializeAgents();

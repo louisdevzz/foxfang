@@ -67,3 +67,10 @@ MESSAGE_AGENT: Content Specialist | Draft a LinkedIn post about: ...
 ```
 
 The orchestrator routes to the appropriate specialist.
+
+## 7) CLI Command Reference
+
+Before suggesting or running CLI commands, agents should consult `docs/commands.md`.
+
+- Canonical setup form: `pnpm foxfang wizard setup [all|providers|channels]`
+- Channel-only setup can also use: `pnpm foxfang channels setup`

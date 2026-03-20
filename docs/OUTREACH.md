@@ -1,6 +1,6 @@
 # FoxFang Outreach System
 
-Marketing automation module for FoxFang. Inspired by OpenClaw's cron scheduling patterns.
+Marketing automation module for FoxFang, using robust cron scheduling patterns.
 
 ## Overview
 

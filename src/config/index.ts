@@ -21,14 +21,38 @@ export interface AppConfig {
   daemon: { enabled: boolean; port: number; host: string };
   workspace: { homeDir: string };
   channels?: {
-    telegram?: { enabled: boolean; botToken?: string };
-    discord?: { enabled: boolean; botToken?: string };
-    slack?: { enabled: boolean; botToken?: string; appToken?: string };
+    telegram?: {
+      enabled: boolean;
+      botToken?: string;
+      requireMentionInGroups?: boolean;
+      groupActivation?: 'mention' | 'always';
+    };
+    discord?: {
+      enabled: boolean;
+      botToken?: string;
+      requireMentionInGroups?: boolean;
+      groupActivation?: 'mention' | 'always';
+    };
+    slack?: {
+      enabled: boolean;
+      botToken?: string;
+      appToken?: string;
+      requireMentionInGroups?: boolean;
+      groupActivation?: 'mention' | 'always';
+    };
     signal?: { 
       enabled: boolean; 
       phoneNumber: string;
       httpUrl?: string;
+      requireMentionInGroups?: boolean;
+      groupActivation?: 'mention' | 'always';
     };
+  };
+  autoReply?: {
+    /** Legacy boolean flag kept for compatibility */
+    requireMentionInGroups?: boolean;
+    /** Activation mode for group conversations */
+    groupActivation?: 'mention' | 'always';
   };
   observability: { enabled: boolean };
   heartbeat: { enabled: boolean; intervalMs: number };
@@ -61,6 +85,10 @@ const defaultConfig: AppConfig = {
   memory: { enabled: true },
   daemon: { enabled: false, port: 8787, host: '127.0.0.1' },
   workspace: { homeDir: join(homedir(), '.foxfang') },
+  autoReply: {
+    requireMentionInGroups: false,
+    groupActivation: 'always',
+  },
   observability: { enabled: true },
   heartbeat: { enabled: true, intervalMs: 30000 },
   cron: { enabled: true, pollIntervalMs: 60000 },
@@ -79,7 +107,12 @@ export async function loadConfig(): Promise<AppConfig> {
   try {
     const content = await readFile(CONFIG_FILE, 'utf-8');
     const parsed = JSON.parse(content);
-    return { ...defaultConfig, ...parsed };
+    const merged = { ...defaultConfig, ...parsed } as AppConfig;
+    merged.autoReply = {
+      ...(defaultConfig.autoReply || {}),
+      ...((parsed?.autoReply as AppConfig['autoReply']) || {}),
+    };
+    return merged;
   } catch (error) {
     console.error('Failed to load config, using defaults:', error);
     return { ...defaultConfig };

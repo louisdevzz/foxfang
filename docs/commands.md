@@ -25,6 +25,19 @@ pnpm foxfang gateway run
 
 ---
 
+## Agent Notes (Command Routing)
+
+Reference this section when tools/agents need deterministic CLI invocations.
+
+- Prefer canonical command forms (single command per line, no extra trailing args).
+- Use `pnpm foxfang wizard setup [target]` for setup flows:
+  - `target=all` (default) for full onboarding
+  - `target=providers` for provider-only setup
+  - `target=channels` for channel-only setup
+- `pnpm foxfang channels setup` remains valid for direct channel configuration.
+
+---
+
 ## Global Options
 
 - `-v, --version` - Print version
@@ -39,7 +52,7 @@ pnpm foxfang gateway run
 foxfang [--debug] [--config <path>] <command>
   onboard (alias: wizard)
   wizard
-    setup
+    setup [all|providers|channels]
     providers
     channels
   chat
@@ -114,6 +127,9 @@ Interactive wizards for setup and maintenance.
 
 ```bash
 pnpm foxfang wizard setup
+pnpm foxfang wizard setup all
+pnpm foxfang wizard setup providers
+pnpm foxfang wizard setup channels
 pnpm foxfang wizard providers
 pnpm foxfang wizard channels
 ```
@@ -207,6 +223,16 @@ pnpm foxfang channels setup
 pnpm foxfang channels enable telegram
 pnpm foxfang channels disable slack
 ```
+
+`channels setup` now asks **Group Reply Mode per channel**:
+- `always` = reply to all group/channel messages on that channel
+- `mention` = reply only when bot is mentioned on that channel
+
+Policy is saved per channel in `foxfang.json` under:
+- `channels.telegram.groupActivation`
+- `channels.discord.groupActivation`
+- `channels.slack.groupActivation`
+- `channels.signal.groupActivation`
 
 ### Channel send/test
 

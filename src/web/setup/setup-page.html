@@ -84,7 +84,16 @@
                 <option value="enabled">Enabled</option>
               </select>
             </label>
-            <input id="telegramBotToken" type="password" placeholder="Telegram bot token" />
+            <div class="grid">
+              <input id="telegramBotToken" type="password" placeholder="Telegram bot token" />
+              <label>
+                Group Reply Mode
+                <select id="telegramGroupActivation">
+                  <option value="always">Always reply</option>
+                  <option value="mention">Mention only</option>
+                </select>
+              </label>
+            </div>
           </div>
           <div class="channel">
             <label>
@@ -94,7 +103,16 @@
                 <option value="enabled">Enabled</option>
               </select>
             </label>
-            <input id="discordBotToken" type="password" placeholder="Discord bot token" />
+            <div class="grid">
+              <input id="discordBotToken" type="password" placeholder="Discord bot token" />
+              <label>
+                Group/Channel Reply Mode
+                <select id="discordGroupActivation">
+                  <option value="always">Always reply</option>
+                  <option value="mention">Mention only</option>
+                </select>
+              </label>
+            </div>
           </div>
           <div class="channel">
             <label>
@@ -107,6 +125,13 @@
             <div class="grid">
               <input id="slackBotToken" type="password" placeholder="Slack bot token (xoxb-...)" />
               <input id="slackAppToken" type="password" placeholder="Slack app token (xapp-...)" />
+              <label>
+                Group/Channel Reply Mode
+                <select id="slackGroupActivation">
+                  <option value="always">Always reply</option>
+                  <option value="mention">Mention only</option>
+                </select>
+              </label>
             </div>
           </div>
           <div class="channel">
@@ -120,8 +145,16 @@
             <div class="grid">
               <input id="signalPhoneNumber" placeholder="+1234567890" />
               <input id="signalHttpUrl" placeholder="Signal HTTP URL (optional)" />
+              <label>
+                Group Reply Mode
+                <select id="signalGroupActivation">
+                  <option value="always">Always reply</option>
+                  <option value="mention">Mention only</option>
+                </select>
+              </label>
             </div>
           </div>
+          <div class="models-note">Each channel uses its own group activation policy (<code>always</code> or <code>mention</code>).</div>
           <div class="models-note">If Signal HTTP URL is empty, FoxFang uses <code>SIGNAL_HTTP_URL</code> env (Railway default: <code>http://signal-api:8080</code>, local default: <code>http://127.0.0.1:8686</code>).</div>
         </div>
       </div>
@@ -259,6 +292,10 @@
     const slackAppTokenEl = document.getElementById('slackAppToken');
     const signalPhoneNumberEl = document.getElementById('signalPhoneNumber');
     const signalHttpUrlEl = document.getElementById('signalHttpUrl');
+    const telegramGroupActivationEl = document.getElementById('telegramGroupActivation');
+    const discordGroupActivationEl = document.getElementById('discordGroupActivation');
+    const slackGroupActivationEl = document.getElementById('slackGroupActivation');
+    const signalGroupActivationEl = document.getElementById('signalGroupActivation');
     const signalSetupPhoneEl = document.getElementById('signalSetupPhone');
     const signalDeviceNameEl = document.getElementById('signalDeviceName');
     const signalVerifyCodeEl = document.getElementById('signalVerifyCode');
@@ -386,14 +423,23 @@
     }
 
     function updateChannelInputState() {
-      telegramBotTokenEl.disabled = !modeToBool(telegramEnabledEl.value);
-      discordBotTokenEl.disabled = !modeToBool(discordEnabledEl.value);
+      const telegramEnabled = modeToBool(telegramEnabledEl.value);
+      telegramBotTokenEl.disabled = !telegramEnabled;
+      telegramGroupActivationEl.disabled = !telegramEnabled;
+
+      const discordEnabled = modeToBool(discordEnabledEl.value);
+      discordBotTokenEl.disabled = !discordEnabled;
+      discordGroupActivationEl.disabled = !discordEnabled;
+
       const slackEnabled = modeToBool(slackEnabledEl.value);
       slackBotTokenEl.disabled = !slackEnabled;
       slackAppTokenEl.disabled = !slackEnabled;
+      slackGroupActivationEl.disabled = !slackEnabled;
+
       const signalEnabled = modeToBool(signalEnabledEl.value);
       signalPhoneNumberEl.disabled = !signalEnabled;
       signalHttpUrlEl.disabled = !signalEnabled;
+      signalGroupActivationEl.disabled = !signalEnabled;
     }
 
     function getPreset(providerId) {
@@ -659,6 +705,10 @@
           discordEnabledEl.value = boolToMode(!!data.channels.discord?.enabled);
           slackEnabledEl.value = boolToMode(!!data.channels.slack?.enabled);
           signalEnabledEl.value = boolToMode(!!data.channels.signal?.enabled);
+          telegramGroupActivationEl.value = data.channels.telegram?.groupActivation === 'mention' ? 'mention' : 'always';
+          discordGroupActivationEl.value = data.channels.discord?.groupActivation === 'mention' ? 'mention' : 'always';
+          slackGroupActivationEl.value = data.channels.slack?.groupActivation === 'mention' ? 'mention' : 'always';
+          signalGroupActivationEl.value = data.channels.signal?.groupActivation === 'mention' ? 'mention' : 'always';
           telegramBotTokenEl.value = '';
           telegramBotTokenEl.placeholder = data.channels.telegram?.hasBotToken ? 'saved — leave blank to keep' : 'Telegram bot token';
           discordBotTokenEl.value = '';
@@ -801,20 +851,28 @@
           telegram: {
             enabled: modeToBool(telegramEnabledEl.value),
             botToken: telegramBotTokenEl.value.trim(),
+            groupActivation: telegramGroupActivationEl.value === 'mention' ? 'mention' : 'always',
+            requireMentionInGroups: telegramGroupActivationEl.value === 'mention',
           },
           discord: {
             enabled: modeToBool(discordEnabledEl.value),
             botToken: discordBotTokenEl.value.trim(),
+            groupActivation: discordGroupActivationEl.value === 'mention' ? 'mention' : 'always',
+            requireMentionInGroups: discordGroupActivationEl.value === 'mention',
           },
           slack: {
             enabled: modeToBool(slackEnabledEl.value),
             botToken: slackBotTokenEl.value.trim(),
             appToken: slackAppTokenEl.value.trim(),
+            groupActivation: slackGroupActivationEl.value === 'mention' ? 'mention' : 'always',
+            requireMentionInGroups: slackGroupActivationEl.value === 'mention',
           },
           signal: {
             enabled: modeToBool(signalEnabledEl.value),
             phoneNumber: signalPhoneNumberEl.value.trim(),
             httpUrl: signalHttpUrlEl.value.trim(),
+            groupActivation: signalGroupActivationEl.value === 'mention' ? 'mention' : 'always',
+            requireMentionInGroups: signalGroupActivationEl.value === 'mention',
           },
         },
         braveSearchApiKey: braveSearchApiKeyEl.value.trim(),

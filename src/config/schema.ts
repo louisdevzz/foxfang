@@ -98,6 +98,11 @@ export interface ObservabilityConfig {
   enabled: boolean;
 }
 
+export interface AutoReplyConfig {
+  requireMentionInGroups?: boolean;
+  groupActivation?: 'mention' | 'always';
+}
+
 // Twitter OAuth configuration
 export interface TwitterOAuthConfig {
   clientId: string;
@@ -156,6 +161,7 @@ export interface AppConfig {
   cron: CronConfig;
   heartbeat: HeartbeatConfig;
   observability: ObservabilityConfig;
+  autoReply?: AutoReplyConfig;
   
   // Twitter OAuth (optional)
   twitter?: TwitterOAuthConfig;

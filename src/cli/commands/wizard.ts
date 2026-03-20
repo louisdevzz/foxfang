@@ -85,6 +85,70 @@ const AVAILABLE_PROVIDERS = [
   },
 ];
 
+type SetupTarget = 'all' | 'providers' | 'channels';
+
+function normalizeSetupTarget(target?: string): SetupTarget | null {
+  const normalized = (target || 'all').trim().toLowerCase();
+
+  if (normalized === 'all') return 'all';
+  if (normalized === 'providers' || normalized === 'provider') return 'providers';
+  if (normalized === 'channels' || normalized === 'channel') return 'channels';
+  return null;
+}
+
+function resolveChannelGroupActivation(
+  config: any,
+  channelId: 'telegram' | 'discord' | 'slack' | 'signal'
+): 'mention' | 'always' {
+  const channelConfig = config?.channels?.[channelId];
+  const channelActivation = String(channelConfig?.groupActivation || '').trim().toLowerCase();
+  if (channelActivation === 'mention') return 'mention';
+  if (channelActivation === 'always') return 'always';
+  if (typeof channelConfig?.requireMentionInGroups === 'boolean') {
+    return channelConfig.requireMentionInGroups ? 'mention' : 'always';
+  }
+
+  // Backward-compatible fallback from legacy global config
+  const globalActivation = String(config?.autoReply?.groupActivation || '').trim().toLowerCase();
+  if (globalActivation === 'mention') return 'mention';
+  if (globalActivation === 'always') return 'always';
+  if (typeof config?.autoReply?.requireMentionInGroups === 'boolean') {
+    return config.autoReply.requireMentionInGroups ? 'mention' : 'always';
+  }
+  return 'always';
+}
+
+async function configureChannelGroupReplyMode(
+  config: any,
+  channelId: 'telegram' | 'discord' | 'slack' | 'signal',
+  channelLabel: string
+): Promise<'mention' | 'always'> {
+  const current = resolveChannelGroupActivation(config, channelId);
+  const selected = await select({
+    message: `${channelLabel} group/channel reply mode:`,
+    options: [
+      {
+        value: 'always',
+        label: 'Always reply',
+        hint: 'Reply to all group/channel messages',
+      },
+      {
+        value: 'mention',
+        label: 'Reply only when mentioned',
+        hint: 'Require @mention in group/channel',
+      },
+    ],
+    initialValue: current,
+  }) as string;
+
+  if (isCancel(selected)) return current;
+
+  const groupActivation = selected === 'mention' ? 'mention' : 'always';
+  const modeText = groupActivation === 'mention' ? 'mention required' : 'always-on';
+  console.log(chalk.dim(`  ${channelLabel} group policy: ${modeText}`));
+  return groupActivation;
+}
+
 export async function registerWizardCommand(program: Command): Promise<void> {
   const wizard = program
     .command('wizard')
@@ -94,79 +158,82 @@ export async function registerWizardCommand(program: Command): Promise<void> {
       await runSetupWizard();
     });
   wizard
-    .command('setup')
-    .description('Run initial setup wizard')
-    .action(runSetupWizard);
+    .command('setup [target]')
+    .description('Run setup wizard (target: all|providers|channels)')
+    .addHelpText(
+      'after',
+      `\nExamples:\n  foxfang wizard setup\n  foxfang wizard setup channels\n  foxfang wizard setup providers\n`
+    )
+    .action(async (target?: string) => {
+      const setupTarget = normalizeSetupTarget(target);
+
+      if (!setupTarget) {
+        throw new Error(
+          `Unknown setup target "${target}". Use one of: all, providers, channels.`
+        );
+      }
+
+      if (setupTarget === 'all') {
+        await runSetupWizard();
+        return;
+      }
+
+      if (setupTarget === 'providers') {
+        await runProvidersWizard();
+        return;
+      }
+
+      await runChannelsWizard();
+    });
 
   wizard
     .command('providers')
     .description('Add or update AI providers')
-    .action(async () => {
-      intro(chalk.cyan('Provider Configuration 🦊'));
-      
-      const config = await loadConfig();
-      
-      const action = await select({
-        message: 'What would you like to do?',
-        options: [
-          { value: 'add', label: 'Add new provider' },
-          { value: 'edit', label: 'Edit existing provider' },
-          { value: 'remove', label: 'Remove provider' },
-          { value: 'test', label: 'Test provider connection' },
-        ],
-      }) as string;
-      
-      switch (action) {
-        case 'add':
-          await addProvider(config);
-          break;
-        case 'edit':
-          await editProvider(config);
-          break;
-        case 'remove':
-          await removeProvider(config);
-          break;
-        case 'test':
-          await testProviders(config);
-          break;
-      }
-      
-      outro(chalk.green('Done!'));
-    });
+    .action(runProvidersWizard);
 
   wizard
     .command('channels')
     .description('Channel setup wizard')
-    .action(async () => {
-      intro(chalk.cyan('Channel Setup Wizard'));
-      
-      const channel = await select({
-        message: 'Select channel to configure:',
-        options: [
-          { value: 'telegram', label: 'Telegram', hint: 'Bot API' },
-          { value: 'discord', label: 'Discord', hint: 'Bot token' },
-          { value: 'slack', label: 'Slack', hint: 'Slack app' },
-          { value: 'signal', label: 'Signal', hint: 'Signal CLI' },
-        ],
-      }) as string;
-      
-      switch (channel) {
-        case 'telegram':
-          await setupTelegram();
-          break;
-        case 'discord':
-          await setupDiscord();
-          break;
-        case 'slack':
-          await setupSlack();
-          break;
-        case 'signal':
-          await setupSignal();
-          break;
-      }
-      
-      outro(chalk.green(`${channel} configured!`));
-    });
+    .action(runChannelsWizard);
+}
+
+async function runProvidersWizard() {
+  intro(chalk.cyan('Provider Configuration 🦊'));
+
+  const config = await loadConfig();
+
+  const action = await select({
+    message: 'What would you like to do?',
+    options: [
+      { value: 'add', label: 'Add new provider' },
+      { value: 'edit', label: 'Edit existing provider' },
+      { value: 'remove', label: 'Remove provider' },
+      { value: 'test', label: 'Test provider connection' },
+    ],
+  }) as string;
+
+  switch (action) {
+    case 'add':
+      await addProvider(config);
+      break;
+    case 'edit':
+      await editProvider(config);
+      break;
+    case 'remove':
+      await removeProvider(config);
+      break;
+    case 'test':
+      await testProviders(config);
+      break;
+  }
+
+  outro(chalk.green('Done!'));
+}
+
+async function runChannelsWizard() {
+  intro(chalk.cyan('Channel Setup Wizard'));
+  await runChannelSetupWizard();
+  outro(chalk.green('Done!'));
 }
 
 async function runSetupWizard() {
@@ -661,127 +728,222 @@ async function testProviders(config: any) {
   }
 }
 
-async function setupTelegram() {
+async function setupTelegram(): Promise<boolean> {
   console.log(chalk.dim('\nTelegram Bot Setup:'));
   console.log('1. Message @BotFather on Telegram');
   console.log('2. Create a new bot with /newbot');
   console.log('3. Copy the API token\n');
+
+  const config = await loadConfig();
+  if (!config.channels) config.channels = {};
+  const currentToken = String(config.channels?.telegram?.botToken || '').trim();
   
   const token = await text({
     message: 'Bot API Token:',
-    placeholder: '123456789:ABCdefGHIjklMNOpqrsTUVwxyz',
+    placeholder: currentToken
+      ? 'Leave empty to keep current token'
+      : '123456789:ABCdefGHIjklMNOpqrsTUVwxyz',
     validate: (value) => {
-      if (!value || !value.includes(':')) return 'Invalid token format';
+      const next = value?.trim() || '';
+      if (!next && currentToken) return;
+      if (!next || !next.includes(':')) return 'Invalid token format';
     },
   });
+
+  if (isCancel(token)) {
+    console.log(chalk.yellow('  Telegram setup canceled'));
+    return false;
+  }
+
+  const botToken = String(token || '').trim() || currentToken;
+  if (!botToken) {
+    console.log(chalk.yellow('  Telegram not configured: missing bot token'));
+    return false;
+  }
   
-  const config = await loadConfig();
-  if (!config.channels) config.channels = {};
+  const groupActivation = await configureChannelGroupReplyMode(config, 'telegram', 'Telegram');
   config.channels.telegram = {
     enabled: true,
-    botToken: token as string,
+    botToken,
+    groupActivation,
+    requireMentionInGroups: groupActivation === 'mention',
   };
   await saveConfig(config);
   
   console.log(chalk.dim('  Token saved to config'));
+  return true;
 }
 
-async function setupDiscord() {
+async function setupDiscord(): Promise<boolean> {
   console.log(chalk.dim('\nDiscord Bot Setup:'));
   console.log('1. Go to https://discord.com/developers/applications');
   console.log('2. Create a new application');
   console.log('3. Go to Bot section and copy the token\n');
+
+  const config = await loadConfig();
+  if (!config.channels) config.channels = {};
+  const currentToken = String(config.channels?.discord?.botToken || '').trim();
   
   const token = await text({
     message: 'Bot Token:',
+    placeholder: currentToken ? 'Leave empty to keep current token' : undefined,
     validate: (value) => {
-      if (!value) return 'Token is required';
+      const next = value?.trim() || '';
+      if (!next && currentToken) return;
+      if (!next) return 'Token is required';
     },
   });
+
+  if (isCancel(token)) {
+    console.log(chalk.yellow('  Discord setup canceled'));
+    return false;
+  }
+
+  const botToken = String(token || '').trim() || currentToken;
+  if (!botToken) {
+    console.log(chalk.yellow('  Discord not configured: missing bot token'));
+    return false;
+  }
   
-  const config = await loadConfig();
-  if (!config.channels) config.channels = {};
+  const groupActivation = await configureChannelGroupReplyMode(config, 'discord', 'Discord');
   config.channels.discord = {
     enabled: true,
-    botToken: token as string,
+    botToken,
+    groupActivation,
+    requireMentionInGroups: groupActivation === 'mention',
   };
   await saveConfig(config);
   
   console.log(chalk.dim('  Token saved to config'));
+  return true;
 }
 
-async function setupSlack() {
+async function setupSlack(): Promise<boolean> {
   console.log(chalk.dim('\nSlack App Setup:'));
   console.log('1. Go to https://api.slack.com/apps');
   console.log('2. Create a new app');
   console.log('3. Add Bot Token Scopes: chat:write, im:history');
   console.log('4. Install app and copy Bot User OAuth Token\n');
+
+  const config = await loadConfig();
+  if (!config.channels) config.channels = {};
+  const currentBotToken = String(config.channels?.slack?.botToken || '').trim();
+  const currentAppToken = String(config.channels?.slack?.appToken || '').trim();
   
   const botToken = await text({
     message: 'Bot User OAuth Token (xoxb-):',
-    placeholder: 'xoxb-...',
+    placeholder: currentBotToken ? 'Leave empty to keep current token' : 'xoxb-...',
     validate: (value) => {
-      if (!value?.startsWith('xoxb-')) return 'Token should start with xoxb-';
+      const next = value?.trim() || '';
+      if (!next && currentBotToken) return;
+      if (!next.startsWith('xoxb-')) return 'Token should start with xoxb-';
     },
   });
+
+  if (isCancel(botToken)) {
+    console.log(chalk.yellow('  Slack setup canceled'));
+    return false;
+  }
   
   // Socket Mode requires app-level token
   const appToken = await text({
     message: 'App-Level Token (xapp-):',
-    placeholder: 'xapp-...',
+    placeholder: currentAppToken ? 'Leave empty to keep current token' : 'xapp-...',
     validate: (value) => {
-      if (!value?.startsWith('xapp-')) return 'Token should start with xapp-';
+      const next = value?.trim() || '';
+      if (!next && currentAppToken) return;
+      if (!next.startsWith('xapp-')) return 'Token should start with xapp-';
     },
   });
+
+  if (isCancel(appToken)) {
+    console.log(chalk.yellow('  Slack setup canceled'));
+    return false;
+  }
+
+  const nextBotToken = String(botToken || '').trim() || currentBotToken;
+  const nextAppToken = String(appToken || '').trim() || currentAppToken;
+  if (!nextBotToken || !nextAppToken) {
+    console.log(chalk.yellow('  Slack not configured: missing required token(s)'));
+    return false;
+  }
   
-  const config = await loadConfig();
-  if (!config.channels) config.channels = {};
+  const groupActivation = await configureChannelGroupReplyMode(config, 'slack', 'Slack');
   config.channels.slack = {
     enabled: true,
-    botToken: botToken as string,
-    appToken: appToken as string,
+    botToken: nextBotToken,
+    appToken: nextAppToken,
+    groupActivation,
+    requireMentionInGroups: groupActivation === 'mention',
   };
   await saveConfig(config);
   
   console.log(chalk.dim('  Tokens saved to config'));
+  return true;
 }
 
-async function setupSignal() {
+async function setupSignal(): Promise<boolean> {
   console.log(chalk.dim('\nSignal Setup:'));
   console.log('Signal requires signal-cli to be installed and running.');
   console.log('Docs: https://github.com/AsamK/signal-cli\n');
+
+  const config = await loadConfig();
+  if (!config.channels) config.channels = {};
+  const currentPhoneNumber = String(config.channels?.signal?.phoneNumber || '').trim();
+  const currentHttpUrl = String(config.channels?.signal?.httpUrl || '').trim();
   
   const phoneNumber = await text({
     message: 'Phone number (with country code):',
-    placeholder: '+1234567890',
+    placeholder: currentPhoneNumber ? 'Leave empty to keep current number' : '+1234567890',
+    validate: (value) => {
+      const next = value?.trim() || '';
+      if (!next && currentPhoneNumber) return;
+      if (!next) return 'Phone number is required';
+    },
   });
+
+  if (isCancel(phoneNumber)) {
+    console.log(chalk.yellow('  Signal setup canceled'));
+    return false;
+  }
   
   const httpUrl = await text({
     message: 'Signal CLI HTTP URL:',
     placeholder: 'http://127.0.0.1:8686',
-    defaultValue: 'http://127.0.0.1:8686',
+    defaultValue: currentHttpUrl || 'http://127.0.0.1:8686',
   });
+
+  if (isCancel(httpUrl)) {
+    console.log(chalk.yellow('  Signal setup canceled'));
+    return false;
+  }
   
-  const httpUrlStr = (httpUrl as string) || 'http://127.0.0.1:8686';
+  const resolvedPhoneNumber = String(phoneNumber || '').trim() || currentPhoneNumber;
+  if (!resolvedPhoneNumber) {
+    console.log(chalk.yellow('  Signal not configured: missing phone number'));
+    return false;
+  }
+
+  const httpUrlStr = String(httpUrl || '').trim() || currentHttpUrl || 'http://127.0.0.1:8686';
   
-  const config = await loadConfig();
-  if (!config.channels) config.channels = {};
+  const groupActivation = await configureChannelGroupReplyMode(config, 'signal', 'Signal');
   config.channels.signal = {
     enabled: true,
-    phoneNumber: phoneNumber as string,
+    phoneNumber: resolvedPhoneNumber,
     httpUrl: httpUrlStr,
+    groupActivation,
+    requireMentionInGroups: groupActivation === 'mention',
   };
   await saveConfig(config);
   
-  console.log(chalk.dim(`\n✓ Signal configured: ${httpUrlStr}`));
+  console.log(chalk.dim(`  Signal endpoint: ${httpUrlStr}`));
+  return true;
 }
 
 /**
  * Run channel setup wizard inline (called during initial setup)
  */
 export async function runChannelSetupWizard(_config?: any) {
-  const { isCancel } = await import('@clack/prompts');
-  
   let continueSetup = true;
   
   while (continueSetup) {
@@ -803,20 +965,32 @@ export async function runChannelSetupWizard(_config?: any) {
     try {
       switch (channel) {
         case 'telegram':
-          await setupTelegram();
-          console.log(chalk.green('\n✓ Telegram configured!'));
+          if (await setupTelegram()) {
+            console.log(chalk.green('\n✓ Telegram configured!'));
+          } else {
+            console.log(chalk.yellow('\n- Telegram setup skipped'));
+          }
           break;
         case 'discord':
-          await setupDiscord();
-          console.log(chalk.green('\n✓ Discord configured!'));
+          if (await setupDiscord()) {
+            console.log(chalk.green('\n✓ Discord configured!'));
+          } else {
+            console.log(chalk.yellow('\n- Discord setup skipped'));
+          }
           break;
         case 'slack':
-          await setupSlack();
-          console.log(chalk.green('\n✓ Slack configured!'));
+          if (await setupSlack()) {
+            console.log(chalk.green('\n✓ Slack configured!'));
+          } else {
+            console.log(chalk.yellow('\n- Slack setup skipped'));
+          }
           break;
         case 'signal':
-          await setupSignal();
-          console.log(chalk.green('\n✓ Signal configured!'));
+          if (await setupSignal()) {
+            console.log(chalk.green('\n✓ Signal configured!'));
+          } else {
+            console.log(chalk.yellow('\n- Signal setup skipped'));
+          }
           break;
       }
     } catch (error) {

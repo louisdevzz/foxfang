@@ -56,6 +56,7 @@ ${chalk.cyan('Examples:')}
   ${chalk.dim('$')} foxfang chat --agent content-specialist
   ${chalk.dim('$')} foxfang gateway start
   ${chalk.dim('$')} foxfang onboard
+  ${chalk.dim('$')} foxfang wizard setup channels
   ${chalk.dim('$')} foxfang channels setup
   ${chalk.dim('$')} foxfang channels telegram send --message "Hello"
   ${chalk.dim('$')} foxfang github login

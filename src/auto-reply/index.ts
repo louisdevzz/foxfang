@@ -74,14 +74,30 @@ export class AutoReplyHandler {
   /**
    * Check if we should reply to this message
    */
-  shouldReply(message: IncomingMessage, botUsername?: string): boolean {
+  shouldReply(
+    message: IncomingMessage,
+    botUsername?: string,
+    requireMentionOverride?: boolean
+  ): boolean {
     if (!this.config.enabled) return false;
     if (!this.config.allowedChannels.includes(message.channel)) return false;
 
+    const requireMention = requireMentionOverride ?? this.config.requireMention;
+
     // Check mention requirement for groups
-    if (this.config.requireMention && message.chat?.type !== 'private') {
-      const wasMentioned = message.text?.includes(`@${botUsername}`) || message.wasMentioned;
-      if (!wasMentioned) return false;
+    if (requireMention && message.chat?.type !== 'private') {
+      const normalizedBotUsername = botUsername?.trim().replace(/^@/, '').toLowerCase();
+      const normalizedText = (message.text || '').toLowerCase();
+
+      const implicitMention =
+        Boolean(normalizedBotUsername) && normalizedText.includes(`@${normalizedBotUsername}`);
+      const wasMentioned = Boolean(message.wasMentioned || implicitMention);
+      const canDetectMention =
+        message.canDetectMention ??
+        (typeof message.wasMentioned === 'boolean' || Boolean(normalizedBotUsername));
+
+      // Only enforce mention-gating when mention detection is reliable.
+      if (canDetectMention && !wasMentioned) return false;
     }
 
     return true;
@@ -94,9 +110,10 @@ export class AutoReplyHandler {
     message: IncomingMessage,
     sendTyping: () => Promise<void>,
     sendReply: (payload: ReplyPayload) => Promise<void>,
-    botUsername?: string
+    botUsername?: string,
+    requireMentionOverride?: boolean
   ): Promise<HandleMessageResult> {
-    if (!this.shouldReply(message, botUsername)) {
+    if (!this.shouldReply(message, botUsername, requireMentionOverride)) {
       return {};
     }
 

@@ -89,6 +89,14 @@ interface TelegramApiResponse<T> {
   error_code?: number;
 }
 
+interface TelegramBotInfo {
+  id: number;
+  username: string;
+  first_name: string;
+  can_join_groups?: boolean;
+  can_read_all_group_messages?: boolean;
+}
+
 // Exponential backoff config
 const BACKOFF_CONFIG = {
   initialMs: 1000,
@@ -109,7 +117,7 @@ export class TelegramAdapter implements ChannelAdapter {
   private pollTimeout?: NodeJS.Timeout;
   private reconnectAttempts: number = 0;
   private reconnectTimeout?: NodeJS.Timeout;
-  private botInfo?: { id: number; username: string; first_name: string };
+  private botInfo?: TelegramBotInfo;
   private allowedUpdates = ['message', 'edited_message', 'callback_query'];
 
   constructor() {}
@@ -130,9 +138,21 @@ export class TelegramAdapter implements ChannelAdapter {
 
     // Verify token and get bot info
     try {
-      const response = await this.apiCall<{ id: number; username: string; first_name: string }>('getMe');
+      const response = await this.apiCall<TelegramBotInfo>('getMe');
       this.botInfo = response;
       console.log(`[Telegram] ✅ Connected as @${response.username}`);
+
+      const groupModeAlways =
+        telegramConfig.groupActivation === 'always' ||
+        telegramConfig.requireMentionInGroups === false;
+      const privacyModeEnabled = response.can_read_all_group_messages !== true;
+      if (groupModeAlways && privacyModeEnabled) {
+        console.warn(
+          '[Telegram] ⚠️ Group mode is set to "always" but Bot privacy mode is ON.\n' +
+          '[Telegram]    Telegram will only deliver mentions/commands/replies from groups.\n' +
+          '[Telegram]    Fix: @BotFather -> /setprivacy -> select your bot -> Disable.'
+        );
+      }
     } catch (error) {
       throw new Error(
         `Cannot connect to Telegram API: ${error instanceof Error ? error.message : 'Unknown error'}\n` +
@@ -314,7 +334,7 @@ export class TelegramAdapter implements ChannelAdapter {
     this.messageHandler = handler;
   }
 
-  getBotInfo(): { id: number; username: string; first_name: string } | undefined {
+  getBotInfo(): TelegramBotInfo | undefined {
     return this.botInfo;
   }
 
@@ -430,6 +450,9 @@ export class TelegramAdapter implements ChannelAdapter {
       content = `[${message.chat.title || message.chat.type}] ${content}`;
     }
 
+    const wasMentioned = this.detectBotMention(message);
+    const canDetectMention = Boolean(this.botInfo?.username) && message.chat.type !== 'private';
+
     const channelMsg: ChannelMessage = {
       id: message.message_id.toString(),
       channel: 'telegram',
@@ -445,6 +468,8 @@ export class TelegramAdapter implements ChannelAdapter {
         senderId: message.from?.id?.toString(),
         senderUsername: senderUsername,
         senderName: `${message.from?.first_name || ''} ${message.from?.last_name || ''}`.trim() || senderUsername,
+        wasMentioned,
+        canDetectMention,
       },
     };
 
@@ -473,5 +498,25 @@ export class TelegramAdapter implements ChannelAdapter {
     this.reconnectTimeout = setTimeout(() => {
       this.startPolling();
     }, finalDelay);
+  }
+
+  private detectBotMention(message: TelegramMessage): boolean {
+    const username = this.botInfo?.username?.trim();
+    const text = message.text || '';
+    if (!username || !text) return false;
+
+    const normalizedHandle = `@${username.toLowerCase()}`;
+    const lowerText = text.toLowerCase();
+    if (lowerText.includes(normalizedHandle)) return true;
+
+    if (Array.isArray(message.entities)) {
+      for (const entity of message.entities) {
+        if (entity.type !== 'mention') continue;
+        const mention = text.slice(entity.offset, entity.offset + entity.length).toLowerCase();
+        if (mention === normalizedHandle) return true;
+      }
+    }
+
+    return false;
   }
 }

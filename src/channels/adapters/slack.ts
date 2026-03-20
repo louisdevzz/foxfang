@@ -357,6 +357,10 @@ export class SlackAdapter implements ChannelAdapter {
     // Skip messages from the bot itself
     if (event.user === this.botInfo?.id) return;
 
+    const wasMentioned = event.type === 'app_mention' || this.isBotMentioned(event.text);
+    const canDetectMention = Boolean(this.botInfo?.id);
+    const chatType = this.normalizeChatType(event.channel_type);
+
     const channelMsg: ChannelMessage = {
       id: event.ts,
       channel: 'slack',
@@ -364,11 +368,16 @@ export class SlackAdapter implements ChannelAdapter {
       content: this.cleanMessageText(event.text),
       timestamp: new Date(parseFloat(event.ts) * 1000),
       metadata: {
+        chatId: event.channel,
+        chatType,
         channelId: event.channel,
         userId: event.user,
+        threadId: event.thread_ts,
         threadTs: event.thread_ts,
         channelType: event.channel_type,
         isThread: !!event.thread_ts,
+        wasMentioned,
+        canDetectMention,
       },
     };
 
@@ -386,6 +395,19 @@ export class SlackAdapter implements ChannelAdapter {
       text = text.replace(mention, '').trim();
     }
     return text;
+  }
+
+  private isBotMentioned(text?: string): boolean {
+    if (!text || !this.botInfo?.id) return false;
+    return text.includes(`<@${this.botInfo.id}>`);
+  }
+
+  private normalizeChatType(channelType?: string): 'private' | 'group' | 'channel' {
+    const normalized = (channelType || '').trim().toLowerCase();
+    if (normalized === 'im') return 'private';
+    if (normalized === 'channel') return 'channel';
+    if (normalized === 'group' || normalized === 'mpim') return 'group';
+    return 'group';
   }
 
   private startPingInterval(): void {

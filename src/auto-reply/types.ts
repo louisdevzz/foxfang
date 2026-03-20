@@ -48,6 +48,8 @@ export interface IncomingMessage {
   timestamp: Date;
   /** Whether bot was mentioned (for group chats) */
   wasMentioned?: boolean;
+  /** Whether mention detection is available for this channel message */
+  canDetectMention?: boolean;
   /** Command prefix if present (/command) */
   command?: string;
 }
