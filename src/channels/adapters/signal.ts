@@ -531,14 +531,33 @@ export class SignalAdapter implements ChannelAdapter {
     const receiveUrl =
       `${this.httpUrl}/v1/receive/${encodeURIComponent(this.phoneNumber)}` +
       '?timeout=5&ignore_attachments=true';
-    const response = await this.fetchWithTimeout(receiveUrl, undefined, 15000);
-    if (!response.ok) {
-      const errorText = await response.text().catch(() => 'Unknown error');
-      throw new Error(`receive failed: HTTP ${response.status} ${errorText}`);
+
+    // Combine the caller's abortSignal with a per-request timeout so that
+    // disconnect() promptly stops an in-flight receive request.
+    const timeoutController = new AbortController();
+    const timeoutId = setTimeout(() => timeoutController.abort(), 15000);
+
+    const onCallerAbort = (): void => timeoutController.abort(abortSignal.reason ?? 'Signal disconnected');
+    if (abortSignal.aborted) {
+      timeoutController.abort(abortSignal.reason ?? 'Signal disconnected');
+    } else {
+      abortSignal.addEventListener('abort', onCallerAbort, { once: true });
     }
 
-    const payload = await response.json().catch(() => null);
-    this.handleIncomingPayload(payload);
+    try {
+      const response = await fetch(receiveUrl, { signal: timeoutController.signal });
+      if (!response.ok) {
+        const errorText = await response.text().catch(() => 'Unknown error');
+        throw new Error(`receive failed: HTTP ${response.status} ${errorText}`);
+      }
+
+      const payload = await response.json().catch(() => null);
+      this.handleIncomingPayload(payload);
+    } finally {
+      clearTimeout(timeoutId);
+      abortSignal.removeEventListener('abort', onCallerAbort);
+    }
+
     await this.sleep(250, abortSignal);
   }
 

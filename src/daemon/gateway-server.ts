@@ -27,7 +27,7 @@ import { initCronTables } from '../cron/store';
 import { createWorkspaceManager } from '../workspace/manager';
 import { initFoxFangHome } from '../workspace/manager';
 import { GITHUB_OAUTH_PROXY, disconnectGitHub, getGitHubToken, saveGitHubToken } from '../integrations/github';
-import { getCredential } from '../credentials/index';
+import { getCredential, saveCredential } from '../credentials/index';
 
 const PORT = parseInt(
   process.env.FOXFANG_GATEWAY_PORT || process.env.PORT || '8787',
@@ -182,7 +182,10 @@ class GatewayServer {
     initCronTables();
     
     this.setupWebSocket();
-    this.initialize();
+    void this.initialize().catch((err) => {
+      console.error('[Gateway] Initialization failed:', err);
+      process.exit(1);
+    });
     
     server.listen(port, () => {
       console.log(`[Gateway] Server listening on port ${port}`);
@@ -295,7 +298,6 @@ class GatewayServer {
           id: provider.id,
           name: provider.name,
           baseUrl: provider.baseUrl,
-          apiKey: provider.apiKey || '',
           defaultModel: (provider as any).defaultModel,
           enabled: provider.enabled !== false,
           hasApiKey: Boolean(provider.apiKey),
@@ -303,18 +305,14 @@ class GatewayServer {
         channels: {
           telegram: {
             enabled: Boolean(config.channels?.telegram?.enabled),
-            botToken: config.channels?.telegram?.botToken || '',
             hasBotToken: Boolean(config.channels?.telegram?.botToken),
           },
           discord: {
             enabled: Boolean(config.channels?.discord?.enabled),
-            botToken: config.channels?.discord?.botToken || '',
             hasBotToken: Boolean(config.channels?.discord?.botToken),
           },
           slack: {
             enabled: Boolean(config.channels?.slack?.enabled),
-            botToken: config.channels?.slack?.botToken || '',
-            appToken: config.channels?.slack?.appToken || '',
             hasBotToken: Boolean(config.channels?.slack?.botToken),
             hasAppToken: Boolean(config.channels?.slack?.appToken),
           },
@@ -325,8 +323,6 @@ class GatewayServer {
           },
         },
         webTools: {
-          braveSearchApiKey,
-          firecrawlApiKey,
           hasBraveSearchApiKey: Boolean(braveSearchApiKey),
           hasFirecrawlApiKey: Boolean(firecrawlApiKey),
         },
@@ -504,22 +500,50 @@ class GatewayServer {
   }
 
   private getRequestOrigin(req: IncomingMessage): string {
-    const forwardedProto = this.sanitizeString(req.headers['x-forwarded-proto']);
-    const proto = forwardedProto.split(',')[0] || 'http';
+    // Prefer an explicitly configured, trusted public base URL.
+    const configuredBaseUrl = process.env.PUBLIC_BASE_URL;
+    if (configuredBaseUrl && /^https?:\/\//i.test(configuredBaseUrl)) {
+      return configuredBaseUrl.replace(/\/+$/, '');
+    }
 
+    // Derive protocol from x-forwarded-proto if present and valid.
+    const forwardedProtoRaw = this.sanitizeString(req.headers['x-forwarded-proto']);
+    let proto = (forwardedProtoRaw.split(',')[0] || '').toLowerCase();
+    if (proto !== 'http' && proto !== 'https') {
+      const isEncrypted = (req.socket as any)?.encrypted === true;
+      proto = isEncrypted ? 'https' : 'http';
+    }
+
+    // Prefer x-forwarded-host only if it passes validation.
     const forwardedHostHeader = req.headers['x-forwarded-host'];
     const forwardedHost = Array.isArray(forwardedHostHeader)
       ? this.sanitizeString(forwardedHostHeader[0])
       : this.sanitizeString(forwardedHostHeader);
 
     const hostHeader = req.headers.host || '';
-    const host = forwardedHost || this.sanitizeString(hostHeader);
+    const candidateForwardedHost = forwardedHost || '';
+    const candidateDirectHost = this.sanitizeString(hostHeader);
+
+    let host = '';
+    if (candidateForwardedHost && this.isValidHost(candidateForwardedHost)) {
+      host = candidateForwardedHost;
+    } else if (candidateDirectHost && this.isValidHost(candidateDirectHost)) {
+      host = candidateDirectHost;
+    }
 
     if (!host) {
       return `http://127.0.0.1:${PORT}`;
     }
 
     return `${proto}://${host}`;
+  }
+
+  private isValidHost(host: string): boolean {
+    if (!host) return false;
+    // Allow valid hostnames (no consecutive/leading/trailing dots) with an optional port.
+    // Rejects values with schemes, paths, or other unsafe characters.
+    const HOST_REGEX = /^[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?)*(?::\d+)?$/;
+    return HOST_REGEX.test(host);
   }
 
   private escapeHtml(value: string): string {
@@ -564,7 +588,7 @@ class GatewayServer {
     const username = this.sanitizeString(callbackUrl.searchParams.get('username'));
     const state = this.sanitizeString(callbackUrl.searchParams.get('state'));
 
-    if (state && !this.consumeGitHubOAuthState(state)) {
+    if (!state || !this.consumeGitHubOAuthState(state)) {
       this.sendHtml(res, this.renderGitHubOAuthCallbackPage({
         ok: false,
         message: 'Invalid or expired OAuth state. Please try Connect GitHub again.',
@@ -1255,15 +1279,24 @@ class GatewayServer {
 
     const braveSearchApiKey = this.sanitizeString(payload.braveSearchApiKey);
     if (braveSearchApiKey) {
-      config.braveSearch = { ...(config.braveSearch || {}), apiKey: braveSearchApiKey };
+      await saveCredential('brave-search', {
+        provider: 'brave-search',
+        apiKey: braveSearchApiKey,
+        createdAt: new Date().toISOString(),
+      });
+      config.braveSearch = { ...(config.braveSearch || {}), apiKeyRef: 'credential:brave-search' };
+      delete (config.braveSearch as any).apiKey;
     }
 
     const firecrawlApiKey = this.sanitizeString(payload.firecrawlApiKey);
     if (firecrawlApiKey) {
-      config.firecrawl = {
-        ...(config.firecrawl || {}),
-        ...(firecrawlApiKey ? { apiKey: firecrawlApiKey } : {}),
-      };
+      await saveCredential('firecrawl', {
+        provider: 'firecrawl',
+        apiKey: firecrawlApiKey,
+        createdAt: new Date().toISOString(),
+      });
+      config.firecrawl = { ...(config.firecrawl || {}), apiKeyRef: 'credential:firecrawl' };
+      delete (config.firecrawl as any).apiKey;
     }
 
     await saveConfig(config);
