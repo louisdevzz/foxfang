@@ -56,6 +56,7 @@ export class SignalAdapter implements ChannelAdapter {
       .map(normalizeUrl);
 
     const connectionErrors: string[] = [];
+    let notRegisteredError = '';
 
     for (const candidate of candidateUrls) {
       try {
@@ -77,11 +78,17 @@ export class SignalAdapter implements ChannelAdapter {
         break;
       } catch (error) {
         const reason = error instanceof Error ? error.message : String(error);
+        if (!notRegisteredError && reason.includes('not registered on signal-api')) {
+          notRegisteredError = reason;
+        }
         connectionErrors.push(`${candidate} (${reason})`);
       }
     }
 
     if (!this.connected) {
+      if (notRegisteredError) {
+        throw new Error(notRegisteredError);
+      }
       throw new Error(
         `Cannot connect to Signal API.\n` +
         `Tried:\n  - ${connectionErrors.join('\n  - ')}\n` +
