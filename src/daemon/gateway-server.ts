@@ -14,7 +14,7 @@ import { join } from 'path';
 import { randomBytes } from 'crypto';
 import { WebSocketServer, WebSocket } from 'ws';
 import { parse } from 'url';
-import { loadConfig, loadConfigWithCredentials, saveConfig } from '../config/index';
+import { getConfigPath, loadConfig, loadConfigWithCredentials, saveConfig } from '../config/index';
 import { initializeProviders } from '../providers/index';
 import { AgentOrchestrator } from '../agents/orchestrator';
 import { SessionManager } from '../sessions/manager';
@@ -27,6 +27,7 @@ import { initCronTables } from '../cron/store';
 import { createWorkspaceManager } from '../workspace/manager';
 import { initFoxFangHome } from '../workspace/manager';
 import { GITHUB_OAUTH_PROXY, disconnectGitHub, getGitHubToken, saveGitHubToken } from '../integrations/github';
+import { getCredential } from '../credentials/index';
 
 const PORT = parseInt(
   process.env.FOXFANG_GATEWAY_PORT || process.env.PORT || '8787',
@@ -253,9 +254,20 @@ class GatewayServer {
     }
 
     if (method === 'GET' && pathname === '/setup/status') {
-      const config = await loadConfig();
+      const config = await loadConfigWithCredentials();
+      const configPath = await getConfigPath().catch(() => '');
       const githubToken = await getGitHubToken().catch(() => null);
       const githubUsername = githubToken?.username || config.github?.username || '';
+      const braveSearchApiKey = await this.resolveToolApiKey(
+        config.braveSearch?.apiKey,
+        config.braveSearch?.apiKeyRef,
+        'brave-search',
+      );
+      const firecrawlApiKey = await this.resolveToolApiKey(
+        config.firecrawl?.apiKey,
+        config.firecrawl?.apiKeyRef,
+        'firecrawl',
+      );
       this.sendJson(res, 200, {
         ready: this.hasConfiguredProvider(config),
         defaultProvider: config.defaultProvider,
@@ -264,6 +276,7 @@ class GatewayServer {
           id: provider.id,
           name: provider.name,
           baseUrl: provider.baseUrl,
+          apiKey: provider.apiKey || '',
           defaultModel: (provider as any).defaultModel,
           enabled: provider.enabled !== false,
           hasApiKey: Boolean(provider.apiKey),
@@ -271,14 +284,18 @@ class GatewayServer {
         channels: {
           telegram: {
             enabled: Boolean(config.channels?.telegram?.enabled),
+            botToken: config.channels?.telegram?.botToken || '',
             hasBotToken: Boolean(config.channels?.telegram?.botToken),
           },
           discord: {
             enabled: Boolean(config.channels?.discord?.enabled),
+            botToken: config.channels?.discord?.botToken || '',
             hasBotToken: Boolean(config.channels?.discord?.botToken),
           },
           slack: {
             enabled: Boolean(config.channels?.slack?.enabled),
+            botToken: config.channels?.slack?.botToken || '',
+            appToken: config.channels?.slack?.appToken || '',
             hasBotToken: Boolean(config.channels?.slack?.botToken),
             hasAppToken: Boolean(config.channels?.slack?.appToken),
           },
@@ -288,13 +305,17 @@ class GatewayServer {
           },
         },
         webTools: {
-          hasBraveSearchApiKey: Boolean(config.braveSearch?.apiKey),
-          hasFirecrawlApiKey: Boolean(config.firecrawl?.apiKey),
+          braveSearchApiKey,
+          firecrawlApiKey,
+          hasBraveSearchApiKey: Boolean(braveSearchApiKey),
+          hasFirecrawlApiKey: Boolean(firecrawlApiKey),
         },
         github: {
           connected: Boolean(githubToken),
           username: githubUsername,
         },
+        configPath,
+        configSnapshot: this.createSetupConfigSnapshot(config),
       });
       return;
     }
@@ -518,6 +539,64 @@ class GatewayServer {
 
   private sanitizeString(value: unknown): string {
     return typeof value === 'string' ? value.trim() : '';
+  }
+
+  private maskSecret(value: string): string {
+    const normalized = this.sanitizeString(value);
+    if (!normalized) return '';
+    const suffix = normalized.length > 4 ? normalized.slice(-4) : normalized;
+    return `***${suffix}`;
+  }
+
+  private createSetupConfigSnapshot(input: unknown): unknown {
+    const secretKeyPattern = /(api[-_]?key|token|password|secret|authorization|cookie)/i;
+
+    const walk = (value: unknown, key = ''): unknown => {
+      if (Array.isArray(value)) {
+        return value.map((item) => walk(item, key));
+      }
+      if (!value || typeof value !== 'object') {
+        if (typeof value === 'string' && secretKeyPattern.test(key)) {
+          return this.maskSecret(value);
+        }
+        return value;
+      }
+
+      const result: Record<string, unknown> = {};
+      for (const [entryKey, entryValue] of Object.entries(value as Record<string, unknown>)) {
+        if (typeof entryValue === 'string' && secretKeyPattern.test(entryKey)) {
+          result[entryKey] = this.maskSecret(entryValue);
+          continue;
+        }
+        result[entryKey] = walk(entryValue, entryKey);
+      }
+      return result;
+    };
+
+    return walk(input);
+  }
+
+  private async resolveToolApiKey(
+    apiKeyValue: unknown,
+    apiKeyRefValue: unknown,
+    fallbackProvider: string,
+  ): Promise<string> {
+    const inlineApiKey = this.sanitizeString(apiKeyValue);
+    if (inlineApiKey) {
+      return inlineApiKey;
+    }
+
+    const ref = this.sanitizeString(apiKeyRefValue);
+    const providerFromRef = ref.startsWith('credential:')
+      ? this.sanitizeString(ref.slice('credential:'.length))
+      : '';
+    const provider = providerFromRef || fallbackProvider;
+    if (!provider) {
+      return '';
+    }
+
+    const credential = await getCredential(provider).catch(() => null);
+    return this.sanitizeString(credential?.apiKey);
   }
 
   private getProviderPreset(providerId: string): ProviderPreset | undefined {

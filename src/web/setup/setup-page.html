@@ -25,6 +25,7 @@
     .status.error { color: #b91c1c; }
     .status.ok { color: #166534; }
     .models-note { margin-top: 6px; font-size: 12px; color: #6b7280; }
+    .config-preview { margin: 0; padding: 12px; border-radius: 10px; border: 1px solid #e5e7eb; background: #f9fafb; color: #111827; font-size: 12px; line-height: 1.45; overflow: auto; max-height: 320px; }
     code { background: #f3f4f6; border-radius: 6px; padding: 2px 6px; }
     @media (max-width: 760px) { .grid { grid-template-columns: 1fr; } }
   </style>
@@ -143,6 +144,15 @@
       </div>
 
       <div class="card">
+        <h2>Current foxfang.json</h2>
+        <div id="configPath" class="models-note">Path: loading...</div>
+        <div class="actions">
+          <button type="button" id="refreshConfigBtn">Refresh Config</button>
+        </div>
+        <pre id="configPreview" class="config-preview">Loading...</pre>
+      </div>
+
+      <div class="card">
         <div class="actions">
           <button type="submit" id="saveBtn">Save & Restart</button>
           <span id="saveStatus" class="status"></span>
@@ -193,6 +203,11 @@
     const providerApiKeyEl = document.getElementById('providerApiKey');
     const providerBaseUrlEl = document.getElementById('providerBaseUrl');
     const defaultModelEl = document.getElementById('defaultModel');
+    const braveSearchApiKeyEl = document.getElementById('braveSearchApiKey');
+    const firecrawlApiKeyEl = document.getElementById('firecrawlApiKey');
+    const configPathEl = document.getElementById('configPath');
+    const configPreviewEl = document.getElementById('configPreview');
+    const refreshConfigBtn = document.getElementById('refreshConfigBtn');
     const githubConnectBtn = document.getElementById('githubConnectBtn');
     const githubDisconnectBtn = document.getElementById('githubDisconnectBtn');
     const telegramEnabledEl = document.getElementById('telegramEnabled');
@@ -229,6 +244,19 @@
     function setGitHubControls(connected) {
       githubConnectBtn.disabled = connected;
       githubDisconnectBtn.disabled = !connected;
+    }
+
+    function renderConfigSnapshot(configPath, configSnapshot) {
+      const pathText = configPath && String(configPath).trim()
+        ? String(configPath).trim()
+        : '~/.foxfang/foxfang.json';
+      configPathEl.textContent = `Path: ${pathText}`;
+
+      try {
+        configPreviewEl.textContent = JSON.stringify(configSnapshot || {}, null, 2);
+      } catch (_) {
+        configPreviewEl.textContent = '{"error":"Unable to render config snapshot"}';
+      }
     }
 
     async function connectGitHub() {
@@ -383,6 +411,7 @@
 
     async function loadStatus() {
       try {
+        refreshConfigBtn.disabled = true;
         const response = await fetch('/setup/status');
         const data = await response.json();
         if (!response.ok) {
@@ -391,11 +420,13 @@
 
         let preferredModel = '';
         if (Array.isArray(data.providers) && data.providers.length > 0) {
-          const provider = data.providers[0];
+          const provider = data.providers.find((entry) => entry.id === data.defaultProvider) || data.providers[0];
           providerIdEl.value = provider.id || 'openai';
+          providerApiKeyEl.value = provider.apiKey || '';
           providerBaseUrlEl.value = provider.baseUrl || '';
           preferredModel = data.defaultModel || provider.defaultModel || '';
         } else {
+          providerApiKeyEl.value = '';
           ensureBaseUrlDefault(true);
         }
 
@@ -404,7 +435,16 @@
           discordEnabledEl.value = boolToMode(!!data.channels.discord?.enabled);
           slackEnabledEl.value = boolToMode(!!data.channels.slack?.enabled);
           signalEnabledEl.value = boolToMode(!!data.channels.signal?.enabled);
+          telegramBotTokenEl.value = data.channels.telegram?.botToken || '';
+          discordBotTokenEl.value = data.channels.discord?.botToken || '';
+          slackBotTokenEl.value = data.channels.slack?.botToken || '';
+          slackAppTokenEl.value = data.channels.slack?.appToken || '';
           signalPhoneNumberEl.value = data.channels.signal?.phoneNumber || '';
+        }
+
+        if (data.webTools) {
+          braveSearchApiKeyEl.value = data.webTools.braveSearchApiKey || '';
+          firecrawlApiKeyEl.value = data.webTools.firecrawlApiKey || '';
         }
 
         if (data.github?.connected) {
@@ -415,6 +455,8 @@
           setGitHubStatus('Not connected.', '');
           setGitHubControls(false);
         }
+
+        renderConfigSnapshot(data.configPath, data.configSnapshot);
 
         await refreshModels(preferredModel);
         updateBaseUrlInputState();
@@ -427,6 +469,8 @@
         );
       } catch (error) {
         setStatus(error.message || 'Failed to load setup status', 'error');
+      } finally {
+        refreshConfigBtn.disabled = false;
       }
     }
 
@@ -450,6 +494,9 @@
     signalEnabledEl.addEventListener('change', updateChannelInputState);
     githubConnectBtn.addEventListener('click', connectGitHub);
     githubDisconnectBtn.addEventListener('click', disconnectGitHub);
+    refreshConfigBtn.addEventListener('click', () => {
+      void loadStatus();
+    });
 
     window.addEventListener('message', async (event) => {
       if (event.origin !== window.location.origin) return;
@@ -516,8 +563,8 @@
             phoneNumber: signalPhoneNumberEl.value.trim(),
           },
         },
-        braveSearchApiKey: document.getElementById('braveSearchApiKey').value.trim(),
-        firecrawlApiKey: document.getElementById('firecrawlApiKey').value.trim(),
+        braveSearchApiKey: braveSearchApiKeyEl.value.trim(),
+        firecrawlApiKey: firecrawlApiKeyEl.value.trim(),
       };
 
       try {
@@ -531,6 +578,9 @@
           throw new Error(data.error || 'Failed to save setup');
         }
         setSaveStatus(data.message || 'Saved. Restarting...', 'ok');
+        setTimeout(() => {
+          void loadStatus();
+        }, 200);
       } catch (error) {
         setSaveStatus(error.message || 'Failed to save setup', 'error');
       } finally {
