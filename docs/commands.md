@@ -57,6 +57,7 @@ foxfang [--debug] [--config <path>] <command>
     channels
   chat
   run
+  dashboard
   status
   config
     get
@@ -191,6 +192,18 @@ Show system status (gateway, providers, channels).
 ```bash
 pnpm foxfang status
 ```
+
+### `dashboard`
+Show token/tool usage hotspots from request traces (`request-trace-*.jsonl`).
+
+```bash
+pnpm foxfang dashboard
+pnpm foxfang dashboard --days 3 --top 5
+```
+
+Options:
+- `--days <days>` - Number of recent days to aggregate (default: `7`)
+- `--top <n>` - Top rows per table (default: `10`)
 
 ---
 

@@ -3,6 +3,7 @@
  */
 
 import { Tool, ToolCategory } from '../traits';
+import { searchMemories, storeMemory } from '../../memory/database';
 
 export class MemoryStoreTool implements Tool {
   name = 'memory_store';
@@ -17,9 +18,10 @@ export class MemoryStoreTool implements Tool {
     required: ['key', 'value'],
   };
 
-  async execute(args: { key: string; value: string }): Promise<{ success: boolean }> {
-    // Mock implementation
-    return { success: true };
+  async execute(args: { key: string; value: string }): Promise<{ success: boolean; data?: any }> {
+    const content = `${args.key}: ${args.value}`;
+    const id = storeMemory(content, 'fact', { importance: 6 });
+    return { success: true, data: { id, key: args.key } };
   }
 }
 
@@ -35,8 +37,23 @@ export class MemoryRecallTool implements Tool {
     required: ['key'],
   };
 
-  async execute(args: { key: string }): Promise<{ value?: string; found: boolean }> {
-    // Mock implementation
-    return { found: false };
+  async execute(args: { key: string }): Promise<{ found: boolean; value?: string; data?: any }> {
+    const hits = searchMemories(args.key, 4);
+    if (hits.length === 0) {
+      return { found: false };
+    }
+    return {
+      found: true,
+      value: hits[0].content,
+      data: {
+        key: args.key,
+        matches: hits.map((hit) => ({
+          id: hit.id,
+          category: hit.category,
+          content: hit.content,
+          importance: hit.importance,
+        })),
+      },
+    };
   }
 }

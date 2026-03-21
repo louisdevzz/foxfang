@@ -73,6 +73,30 @@ export const defaultConfig: AppConfig = {
   observability: {
     enabled: true
   },
+  agentRuntime: {
+    defaultReasoningMode: 'balanced',
+    maxRecentMessages: 4,
+    maxRelevantMemories: 5,
+    maxSourceSnippets: 3,
+    maxSnippetTokens: 300,
+    maxDelegations: 1,
+    maxReviewPasses: 1,
+    maxRewritePasses: 1,
+    maxToolIterations: 5,
+    toolCompressionThresholdChars: 1500,
+    toolCacheTtlMs: 24 * 60 * 60 * 1000,
+    routing: {
+      defaultAgent: 'content-specialist',
+      rules: [],
+      outputModeHints: {
+        short: ['short', 'brief', 'summary'],
+        deep: ['deep', 'detailed', 'in-depth'],
+      },
+      toolTriggers: ['search', 'research', 'source', 'read link', 'check url'],
+      reviewTriggers: ['review', 'optimize', 'improve', 'analyze', 'audit'],
+      highStakesTriggers: ['launch', 'critical', 'important', 'brand-sensitive', 'public'],
+    },
+  },
   defaultSystemPrompt: `You are a helpful AI assistant for FoxFang.
 
 You can help with:

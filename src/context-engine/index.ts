@@ -5,6 +5,7 @@
  */
 
 import { queryOne, query } from '../database/sqlite';
+import { searchMemories } from '../memory/database';
 
 export interface Context {
   userPreferences: Record<string, any>;
@@ -61,6 +62,20 @@ export async function buildContext(options?: {
     // If no brand specified but project has brand, load it
     if (!context.brandContext && context.projectContext) {
       context.brandContext = await loadBrandContext(context.projectContext.brandId);
+    }
+  }
+
+  // Retrieve top-k relevant memories for this query
+  if (options?.query && options.query.trim().length > 2) {
+    try {
+      const memoryHits = searchMemories(options.query, 4);
+      context.recentMemories = memoryHits
+        .map((entry) => entry.content)
+        .filter(Boolean)
+        .slice(0, 4);
+    } catch {
+      // Keep context build resilient even if FTS query fails.
+      context.recentMemories = [];
     }
   }
 

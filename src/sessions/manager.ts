@@ -6,6 +6,7 @@ import { readFile, writeFile, mkdir } from 'fs/promises';
 import { existsSync } from 'fs';
 import { join } from 'path';
 import { homedir } from 'os';
+import type { SessionSummary } from '../agents/types';
 
 const SESSIONS_DIR = join(homedir(), '.foxfang', 'sessions');
 
@@ -97,6 +98,30 @@ export class SessionManager {
     session.messages.push(message);
     session.lastActive = Date.now();
     
+    await this.saveSession(sessionId);
+  }
+
+  async getSessionSummary(sessionId: string): Promise<SessionSummary | undefined> {
+    await this.initialize();
+    const session = this.sessions.get(sessionId);
+    const summary = session?.metadata?.sessionSummary;
+    if (!summary || typeof summary !== 'object') {
+      return undefined;
+    }
+    return summary as SessionSummary;
+  }
+
+  async updateSessionSummary(sessionId: string, summary: SessionSummary): Promise<void> {
+    await this.initialize();
+    let session = this.sessions.get(sessionId);
+    if (!session) {
+      session = await this.createSession(sessionId, { agentId: 'default' });
+    }
+    session.metadata = {
+      ...(session.metadata || {}),
+      sessionSummary: summary,
+    };
+    session.lastActive = Date.now();
     await this.saveSession(sessionId);
   }
 

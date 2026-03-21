@@ -4,12 +4,23 @@
  * Executes agent tasks with proper context and tool access.
  */
 
-import { Agent, AgentContext, AgentRunResult, ToolCall, ToolResult, WorkspaceManagerLike } from './types';
+import {
+  Agent,
+  AgentContext,
+  AgentRunResult,
+  CompactToolResult,
+  ReasoningMode,
+  ToolCall,
+  ToolResult,
+  WorkspaceManagerLike,
+} from './types';
 import { agentRegistry } from './registry';
 import { getProvider, getProviderConfig } from '../providers/index';
 import { toolRegistry } from '../tools/index';
 import { ChatMessage } from '../providers/traits';
 import { formatSkillsForPrompt, loadAvailableSkills } from '../skill-system';
+import { cacheToolResult } from '../tools/tool-result-cache';
+import { resolveTokenBudget, trimMessagesToBudget } from './budget';
 
 let defaultProviderId: string | undefined;
 
@@ -73,6 +84,8 @@ const TOOL_SUMMARIES: Record<string, string> = {
   cron: 'Schedule recurring tasks and reminders',
   skills_list: 'List available skills (bundled/local/workspace) that can guide agent behavior',
   skills_add: 'Create or install a new skill into FoxFang skills directory',
+  expand_cached_result: 'Expand raw content from a compacted tool result by rawRef',
+  get_cached_snippet: 'Get a targeted snippet from cached raw tool content by rawRef',
   
   // GitHub tools
   github_connect: 'Check GitHub connection status',
@@ -121,6 +134,119 @@ Prioritize safety and human oversight over completion.
 If instructions conflict, pause and ask. Comply with stop/pause requests.
 Never bypass safeguards or manipulate users to disable protections.`;
 
+const TOOL_COMPRESSION_THRESHOLD_CHARS = 1500;
+const TOOL_SUMMARY_MAX_CHARS = 800;
+
+function normalizeReasoningMode(mode?: ReasoningMode): ReasoningMode {
+  if (mode === 'fast' || mode === 'deep' || mode === 'balanced') {
+    return mode;
+  }
+  return 'balanced';
+}
+
+function resolveModelFromExecutionProfile(params: {
+  providerId: string;
+  defaultModel: string;
+  tier?: 'small' | 'medium' | 'large';
+}): string {
+  const tier = params.tier || 'medium';
+  if (tier === 'medium' || tier === 'large') {
+    return params.defaultModel;
+  }
+
+  const providerId = params.providerId.toLowerCase();
+  const model = params.defaultModel;
+  if (providerId === 'openai' && /gpt-4o(?!-mini)/i.test(model)) return 'gpt-4o-mini';
+  if (providerId === 'anthropic' && /sonnet/i.test(model)) return 'claude-3-haiku-latest';
+  if (providerId.startsWith('kimi') && /32k|128k/i.test(model)) return 'moonshot-v1-8k';
+  return model;
+}
+
+function safeJson(value: unknown): string {
+  if (typeof value === 'string') return value;
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
+}
+
+function compactText(text: string, maxChars: number): string {
+  const clean = text.replace(/\s+/g, ' ').trim();
+  if (clean.length <= maxChars) return clean;
+  return `${clean.slice(0, maxChars)}...`;
+}
+
+function extractTitle(data: unknown): string | undefined {
+  if (!data || typeof data !== 'object') return undefined;
+  const obj = data as Record<string, unknown>;
+  if (typeof obj.title === 'string') return compactText(obj.title, 160);
+  if (obj.metadata && typeof obj.metadata === 'object') {
+    const metaTitle = (obj.metadata as Record<string, unknown>).title;
+    if (typeof metaTitle === 'string') return compactText(metaTitle, 160);
+  }
+  return undefined;
+}
+
+function extractKeyPoints(data: unknown): string[] {
+  if (typeof data === 'string') {
+    return compactText(data, 320)
+      .split(/[.!?]\s+/)
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .slice(0, 4);
+  }
+  if (!data || typeof data !== 'object') return [];
+  const obj = data as Record<string, unknown>;
+  const points: string[] = [];
+  for (const [key, value] of Object.entries(obj)) {
+    if (value == null) continue;
+    if (typeof value === 'string' && value.trim()) {
+      points.push(`${key}: ${compactText(value, 160)}`);
+    } else if (typeof value === 'number' || typeof value === 'boolean') {
+      points.push(`${key}: ${String(value)}`);
+    } else if (Array.isArray(value)) {
+      points.push(`${key}: ${value.length} item(s)`);
+    }
+    if (points.length >= 5) break;
+  }
+  return points;
+}
+
+function compactToolPayload(toolName: string, rawData: unknown): {
+  compact: CompactToolResult;
+  rawSize: number;
+  compactSize: number;
+} {
+  const rawText = safeJson(rawData);
+  const rawSize = rawText.length;
+  const title = extractTitle(rawData);
+  const keyPoints = extractKeyPoints(rawData);
+  let rawRef: string | undefined;
+
+  const summary = rawSize > TOOL_COMPRESSION_THRESHOLD_CHARS
+    ? compactText(rawText, TOOL_SUMMARY_MAX_CHARS)
+    : compactText(rawText, TOOL_SUMMARY_MAX_CHARS);
+
+  if (rawSize > TOOL_COMPRESSION_THRESHOLD_CHARS) {
+    rawRef = cacheToolResult(toolName, rawData).rawRef;
+  }
+
+  const compact: CompactToolResult = {
+    source: toolName,
+    title,
+    summary,
+    keyPoints: keyPoints.length > 0 ? keyPoints : ['Tool returned structured data.'],
+    relevanceToTask: rawSize > TOOL_COMPRESSION_THRESHOLD_CHARS
+      ? 'Long result compacted to save context; use rawRef for expansion if needed.'
+      : 'Direct tool result.',
+    ...(rawRef ? { rawRef } : {}),
+  };
+
+  const compactSize = safeJson(compact).length;
+  return { compact, rawSize, compactSize };
+}
+
 /**
  * Run an agent with the given context using Agent Loop pattern
  * 
@@ -154,8 +280,11 @@ export async function runAgent(
   // Debug: log tools being sent
   debugLog(`[AgentRuntime] Agent ${agentId} has ${tools.length} tools:`, tools.map(t => t.name).join(', '));
 
+  const reasoningMode = normalizeReasoningMode(context.reasoningMode);
+  const budget = context.budget || resolveTokenBudget({ agentId, mode: reasoningMode });
+
   // Initialize messages array
-  let messages: ChatMessage[] = [
+  const initialMessages: ChatMessage[] = [
     { role: 'system', content: systemPrompt },
     ...context.messages
       .filter(m => m.role !== 'tool')
@@ -164,6 +293,8 @@ export async function runAgent(
         content: m.content,
       })),
   ];
+  const trimmedInput = trimMessagesToBudget(initialMessages, budget.requestMaxInputTokens);
+  let messages: ChatMessage[] = trimmedInput.messages;
 
   // Get provider
   const providerId = agent.provider || defaultProviderId;
@@ -179,13 +310,19 @@ export async function runAgent(
   const actualProviderId = agent.provider || defaultProviderId || 'openai';
   const providerConfig = getProviderConfig(actualProviderId);
   const defaultModel = providerConfig?.defaultModel || 'gpt-4o';
-  const model = agent.model || defaultModel;
+  const model = agent.model
+    || resolveModelFromExecutionProfile({
+      providerId: actualProviderId,
+      defaultModel,
+      tier: agent.executionProfile?.modelTier,
+    });
 
   // Track all tool calls made during the loop
   const allToolCalls: ToolCall[] = [];
   let iteration = 0;
-  const maxIterations = 10; // Prevent infinite loops
+  const maxIterations = budget.maxToolIterations; // Prevent infinite loops
   let toolErrorStreak = 0;
+  const toolTelemetry: Array<{ tool: string; rawSize: number; compactSize: number }> = [];
 
   // AGENT LOOP
   while (iteration < maxIterations) {
@@ -215,6 +352,7 @@ export async function runAgent(
         content: response.content,
         toolCalls: allToolCalls.length > 0 ? allToolCalls : undefined,
         usage: response.usage,
+        toolTelemetry: toolTelemetry.length > 0 ? toolTelemetry : undefined,
       };
     }
 
@@ -256,6 +394,7 @@ export async function runAgent(
         content: `Tool execution failed repeatedly:\n${errorSummary}`,
         toolCalls: allToolCalls,
         usage: response.usage,
+        toolTelemetry: toolTelemetry.length > 0 ? toolTelemetry : undefined,
       };
     }
 
@@ -265,7 +404,14 @@ export async function runAgent(
       if (r.error) {
         return `${toolName}: Error: ${r.error}`;
       }
-      const data = r.data || r.output;
+      if (toolName && typeof r.rawSize === 'number' && typeof r.compactSize === 'number') {
+        toolTelemetry.push({
+          tool: toolName,
+          rawSize: r.rawSize,
+          compactSize: r.compactSize,
+        });
+      }
+      const data = r.compact || r.data || r.output;
       return `${toolName}: ${typeof data === 'object' ? JSON.stringify(data) : data}`;
     }).join('\n');
 
@@ -276,6 +422,7 @@ export async function runAgent(
       { role: 'assistant', content: assistantContent },
       { role: 'user', content: `[Tool Results]\n${toolResultsForModel}` },
     ];
+    messages = trimMessagesToBudget(messages, budget.requestMaxInputTokens).messages;
 
     // Continue loop - call LLM again with updated context
   }
@@ -285,6 +432,7 @@ export async function runAgent(
   return {
     content: messages[messages.length - 1]?.content || 'Max iterations reached',
     toolCalls: allToolCalls,
+    toolTelemetry: toolTelemetry.length > 0 ? toolTelemetry : undefined,
   };
 }
 
@@ -318,8 +466,11 @@ export async function* runAgentStream(
       parameters: tool!.parameters,
     }));
 
+  const reasoningMode = normalizeReasoningMode(context.reasoningMode);
+  const budget = context.budget || resolveTokenBudget({ agentId, mode: reasoningMode });
+
   // Initialize messages array
-  let messages: ChatMessage[] = [
+  const initialMessages: ChatMessage[] = [
     { role: 'system', content: systemPrompt },
     ...context.messages
       .filter(m => m.role !== 'tool')
@@ -328,6 +479,8 @@ export async function* runAgentStream(
         content: m.content,
       })),
   ];
+  const trimmedInput = trimMessagesToBudget(initialMessages, budget.requestMaxInputTokens);
+  let messages: ChatMessage[] = trimmedInput.messages;
 
   // Get provider
   const providerId = agent.provider || defaultProviderId;
@@ -342,11 +495,16 @@ export async function* runAgentStream(
   const actualProviderId = agent.provider || defaultProviderId || 'openai';
   const providerConfig = getProviderConfig(actualProviderId);
   const defaultModel = providerConfig?.defaultModel || 'gpt-4o';
-  const model = agent.model || defaultModel;
+  const model = agent.model
+    || resolveModelFromExecutionProfile({
+      providerId: actualProviderId,
+      defaultModel,
+      tier: agent.executionProfile?.modelTier,
+    });
 
   // Track iterations to prevent infinite loops
   let iteration = 0;
-  const maxIterations = 10;
+  const maxIterations = budget.maxToolIterations;
   let toolErrorStreak = 0;
 
   // AGENT LOOP
@@ -414,7 +572,7 @@ export async function* runAgentStream(
         yield { 
           type: 'tool_result', 
           tool: pendingToolCalls.find(tc => tc.id === result.toolCallId)?.name,
-          result: result.error ? { error: result.error } : { data: result.data || result.output }
+          result: result.error ? { error: result.error } : { data: result.compact || result.data || result.output }
         };
       }
 
@@ -424,7 +582,7 @@ export async function* runAgentStream(
         if (r.error) {
           return `${toolName}: Error: ${r.error}`;
         }
-        const data = r.data || r.output;
+        const data = r.compact || r.data || r.output;
         return `${toolName}: ${typeof data === 'object' ? JSON.stringify(data) : data}`;
       }).join('\n');
 
@@ -434,6 +592,7 @@ export async function* runAgentStream(
         { role: 'assistant', content: fullContent },
         { role: 'user', content: `[Tool Results]\n${toolResultContent}` },
       ];
+      messages = trimMessagesToBudget(messages, budget.requestMaxInputTokens).messages;
 
       // Continue to next iteration
     } catch (error) {
@@ -473,6 +632,7 @@ function buildToolSection(tools: string[]): string {
     'Tasks': ['create_task', 'list_tasks', 'update_task_status'],
     'System': ['bash', 'bash_list', 'bash_poll', 'bash_log', 'bash_kill', 'cron'],
     'Skills': ['skills_list', 'skills_add'],
+    'Result Cache': ['expand_cached_result', 'get_cached_snippet'],
     'GitHub': ['github_connect', 'github_create_issue', 'github_create_pr', 'github_list_issues', 'github_list_prs'],
   };
 
@@ -524,6 +684,7 @@ function buildToolSection(tools: string[]): string {
   lines.push('- For websites: use fetch_url or firecrawl_scrape (if API key available)');
   lines.push('- For search: prefer brave_search if available, fallback to web_search');
   lines.push('- For skill management: use skills_list to inspect and skills_add to install/create');
+  lines.push('- For long compacted results: use expand_cached_result or get_cached_snippet with rawRef');
   lines.push('');
   lines.push("**Never say 'I can't access that'** — use the tool first. If it fails, THEN explain.");
   lines.push('');
@@ -564,11 +725,12 @@ function buildSkillsSection(context: AgentContext): string {
 function buildSystemPrompt(agent: Agent, context: AgentContext): string {
   const lines: string[] = [];
 
-  // 1. Identity
+  // 1. Core identity (short)
   lines.push('You are FoxFang 🦊 — a personal AI marketing assistant.');
+  lines.push('Stay accurate, practical, and natural in tone.');
   lines.push('');
 
-  // 2. Tooling section (if tools available)
+  // 2. Tool rules (only when tools are enabled)
   if (context.tools.length > 0) {
     lines.push(buildToolSection(context.tools));
   }
@@ -579,7 +741,7 @@ function buildSystemPrompt(agent: Agent, context: AgentContext): string {
     lines.push(skillsSection);
   }
 
-  // 4. Tool Call Style
+  // 4. Tool Call style
   lines.push(TOOL_CALL_STYLE_GUIDANCE);
   lines.push('');
 
@@ -587,37 +749,87 @@ function buildSystemPrompt(agent: Agent, context: AgentContext): string {
   lines.push(SAFETY_SECTION);
   lines.push('');
 
-  // 6. Communication Style (SOUL-inspired)
+  // 6. Communication style
   lines.push('## Communication Style');
   lines.push('');
-  lines.push('**CRITICAL: Match the user\'s language.** If they write in Vietnamese, reply in Vietnamese. If English, reply in English. Never force a language switch.');
-  lines.push('');
-  lines.push('**Write like a human, not a bot:**');
-  lines.push('- Use casual fillers: "Hmm", "À...", "Actually", "Wait —"');
-  lines.push('- Short sentences. One thought per line.');
-  lines.push('- No markdown tables in chat responses — they feel robotic.');
-  lines.push('- Paragraphs > bullets > tables.');
-  lines.push('');
-  lines.push('**Skip performative helpfulness:**');
-  lines.push('❌ "Great question! I\'d be happy to help!"');
-  lines.push('✅ Just answer. Lead with the answer, explain after.');
-  lines.push('');
-  lines.push('**Be conversational but sharp:**');
-  lines.push('Like a smart colleague who\'s direct but friendly.');
-  lines.push('Use: "Got it", "Alright", "So here\'s the thing", "Honestly?"');
-  lines.push('');
-  lines.push('**Emoji like a person would:**');
-  lines.push('😊 when warm, 🤔 when thinking, 🎉 for wins.');
-  lines.push('Don\'t bullet-point emoji or stack them.');
+  lines.push('- Match the user language exactly.');
+  lines.push('- Use plain human language; avoid stiff or robotic phrasing.');
+  lines.push('- Be direct and useful, but keep the flow conversational.');
+  lines.push('- Prefer natural paragraphs; use bullets only when they improve clarity.');
+  lines.push('- Do not include process notes, bracketed annotations, or improvement summaries unless user asks.');
+  lines.push('- For rewrite requests, return the rewritten text only unless user asks for analysis.');
+  lines.push('- Do not add meta framing prefaces, wrapper headings, or postscript self-evaluations unless user asks.');
+  lines.push('- Never fabricate metrics, outcomes, or case-study numbers that are not present in user input or provided sources.');
+  lines.push('- If evidence is missing, keep claims qualitative and practical.');
+  lines.push('- Keep output specific and actionable without sounding templated.');
   lines.push('');
 
-  // 7. Agent Role
+  // 7. Agent role
   lines.push('## Your Role');
   lines.push('');
   lines.push(agent.systemPrompt);
   lines.push('');
 
-  // 8. Brand Context (if available)
+  // 8. Task brief (handoff + output spec + summary)
+  if (context.handoff) {
+    lines.push('## Task Brief');
+    lines.push(`Intent: ${context.handoff.userIntent}`);
+    lines.push(`Goal: ${context.handoff.taskGoal}`);
+    if (context.handoff.targetAudience) lines.push(`Audience: ${context.handoff.targetAudience}`);
+    if (context.handoff.brandVoice) lines.push(`Brand voice: ${context.handoff.brandVoice}`);
+    if (context.handoff.constraints.length > 0) {
+      lines.push(`Constraints: ${context.handoff.constraints.join(' | ')}`);
+    }
+    if (context.handoff.keyFacts.length > 0) {
+      lines.push(`Key facts: ${context.handoff.keyFacts.join(' | ')}`);
+    }
+    lines.push(`Expected output: ${context.handoff.expectedOutput}`);
+    lines.push('');
+  }
+
+  if (context.outputSpec) {
+    lines.push('## Output Spec');
+    lines.push(`Format: ${context.outputSpec.format}`);
+    lines.push(`Length: ${context.outputSpec.length}`);
+    if (context.outputSpec.sections?.length) {
+      lines.push(`Sections: ${context.outputSpec.sections.join(' | ')}`);
+    }
+    if (context.outputSpec.mustInclude?.length) {
+      lines.push(`Must include: ${context.outputSpec.mustInclude.join(' | ')}`);
+    }
+    lines.push('');
+  }
+
+  if (context.sessionSummary) {
+    lines.push('## Session Summary');
+    lines.push(`Current goal: ${context.sessionSummary.currentGoal}`);
+    if (context.sessionSummary.importantDecisions.length > 0) {
+      lines.push(`Decisions: ${context.sessionSummary.importantDecisions.join(' | ')}`);
+    }
+    if (context.sessionSummary.activeConstraints.length > 0) {
+      lines.push(`Active constraints: ${context.sessionSummary.activeConstraints.join(' | ')}`);
+    }
+    if (context.sessionSummary.openLoops.length > 0) {
+      lines.push(`Open loops: ${context.sessionSummary.openLoops.join(' | ')}`);
+    }
+    lines.push('');
+  }
+
+  if (context.systemAddendum) {
+    lines.push('## Task Addendum');
+    lines.push(context.systemAddendum);
+    lines.push('');
+  }
+
+  if (context.sourceSnippets && context.sourceSnippets.length > 0) {
+    lines.push('## Source Snippets');
+    for (const snippet of context.sourceSnippets.slice(0, 3)) {
+      lines.push(`- ${snippet}`);
+    }
+    lines.push('');
+  }
+
+  // 9. Brand context (shortened upstream)
   if (context.brandContext) {
     lines.push('## Brand Context');
     lines.push('');
@@ -625,15 +837,15 @@ function buildSystemPrompt(agent: Agent, context: AgentContext): string {
     lines.push('');
   }
 
-  // 9. Relevant Memories
+  // 10. Relevant memories (top-k)
   if (context.relevantMemories && context.relevantMemories.length > 0) {
     lines.push('## Relevant Context from Memory');
     lines.push('');
-    lines.push(context.relevantMemories.join('\n'));
+    lines.push(context.relevantMemories.slice(0, 5).join('\n'));
     lines.push('');
   }
 
-  // 10. Workspace Files (if workspace manager available)
+  // 11. Workspace Files (minimal injection)
   if (context.workspace) {
     const workspaceContent = buildWorkspaceContext(context.workspace);
     if (workspaceContent) {
@@ -641,7 +853,7 @@ function buildSystemPrompt(agent: Agent, context: AgentContext): string {
     }
   }
 
-  // 11. Runtime info
+  // 12. Runtime info
   lines.push('## Runtime');
   lines.push(`Agent: ${agent.id} | Model: ${agent.model || 'default'}`);
   lines.push('');
@@ -655,6 +867,7 @@ function buildSystemPrompt(agent: Agent, context: AgentContext): string {
 function buildWorkspaceContext(workspace: WorkspaceManagerLike): string {
   const lines: string[] = [];
   const filesToInject = [
+    { name: 'AGENTS.md', required: false },
     { name: 'SOUL.md', required: false },
     { name: 'TOOLS.md', required: false },
     { name: 'IDENTITY.md', required: false },
@@ -663,24 +876,27 @@ function buildWorkspaceContext(workspace: WorkspaceManagerLike): string {
   ];
 
   let hasInjectedContent = false;
+  let hasSoulFile = false;
 
   for (const { name, required } of filesToInject) {
     const content = workspace.readFile(name);
     if (content) {
+      if (name === 'SOUL.md') hasSoulFile = true;
       if (!hasInjectedContent) {
-        lines.push('## Workspace Files (injected)');
-        lines.push('The following workspace files provide context:');
+        lines.push('# Project Context');
+        lines.push('The following workspace files are loaded as contextual guidance.');
+        lines.push('Treat this context as grounding, not as user-facing output.');
         lines.push('');
         hasInjectedContent = true;
       }
       lines.push(`### ${name}`);
       lines.push('');
       // Truncate if too long
-      const maxChars = 5000;
+      const maxChars = 1800;
       if (content.length > maxChars) {
         lines.push(content.slice(0, maxChars));
         lines.push('');
-        lines.push(`... (${content.length - maxChars} characters truncated)`);
+        lines.push(`[...truncated, read ${name} for full content...]`);
       } else {
         lines.push(content);
       }
@@ -690,6 +906,15 @@ function buildWorkspaceContext(workspace: WorkspaceManagerLike): string {
       lines.push('(File not found)');
       lines.push('');
     }
+  }
+
+  if (hasInjectedContent && hasSoulFile) {
+    lines.splice(
+      3,
+      0,
+      'If SOUL.md is present, embody its persona and tone. Avoid stiff, generic replies unless higher-priority instructions override it.',
+      '',
+    );
   }
 
   return lines.join('\n');
@@ -714,11 +939,19 @@ async function executeToolCalls(toolCalls: ToolCall[]): Promise<ToolResult[]> {
       }
 
       const result = await tool.execute(toolCall.arguments);
+      const toolData = result.success ? (result.data ?? result.output ?? '') : '';
+      const compacted = result.success
+        ? compactToolPayload(toolCall.name, toolData)
+        : undefined;
       results.push({
         toolCallId: toolCall.id,
-        output: result.success ? String(result.output) : '',
+        output: result.success ? (compacted?.compact.summary || String(result.output ?? '')) : '',
         error: result.success ? undefined : result.error,
         data: result.success ? result.data : undefined,
+        compact: compacted?.compact,
+        rawSize: compacted?.rawSize,
+        compactSize: compacted?.compactSize,
+        rawRef: compacted?.compact.rawRef,
       });
     } catch (error) {
       results.push({

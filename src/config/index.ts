@@ -55,6 +55,35 @@ export interface AppConfig {
     groupActivation?: 'mention' | 'always';
   };
   observability: { enabled: boolean };
+  agentRuntime?: {
+    defaultReasoningMode?: 'fast' | 'balanced' | 'deep';
+    maxRecentMessages?: number;
+    maxRelevantMemories?: number;
+    maxSourceSnippets?: number;
+    maxSnippetTokens?: number;
+    maxDelegations?: number;
+    maxReviewPasses?: number;
+    maxRewritePasses?: number;
+    maxToolIterations?: number;
+    toolCompressionThresholdChars?: number;
+    toolCacheTtlMs?: number;
+    routing?: {
+      defaultAgent?: 'content-specialist' | 'strategy-lead' | 'growth-analyst';
+      rules?: Array<{
+        agentId: 'content-specialist' | 'strategy-lead' | 'growth-analyst';
+        taskType: string;
+        keywords: string[];
+        needsReview?: boolean;
+      }>;
+      outputModeHints?: {
+        short?: string[];
+        deep?: string[];
+      };
+      toolTriggers?: string[];
+      reviewTriggers?: string[];
+      highStakesTriggers?: string[];
+    };
+  };
   heartbeat: { enabled: boolean; intervalMs: number };
   cron: { enabled: boolean; pollIntervalMs: number };
   security: { allowedOrigins: string[] };
@@ -90,6 +119,30 @@ const defaultConfig: AppConfig = {
     groupActivation: 'always',
   },
   observability: { enabled: true },
+  agentRuntime: {
+    defaultReasoningMode: 'balanced',
+    maxRecentMessages: 4,
+    maxRelevantMemories: 5,
+    maxSourceSnippets: 3,
+    maxSnippetTokens: 300,
+    maxDelegations: 1,
+    maxReviewPasses: 1,
+    maxRewritePasses: 1,
+    maxToolIterations: 5,
+    toolCompressionThresholdChars: 1500,
+    toolCacheTtlMs: 24 * 60 * 60 * 1000,
+    routing: {
+      defaultAgent: 'content-specialist',
+      rules: [],
+      outputModeHints: {
+        short: ['short', 'brief', 'summary'],
+        deep: ['deep', 'detailed', 'in-depth'],
+      },
+      toolTriggers: ['search', 'research', 'source', 'read link', 'check url'],
+      reviewTriggers: ['review', 'optimize', 'improve', 'analyze', 'audit'],
+      highStakesTriggers: ['launch', 'critical', 'important', 'brand-sensitive', 'public'],
+    },
+  },
   heartbeat: { enabled: true, intervalMs: 30000 },
   cron: { enabled: true, pollIntervalMs: 60000 },
   security: { allowedOrigins: ['http://localhost:3000'] },

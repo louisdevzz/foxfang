@@ -400,6 +400,29 @@ async function runSetupWizard() {
     message: 'Enable background daemon?',
     initialValue: true,
   });
+
+  const currentToolCacheTtlMs = Number(config.agentRuntime?.toolCacheTtlMs);
+  const currentToolCacheTtlHours = Number.isFinite(currentToolCacheTtlMs) && currentToolCacheTtlMs > 0
+    ? Math.max(1, Math.round(currentToolCacheTtlMs / (60 * 60 * 1000)))
+    : 24;
+  const toolCacheTtlHoursInput = await text({
+    message: 'Tool result cache TTL (hours):',
+    placeholder: '24',
+    defaultValue: String(currentToolCacheTtlHours),
+    validate: (value) => {
+      const parsed = Number((value || '').trim());
+      if (!Number.isFinite(parsed)) return 'Please enter a number';
+      if (parsed <= 0) return 'TTL must be greater than 0 hour';
+      if (parsed > 24 * 30) return 'TTL too large (max: 720 hours)';
+      return undefined;
+    },
+  });
+  if (isCancel(toolCacheTtlHoursInput)) {
+    outro(chalk.yellow('Setup cancelled.'));
+    return;
+  }
+  const toolCacheTtlHours = Math.max(1, Math.round(Number(toolCacheTtlHoursInput)));
+  const toolCacheTtlMs = toolCacheTtlHours * 60 * 60 * 1000;
   
   // Check for old API keys in config and offer migration
   const hasOldApiKeys = config.providers?.some((p: any) => p.apiKey) || 
@@ -455,6 +478,10 @@ async function runSetupWizard() {
   config.defaultModel = defaultProviderConfig.defaultModel;
   config.workspace = { homeDir: workspaceDir as string };
   config.daemon = { enabled: enableDaemon as boolean, port: 8787, host: '127.0.0.1' };
+  config.agentRuntime = {
+    ...(config.agentRuntime || {}),
+    toolCacheTtlMs,
+  };
   
   // Merge new providers with existing
   if (!config.providers) config.providers = [];

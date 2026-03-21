@@ -17,6 +17,7 @@ import { registerSessionsCommand } from './commands/sessions';
 import { registerMemoryCommand } from './commands/memory';
 import { registerStatusCommand } from './commands/status';
 import { registerOutreachCommand } from './commands/outreach';
+import { registerDashboardCommand } from './commands/dashboard';
 import { getVersion } from './version';
 
 export async function buildProgram(): Promise<Command> {
@@ -48,6 +49,7 @@ export async function buildProgram(): Promise<Command> {
   await registerMemoryCommand(program);
   await registerStatusCommand(program);
   await registerOutreachCommand(program);
+  await registerDashboardCommand(program);
 
   // Add help text
   program.addHelpText('after', `
@@ -65,6 +67,7 @@ ${chalk.cyan('Examples:')}
   ${chalk.dim('$')} foxfang outreach campaigns create --name "Product Launch" --type broadcast --list LIST_ID
   ${chalk.dim('$')} foxfang outreach campaigns launch CAMPAIGN_ID
   ${chalk.dim('$')} foxfang outreach sequences enroll SEQUENCE_ID CONTACT_ID
+  ${chalk.dim('$')} foxfang dashboard --days 3 --top 5
 
 ${chalk.cyan('Documentation:')}
   https://docs.foxfang.dev

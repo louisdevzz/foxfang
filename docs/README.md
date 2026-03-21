@@ -6,6 +6,8 @@ Welcome to the FoxFang documentation!
 
 - [Commands Reference](./commands.md) - Complete CLI command reference
 - [Deploy on Railway](./RAILWAY.md) - Railway template setup for FoxFang
+- [Feature Docs](./features/README.md) - Multi-agent architecture, compaction, cache, telemetry
+- [Changelog](../CHANGELOG.md) - Release-level change history
 
 ## Getting Started
 

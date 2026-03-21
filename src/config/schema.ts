@@ -98,6 +98,40 @@ export interface ObservabilityConfig {
   enabled: boolean;
 }
 
+export interface AgentRoutingRuleConfig {
+  agentId: 'content-specialist' | 'strategy-lead' | 'growth-analyst';
+  taskType: string;
+  keywords: string[];
+  needsReview?: boolean;
+}
+
+export interface AgentRoutingConfig {
+  defaultAgent?: 'content-specialist' | 'strategy-lead' | 'growth-analyst';
+  rules?: AgentRoutingRuleConfig[];
+  outputModeHints?: {
+    short?: string[];
+    deep?: string[];
+  };
+  toolTriggers?: string[];
+  reviewTriggers?: string[];
+  highStakesTriggers?: string[];
+}
+
+export interface AgentRuntimeConfig {
+  defaultReasoningMode?: 'fast' | 'balanced' | 'deep';
+  maxRecentMessages?: number;
+  maxRelevantMemories?: number;
+  maxSourceSnippets?: number;
+  maxSnippetTokens?: number;
+  maxDelegations?: number;
+  maxReviewPasses?: number;
+  maxRewritePasses?: number;
+  maxToolIterations?: number;
+  toolCompressionThresholdChars?: number;
+  toolCacheTtlMs?: number;
+  routing?: AgentRoutingConfig;
+}
+
 export interface AutoReplyConfig {
   requireMentionInGroups?: boolean;
   groupActivation?: 'mention' | 'always';
@@ -161,6 +195,7 @@ export interface AppConfig {
   cron: CronConfig;
   heartbeat: HeartbeatConfig;
   observability: ObservabilityConfig;
+  agentRuntime?: AgentRuntimeConfig;
   autoReply?: AutoReplyConfig;
   
   // Twitter OAuth (optional)

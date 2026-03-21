@@ -84,6 +84,7 @@ export function initializeTools(config: Record<string, any>): void {
   const { CronTool } = require('./builtin/cron');
   const { GitHubConnectTool, GitHubCreateIssueTool, GitHubCreatePRTool, GitHubListIssuesTool, GitHubListPRsTool } = require('./builtin/github');
   const { SkillsListTool, SkillsAddTool } = require('./builtin/skills');
+  const { ExpandCachedResultTool, GetCachedSnippetTool } = require('./builtin/cached_results');
   
   // Research tools
   toolRegistry.register(new WebSearchTool());
@@ -128,6 +129,8 @@ export function initializeTools(config: Record<string, any>): void {
   // Skills tools
   toolRegistry.register(new SkillsListTool());
   toolRegistry.register(new SkillsAddTool());
+  toolRegistry.register(new ExpandCachedResultTool());
+  toolRegistry.register(new GetCachedSnippetTool());
   
   // GitHub tools
   toolRegistry.register(new GitHubConnectTool());
