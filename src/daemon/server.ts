@@ -36,7 +36,7 @@ export async function startDaemonServer(options: DaemonServerOptions): Promise<v
       const { SessionManager } = await import('../sessions/manager');
       const { loadConfig } = await import('../config/index');
       const { initializeProviders } = await import('../providers/index');
-      const { initializeTools } = await import('../tools/index');
+      const { initializeTools, wireDelegateOrchestrator } = await import('../tools/index');
       const { createWorkspaceManager, initFoxFangHome } = await import('../workspace');
       
       const config = await loadConfig();
@@ -47,6 +47,7 @@ export async function startDaemonServer(options: DaemonServerOptions): Promise<v
       const foxfangHome = initFoxFangHome(config.workspace?.homeDir);
       const workspaceManager = createWorkspaceManager('default_user', foxfangHome);
       const orchestrator = new AgentOrchestrator(sessionManager, workspaceManager);
+      wireDelegateOrchestrator(orchestrator);
       
       const result = await orchestrator.run({
         sessionId: sessionId || `daemon-${Date.now()}`,

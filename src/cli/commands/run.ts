@@ -9,7 +9,7 @@ import { AgentOrchestrator } from '../../agents/orchestrator';
 import { SessionManager } from '../../sessions/manager';
 import { loadConfigWithCredentials } from '../../config/index';
 import { initializeProviders } from '../../providers/index';
-import { initializeTools } from '../../tools/index';
+import { initializeTools, wireDelegateOrchestrator } from '../../tools/index';
 import { setDefaultProvider } from '../../agents/runtime';
 import { createWorkspaceManager, initFoxFangHome } from '../../workspace';
 
@@ -56,6 +56,7 @@ export async function registerRunCommand(program: Command): Promise<void> {
         
         // Create orchestrator
         const orchestrator = new AgentOrchestrator(sessionManager, workspaceManager);
+        wireDelegateOrchestrator(orchestrator);
         
         spinner.succeed('Ready');
         

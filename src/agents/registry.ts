@@ -37,6 +37,7 @@ When routing to another agent, use: MESSAGE_AGENT: <agent-id> | <brief descripti
       'create_project', 'list_projects', 'get_project',
       'memory_recall', 'memory_search', 'memory_get',
       'skills_list', 'skills_add',
+      'sessions_spawn', 'sessions_send', 'subagents',
       'github_connect', 'github_create_issue', 'github_create_pr', 'github_list_issues', 'github_list_prs',
     ],
     executionProfile: {

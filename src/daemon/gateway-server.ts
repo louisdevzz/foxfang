@@ -19,7 +19,7 @@ import { initializeProviders } from '../providers/index';
 import { AgentOrchestrator } from '../agents/orchestrator';
 import { agentRegistry, hydrateAgentRegistryFromConfig } from '../agents/registry';
 import { SessionManager } from '../sessions/manager';
-import { initializeTools } from '../tools/index';
+import { initializeTools, wireDelegateOrchestrator } from '../tools/index';
 import { setDefaultProvider } from '../agents/runtime';
 import { ChannelManager } from '../channels/manager';
 import { CronService } from '../cron/service';
@@ -1853,6 +1853,7 @@ class GatewayServer {
     
     this.sessionManager = new SessionManager(config.sessions);
     this.orchestrator = new AgentOrchestrator(this.sessionManager, workspaceManager);
+    wireDelegateOrchestrator(this.orchestrator);
     
     // Set workspace manager for channel manager too
     this.channelManager.setWorkspaceManager(workspaceManager);

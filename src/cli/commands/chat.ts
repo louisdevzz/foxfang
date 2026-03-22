@@ -9,7 +9,7 @@ import { AgentOrchestrator } from '../../agents/orchestrator';
 import { SessionManager } from '../../sessions/manager';
 import { loadConfigWithCredentials } from '../../config/index';
 import { initializeProviders } from '../../providers/index';
-import { initializeTools, toolRegistry } from '../../tools/index';
+import { initializeTools, toolRegistry, wireDelegateOrchestrator } from '../../tools/index';
 import { setDefaultProvider } from '../../agents/runtime';
 import { createWorkspaceManager, initFoxFangHome } from '../../workspace';
 
@@ -50,6 +50,7 @@ export async function registerChatCommand(program: Command): Promise<void> {
       
       // Create orchestrator
       const orchestrator = new AgentOrchestrator(sessionManager, workspaceManager);
+      wireDelegateOrchestrator(orchestrator);
       
       // Generate session ID
       const sessionId = options.session || `chat-${Date.now()}`;

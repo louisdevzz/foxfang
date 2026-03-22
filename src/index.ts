@@ -42,6 +42,7 @@ async function main() {
     const foxfangHome = initFoxFangHome(config.workspace?.homeDir);
     const workspaceManager = createWorkspaceManager('default_user', foxfangHome);
     const orchestrator = new AgentOrchestrator(sessionManager, workspaceManager);
+    wireDelegateOrchestrator(orchestrator);
     
     // Create and start gateway
     console.log('[5/5] Starting Gateway...');

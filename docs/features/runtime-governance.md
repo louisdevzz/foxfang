@@ -25,6 +25,12 @@ FoxFang now includes a stronger runtime governance layer aligned with OpenClaw-s
   - Delegation is limited by per-agent budget (`maxDelegations`)
   - If delegation budget is exceeded, `MESSAGE_AGENT` lines are stripped from final user output
 
+- Explicit sub-session tools (agent-callable):
+  - `sessions_spawn`: create/run isolated sub-agent sessions
+  - `sessions_send`: send follow-up messages into an existing session
+  - `subagents`: list/inspect/close sub-agent sessions
+  - Runtime wiring is done at startup so these tools can call orchestrator/session manager safely.
+
 - Bash governance upgrades:
   - Risky commands now require explicit `confirm: true`
   - Added `yield_ms` to support start + wait + partial status/output snapshots for long-running commands
@@ -37,3 +43,5 @@ FoxFang now includes a stronger runtime governance layer aligned with OpenClaw-s
 - `src/agents/governance.ts`
 - `src/auto-reply/index.ts`
 - `src/tools/builtin/bash.ts`
+- `src/tools/builtin/subagents.ts`
+- `src/tools/index.ts`
