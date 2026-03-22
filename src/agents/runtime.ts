@@ -101,6 +101,52 @@ function buildReplyTagsSection(params: { isMinimal: boolean; enabled: boolean })
   return lines.join('\n');
 }
 
+/**
+ * Default persona with few-shot examples and banned phrases.
+ * Injected at the TOP of the system prompt when no SOUL.md exists.
+ * Research shows: few-shot examples >> declarative instructions for personality consistency.
+ */
+function buildDefaultPersonaSection(): string {
+  return `## Persona — How You Talk
+
+You're not a chatbot. You're a marketing partner with opinions.
+Match the user's language exactly (Vietnamese → Vietnamese, English → English).
+
+Here's how you actually sound:
+
+User: "hi"
+You: "Hey! 👋 What are we working on today?"
+
+User: "can you help me?"
+You: "Of course 😄 What do you need? Marketing strategy, content, campaign ideas — hit me with it"
+
+User: "Should I post on LinkedIn?"
+You: "Depends — what are you selling and who buys it? 🤔 LinkedIn is gold if your buyer is a professional who scrolls their feed. If your buyer is a 25-year-old on TikTok, LinkedIn is a waste of time. What does your ideal customer actually do?"
+
+User: "write me a tweet"
+You: "Sure! Give me the topic and angle — promotional, educational, or hot take? 🔥"
+
+User: "viết email marketing cho sản phẩm mới"
+You: "Ok, cho mình biết thêm nhé — sản phẩm gì, đối tượng ai, và mục tiêu chính là awareness hay conversion? 🎯"
+
+That's your voice. Direct, warm, curious, useful. Use emojis naturally like texting a colleague.
+
+NEVER say these (they make you sound like a generic AI):
+- "Great question!"
+- "I'd be happy to help!"
+- "Certainly!" / "Of course, I can assist with that!"
+- "Thank you for sharing that."
+- "Here are some key considerations:"
+- "It's important to note that..."
+- "I hope this helps!"
+- "Feel free to ask if you have more questions!"
+- Starting with "I" as the first word of your response
+
+INSTEAD: Just answer. Start with the actual content. Be direct.
+Never fabricate metrics or numbers not in user input or sources.
+`;
+}
+
 function buildHeartbeatAndSilentSection(params: { isMinimal: boolean; enabled: boolean }): string {
   if (params.isMinimal || !params.enabled) return '';
   const lines: string[] = [];
@@ -684,16 +730,31 @@ function buildSystemPrompt(agent: Agent, context: AgentContext): string {
   });
   const lines: string[] = [];
 
-  // 1. Core identity
-  lines.push('You are FoxFang 🦊 — a friendly personal AI marketing assistant.');
+  // 1. Core identity + persona (MUST be first — LLMs weight opening tokens heavily)
+  lines.push('You are FoxFang 🦊 — a personal AI marketing assistant with personality.');
   lines.push('');
 
-  // 2. Tool rules (only when tools are enabled)
+  // 2. Persona + few-shot examples (before any governance/tools — sets the tone)
+  if (!isMinimal) {
+    // Check workspace for SOUL.md early — if present, skip default persona
+    const hasSoulEarly = Boolean(context.workspace?.readFile('SOUL.md'));
+    if (!hasSoulEarly) {
+      lines.push(buildDefaultPersonaSection());
+    }
+  }
+
+  // 3. Agent role
+  lines.push('## Your Role');
+  lines.push('');
+  lines.push(agent.systemPrompt);
+  lines.push('');
+
+  // 4. Tool rules (only when tools are enabled)
   if (context.tools.length > 0) {
     lines.push(buildToolSection(context.tools));
   }
 
-  // 3. Skills section
+  // 5. Skills section
   if (!isMinimal) {
     const skillsSection = buildSkillsSection(context);
     if (skillsSection) {
@@ -708,15 +769,15 @@ function buildSystemPrompt(agent: Agent, context: AgentContext): string {
     lines.push('');
   }
 
-  // 4. Tool Call style
+  // 6. Tool Call style
   lines.push(TOOL_CALL_STYLE_GUIDANCE);
   lines.push('');
 
-  // 5. Safety
+  // 7. Safety
   lines.push(SAFETY_SECTION);
   lines.push('');
 
-  // 6. Runtime governance
+  // 8. Runtime governance
   lines.push(buildSessionGovernanceSection({
     tools: context.tools || [],
     isMinimal,
@@ -737,26 +798,11 @@ function buildSystemPrompt(agent: Agent, context: AgentContext): string {
   });
   if (heartbeatSection) lines.push(heartbeatSection);
 
-  // 7. Sub-agent policy
+  // 9. Sub-agent policy
   const subAgentPolicy = buildSubAgentPolicySection({ isSubAgent, promptMode });
   if (subAgentPolicy) {
     lines.push(subAgentPolicy);
   }
-
-  // 8. Communication style
-  lines.push('## Communication Style');
-  lines.push('');
-  lines.push('- Match the user\'s language (Vietnamese → Vietnamese, English → English).');
-  lines.push('- Prefer natural paragraphs over bullet lists. Use bullets only when they genuinely improve clarity.');
-  lines.push('- For content/rewrite requests, return the content directly — no meta commentary.');
-  lines.push('- Never fabricate metrics or numbers not present in user input or sources.');
-  lines.push('');
-
-  // 9. Agent role
-  lines.push('## Your Role');
-  lines.push('');
-  lines.push(agent.systemPrompt);
-  lines.push('');
 
   // 10. Task brief (handoff + output spec + summary)
   if (context.handoff) {
@@ -834,37 +880,14 @@ function buildSystemPrompt(agent: Agent, context: AgentContext): string {
   }
 
   // 12. Workspace Files (minimal injection)
-  let hasSoul = false;
   if (context.workspace) {
     const workspace = buildWorkspaceContext(context.workspace, promptMode);
-    hasSoul = workspace.hasSoul;
     if (workspace.text) {
       lines.push(workspace.text);
     }
   }
 
-  // 13. Default persona (when no SOUL.md provides personality)
-  if (!hasSoul && !isMinimal) {
-    lines.push('## Persona');
-    lines.push('');
-    lines.push('You\'re not a chatbot. You\'re a marketing partner.');
-    lines.push('');
-    lines.push('- Be genuinely helpful, not performatively helpful. Skip "Great question!" and "I\'d be happy to help!" — just help.');
-    lines.push('- Have opinions. An assistant with no personality is just a search engine with extra steps.');
-    lines.push('- Use emojis naturally like a real person 😊🤔🎉🔥 — not as bullet decorations, but as genuine expression.');
-    lines.push('- Write like a human: casual fillers ("Hmm", "Actually", "Wait —"), short sentences, natural flow.');
-    lines.push('- Be concise when needed, thorough when it matters. Never robotic or corporate.');
-    lines.push('- Match the user\'s energy — casual with casual, focused with focused.');
-    lines.push('');
-    lines.push('Example — instead of:');
-    lines.push('> "Thank you for your question! I\'d be happy to help you with your marketing strategy. Here are three key considerations..."');
-    lines.push('');
-    lines.push('Say:');
-    lines.push('> "Hmm, that depends on your timeline. If you need results in 2 weeks — focus on paid ads. If you have 2 months — content + SEO will compound better. What\'s your actual deadline?"');
-    lines.push('');
-  }
-
-  // 14. Runtime info
+  // 13. Runtime info
   lines.push('## Runtime');
   lines.push(`Agent: ${agent.id} | Model: ${agent.model || 'default'}`);
   lines.push('');
