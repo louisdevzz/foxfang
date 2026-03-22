@@ -110,6 +110,30 @@ export function initDatabase(): DatabaseSync {
       user_id UNINDEXED
     );
 
+    -- Backfill FTS index for existing memory rows
+    INSERT INTO memories_fts (rowid, content, content_rowid, user_id)
+    SELECT m.id, m.content, m.id, m.user_id
+    FROM memories m
+    WHERE NOT EXISTS (
+      SELECT 1 FROM memories_fts f WHERE f.rowid = m.id
+    );
+
+    -- Keep FTS index synchronized with memories table
+    CREATE TRIGGER IF NOT EXISTS memories_ai AFTER INSERT ON memories BEGIN
+      INSERT INTO memories_fts (rowid, content, content_rowid, user_id)
+      VALUES (new.id, new.content, new.id, new.user_id);
+    END;
+
+    CREATE TRIGGER IF NOT EXISTS memories_ad AFTER DELETE ON memories BEGIN
+      DELETE FROM memories_fts WHERE rowid = old.id;
+    END;
+
+    CREATE TRIGGER IF NOT EXISTS memories_au AFTER UPDATE ON memories BEGIN
+      DELETE FROM memories_fts WHERE rowid = old.id;
+      INSERT INTO memories_fts (rowid, content, content_rowid, user_id)
+      VALUES (new.id, new.content, new.id, new.user_id);
+    END;
+
     -- Tasks - belong to a project
     CREATE TABLE IF NOT EXISTS tasks (
       id TEXT PRIMARY KEY,

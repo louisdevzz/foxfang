@@ -5,7 +5,6 @@
  */
 
 import { query, run, queryOne } from '../database/sqlite';
-import { randomUUID } from 'crypto';
 
 export interface MemoryEntry {
   id: number;
@@ -16,6 +15,15 @@ export interface MemoryEntry {
   sessionId?: string;
   metadata?: Record<string, any>;
   createdAt: Date;
+}
+
+function normalizeFtsQuery(queryStr: string): string {
+  const terms = (queryStr.match(/[\p{L}\p{N}_]+/gu) || [])
+    .map((term) => term.trim())
+    .filter((term) => term.length >= 2)
+    .slice(0, 12);
+  if (terms.length === 0) return queryStr.trim();
+  return terms.map((term) => `${term}*`).join(' OR ');
 }
 
 /**
@@ -50,13 +58,27 @@ export function storeMemory(
  * Search memories by content (FTS)
  */
 export function searchMemories(queryStr: string, limit: number = 10): MemoryEntry[] {
-  return query<MemoryEntry>(`
-    SELECT m.* FROM memories m
-    JOIN memories_fts fts ON m.id = fts.rowid
-    WHERE memories_fts MATCH ?
-    ORDER BY rank
-    LIMIT ?
-  `, [queryStr, limit]);
+  const normalizedQuery = normalizeFtsQuery(queryStr);
+  if (!normalizedQuery) return [];
+
+  try {
+    return query<MemoryEntry>(`
+      SELECT m.* FROM memories m
+      JOIN memories_fts fts ON m.id = fts.rowid
+      WHERE fts.user_id = 'default_user'
+        AND memories_fts MATCH ?
+      ORDER BY bm25(memories_fts), m.importance DESC, m.created_at DESC
+      LIMIT ?
+    `, [normalizedQuery, limit]);
+  } catch {
+    return query<MemoryEntry>(
+      `SELECT * FROM memories
+       WHERE user_id = 'default_user' AND content LIKE ?
+       ORDER BY importance DESC, created_at DESC
+       LIMIT ?`,
+      [`%${queryStr.trim()}%`, limit],
+    );
+  }
 }
 
 /**
@@ -78,10 +100,20 @@ export function getMemoriesByCategory(category: MemoryEntry['category'], limit: 
 export function getProjectMemories(projectId: string, limit: number = 50): MemoryEntry[] {
   return query<MemoryEntry>(
     `SELECT * FROM memories 
-     WHERE project_id = ?
+     WHERE user_id = 'default_user' AND project_id = ?
      ORDER BY importance DESC, created_at DESC
      LIMIT ?`,
     [projectId, limit]
+  );
+}
+
+export function listRecentMemories(limit: number = 40): MemoryEntry[] {
+  return query<MemoryEntry>(
+    `SELECT * FROM memories
+     WHERE user_id = 'default_user'
+     ORDER BY created_at DESC
+     LIMIT ?`,
+    [limit],
   );
 }
 
@@ -90,7 +122,7 @@ export function getProjectMemories(projectId: string, limit: number = 50): Memor
  */
 export function getMemory(id: number): MemoryEntry | null {
   return queryOne<MemoryEntry>(
-    `SELECT * FROM memories WHERE id = ?`,
+    `SELECT * FROM memories WHERE user_id = 'default_user' AND id = ?`,
     [id]
   );
 }
@@ -100,7 +132,7 @@ export function getMemory(id: number): MemoryEntry | null {
  */
 export function updateImportance(id: number, importance: number): void {
   run(
-    `UPDATE memories SET importance = ? WHERE id = ?`,
+    `UPDATE memories SET importance = ? WHERE user_id = 'default_user' AND id = ?`,
     [importance, id]
   );
 }
@@ -109,7 +141,7 @@ export function updateImportance(id: number, importance: number): void {
  * Delete memory
  */
 export function deleteMemory(id: number): void {
-  run(`DELETE FROM memories WHERE id = ?`, [id]);
+  run(`DELETE FROM memories WHERE user_id = 'default_user' AND id = ?`, [id]);
 }
 
 /**
