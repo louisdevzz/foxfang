@@ -787,36 +787,9 @@ async function runSetupWizard() {
     initialValue: true,
   });
 
-  const agentOptions = await buildAgentSelectOptions(config);
-  const currentAutoReplyDefaultAgent = String(config.autoReply?.defaultAgent || 'orchestrator').trim() || 'orchestrator';
-  const resolvedDefaultAgentOptions = agentOptions.some((option) => option.value === currentAutoReplyDefaultAgent)
-    ? agentOptions
-    : [...agentOptions, { value: currentAutoReplyDefaultAgent, label: currentAutoReplyDefaultAgent }];
-  const autoReplyDefaultAgent = await select({
-    message: 'Default auto-reply agent (fallback when no binding matches):',
-    options: resolvedDefaultAgentOptions,
-    initialValue: currentAutoReplyDefaultAgent,
-  }) as string;
-  if (isCancel(autoReplyDefaultAgent)) {
-    outro(chalk.yellow('Setup cancelled.'));
-    return;
-  }
-
-  const currentAutoReplySessionScope = String(config.autoReply?.defaultSessionScope || 'chat-thread').trim() || 'chat-thread';
-  const autoReplyDefaultSessionScope = await select({
-    message: 'Default auto-reply session scope:',
-    options: [
-      { value: 'chat-thread', label: 'chat-thread', hint: 'Best default for channels with threads' },
-      { value: 'chat', label: 'chat', hint: 'One session per chat/channel' },
-      { value: 'thread', label: 'thread', hint: 'One session per thread when available' },
-      { value: 'from', label: 'from', hint: 'One session per sender' },
-    ],
-    initialValue: currentAutoReplySessionScope,
-  }) as string;
-  if (isCancel(autoReplyDefaultSessionScope)) {
-    outro(chalk.yellow('Setup cancelled.'));
-    return;
-  }
+  // Auto-reply defaults — no need to ask the user, sensible defaults work for everyone
+  const autoReplyDefaultAgent = String(config.autoReply?.defaultAgent || 'orchestrator').trim() || 'orchestrator';
+  const autoReplyDefaultSessionScope = String(config.autoReply?.defaultSessionScope || 'chat-thread').trim() || 'chat-thread';
 
   const currentToolCacheTtlMs = Number(config.agentRuntime?.toolCacheTtlMs);
   const currentToolCacheTtlHours = Number.isFinite(currentToolCacheTtlMs) && currentToolCacheTtlMs > 0
