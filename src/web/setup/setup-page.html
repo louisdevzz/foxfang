@@ -69,6 +69,7 @@
               <option value="anthropic">anthropic</option>
               <option value="kimi">kimi</option>
               <option value="kimi-coding">kimi-coding</option>
+              <option value="github-copilot">github-copilot</option>
               <option value="openrouter">openrouter</option>
               <option value="ollama">ollama</option>
               <option value="custom">custom</option>
@@ -78,10 +79,18 @@
             Base URL (optional)
             <input id="providerBaseUrl" placeholder="Managed by provider preset" />
           </label>
-          <label>
+          <label id="apiKeyLabel">
             API Key
             <input id="providerApiKey" type="password" placeholder="sk-..." />
           </label>
+          <div id="copilotLoginBlock" style="display:none;">
+            <label>GitHub Copilot Authentication</label>
+            <div class="actions" style="margin-top:6px;">
+              <button type="button" id="copilotLoginBtn">Login with GitHub</button>
+              <span id="copilotLoginStatus" class="models-note"></span>
+            </div>
+            <input id="copilotToken" type="hidden" />
+          </div>
           <label>
             Default Model
             <select id="defaultModel" required></select>
@@ -321,6 +330,11 @@
         baseUrl: 'https://api.kimi.com/coding/',
         models: ['kimi-code', 'k2p5'],
       },
+      'github-copilot': {
+        baseUrl: '',
+        models: ['gpt-4o', 'gpt-4.1', 'gpt-4.1-mini', 'claude-sonnet-4.6', 'o1', 'o3-mini'],
+        authFlow: 'device-code',
+      },
       openrouter: {
         baseUrl: 'https://openrouter.ai/api/v1',
         models: ['openai/gpt-4o-mini', 'anthropic/claude-3.5-sonnet', 'meta-llama/llama-3.1-70b-instruct'],
@@ -345,6 +359,11 @@
     const providerApiKeyEl = document.getElementById('providerApiKey');
     const providerBaseUrlEl = document.getElementById('providerBaseUrl');
     const defaultModelEl = document.getElementById('defaultModel');
+    const apiKeyLabelEl = document.getElementById('apiKeyLabel');
+    const copilotLoginBlockEl = document.getElementById('copilotLoginBlock');
+    const copilotLoginBtn = document.getElementById('copilotLoginBtn');
+    const copilotLoginStatusEl = document.getElementById('copilotLoginStatus');
+    const copilotTokenEl = document.getElementById('copilotToken');
     const braveSearchApiKeyEl = document.getElementById('braveSearchApiKey');
     const firecrawlApiKeyEl = document.getElementById('firecrawlApiKey');
     const configPathEl = document.getElementById('configPath');
@@ -821,11 +840,16 @@
     }
 
     function updateBaseUrlInputState() {
+      const isCopilot = providerIdEl.value === 'github-copilot';
       const editable = canEditBaseUrl(providerIdEl.value);
-      providerBaseUrlEl.disabled = !editable;
+      providerBaseUrlEl.disabled = !editable || isCopilot;
       providerBaseUrlEl.placeholder = editable
         ? 'https://your-provider.example/v1'
         : 'Managed by provider preset';
+
+      // Toggle API key vs Copilot login UI
+      apiKeyLabelEl.style.display = isCopilot ? 'none' : '';
+      copilotLoginBlockEl.style.display = isCopilot ? '' : 'none';
     }
 
     function ensureBaseUrlDefault(force = false) {
@@ -1184,6 +1208,43 @@
     });
     githubConnectBtn.addEventListener('click', connectGitHub);
     githubDisconnectBtn.addEventListener('click', disconnectGitHub);
+
+    copilotLoginBtn.addEventListener('click', async () => {
+      try {
+        copilotLoginBtn.disabled = true;
+        copilotLoginStatusEl.textContent = 'Starting device code flow...';
+        copilotLoginStatusEl.className = 'models-note';
+
+        const response = await fetch('/setup/copilot/login', { method: 'POST' });
+        const data = await response.json();
+        if (!response.ok || !data.ok) {
+          throw new Error(data.error || 'Failed to start Copilot login');
+        }
+
+        copilotLoginStatusEl.textContent = `Open ${data.verification_uri} and enter code: ${data.user_code}`;
+        copilotLoginStatusEl.className = 'models-note';
+
+        // Poll for completion
+        const pollRes = await fetch('/setup/copilot/poll', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ device_code: data.device_code }),
+        });
+        const pollData = await pollRes.json();
+        if (!pollRes.ok || !pollData.ok) {
+          throw new Error(pollData.error || 'Login timed out or was denied');
+        }
+
+        copilotTokenEl.value = pollData.token;
+        copilotLoginStatusEl.textContent = 'Authenticated with GitHub!';
+        copilotLoginStatusEl.className = 'models-note ok';
+      } catch (error) {
+        copilotLoginStatusEl.textContent = error.message || 'Copilot login failed';
+        copilotLoginStatusEl.className = 'models-note error';
+      } finally {
+        copilotLoginBtn.disabled = false;
+      }
+    });
     refreshConfigBtn.addEventListener('click', () => {
       void loadStatus();
     });
@@ -1215,7 +1276,9 @@
       saveBtn.disabled = true;
 
       const providerId = providerIdEl.value.trim();
-      const providerApiKey = providerApiKeyEl.value.trim();
+      const providerApiKey = providerId === 'github-copilot'
+        ? copilotTokenEl.value.trim()
+        : providerApiKeyEl.value.trim();
       const providerBaseUrl = providerBaseUrlEl.value.trim();
       const defaultModel = defaultModelEl.value.trim();
 

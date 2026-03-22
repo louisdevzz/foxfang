@@ -29,7 +29,6 @@ export async function registerCopilotCommand(program: Command): Promise<void> {
         const config = await loadConfigWithCredentials();
         const existingProviders = config.providers || [];
 
-        // Remove any existing github-copilot provider
         const filtered = (existingProviders as ProviderConfig[]).filter(
           (p) => p.id !== 'github-copilot',
         );

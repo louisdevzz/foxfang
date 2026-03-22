@@ -18,6 +18,7 @@ import { runMigrations } from '../../compat';
 import { saveCredential, deleteCredential, isKeychainAvailable, migrateFromConfig } from '../../credentials/index';
 import { isGitHubConnected, saveGitHubToken, startGitHubOAuthFlow } from '../../integrations/github';
 import { agentRegistry, hydrateAgentRegistryFromConfig } from '../../agents/registry';
+import { loginWithDeviceCode } from '../../providers/github-copilot';
 
 // Available providers with metadata
 const AVAILABLE_PROVIDERS = [
@@ -76,9 +77,18 @@ const AVAILABLE_PROVIDERS = [
     baseUrl: 'http://localhost:11434/v1',
     models: ['llama3.1', 'qwen2.5', 'deepseek-coder']
   },
-  { 
-    id: 'custom', 
-    name: 'Custom/OpenAI-compatible', 
+  {
+    id: 'github-copilot',
+    name: 'GitHub Copilot',
+    hint: 'Use your GitHub Copilot subscription (device code login)',
+    apiKeyPlaceholder: '',
+    baseUrl: '',
+    models: ['gpt-4o', 'gpt-4.1', 'gpt-4.1-mini', 'claude-sonnet-4.6', 'o1', 'o3-mini'],
+    authFlow: 'device-code' as const,
+  },
+  {
+    id: 'custom',
+    name: 'Custom/OpenAI-compatible',
     hint: 'Any OpenAI-compatible API',
     apiKeyPlaceholder: 'your-api-key',
     baseUrl: 'http://localhost:8080/v1',
@@ -662,9 +672,21 @@ async function runSetupWizard() {
     
     console.log(chalk.dim(`\n--- ${providerMeta.name} ---`));
     
-    // For Ollama, no API key needed
+    // Handle different auth flows per provider
     let apiKey = '';
-    if (providerId !== 'ollama') {
+    if (providerId === 'github-copilot') {
+      // GitHub Copilot uses device code flow instead of API key
+      console.log(chalk.cyan('Starting GitHub Copilot login via device code...'));
+      console.log(chalk.dim('This will authenticate with your GitHub Copilot subscription.\n'));
+      try {
+        const result = await loginWithDeviceCode();
+        apiKey = result.token;
+        console.log(chalk.green('✓ GitHub authentication successful!'));
+      } catch (error) {
+        console.log(chalk.yellow(`⏭ Skipped ${providerMeta.name}: ${error instanceof Error ? error.message : String(error)}`));
+        continue;
+      }
+    } else if (providerId !== 'ollama') {
       const keyResult = await text({
         message: `${providerMeta.name} API Key:`,
         placeholder: providerMeta.apiKeyPlaceholder,
@@ -672,14 +694,14 @@ async function runSetupWizard() {
           if (!value || value.trim() === '') {
             return 'API key is required (or press Ctrl+C to skip this provider)';
           }
-          if (providerMeta.apiKeyPrefix && providerMeta.apiKeyPrefix !== 'not-needed' && 
-              !value.startsWith(providerMeta.apiKeyPrefix)) {
-            return `API key should start with \"${providerMeta.apiKeyPrefix}\"`;
+          if ((providerMeta as any).apiKeyPrefix && (providerMeta as any).apiKeyPrefix !== 'not-needed' &&
+              !value.startsWith((providerMeta as any).apiKeyPrefix)) {
+            return `API key should start with \"${(providerMeta as any).apiKeyPrefix}\"`;
           }
           return undefined;
         },
       });
-      
+
       if (isCancel(keyResult)) {
         console.log(chalk.yellow(`⏭ Skipped ${providerMeta.name}`));
         continue;
@@ -879,17 +901,8 @@ async function runSetupWizard() {
     toolCacheTtlMs,
   };
   
-  // Merge new providers with existing
-  if (!config.providers) config.providers = [];
-  
-  for (const provider of configuredProviders) {
-    const existingIndex = config.providers.findIndex((p: any) => p.id === provider.id);
-    if (existingIndex >= 0) {
-      config.providers[existingIndex] = provider;
-    } else {
-      config.providers.push(provider);
-    }
-  }
+  // Replace all providers with newly configured ones
+  config.providers = configuredProviders;
   
   // Save optional API keys to credentials store
   if (braveApiKey && braveApiKey !== 'BS-...') {
@@ -994,13 +1007,23 @@ async function addProvider(config: any) {
   const providerMeta = AVAILABLE_PROVIDERS.find(p => p.id === providerId)!;
   
   let apiKey = '';
-  if (providerId !== 'ollama') {
+  if (providerId === 'github-copilot') {
+    console.log(chalk.cyan('Starting GitHub Copilot login via device code...'));
+    try {
+      const result = await loginWithDeviceCode();
+      apiKey = result.token;
+      console.log(chalk.green('✓ GitHub authentication successful!'));
+    } catch (error) {
+      console.log(chalk.red(`Login failed: ${error instanceof Error ? error.message : String(error)}`));
+      return;
+    }
+  } else if (providerId !== 'ollama') {
     apiKey = await text({
       message: `${providerMeta.name} API Key:`,
       placeholder: providerMeta.apiKeyPlaceholder,
     }) as string;
   }
-  
+
   // Use default base URL — only prompt for custom/ollama providers
   let baseUrl = providerMeta.baseUrl;
   if (providerId === 'custom' || providerId === 'ollama') {
@@ -1013,12 +1036,12 @@ async function addProvider(config: any) {
       baseUrl = customBaseUrl;
     }
   }
-  
+
   const defaultModel = await select({
     message: `Default model for ${providerMeta.name}:`,
     options: providerMeta.models.map(m => ({ value: m, label: m })),
   }) as string;
-  
+
   // Save API key to credentials store
   await saveCredential(providerId, {
     provider: providerId,

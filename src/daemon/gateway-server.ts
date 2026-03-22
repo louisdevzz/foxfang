@@ -268,6 +268,80 @@ class GatewayServer {
       return;
     }
 
+    // --- GitHub Copilot device code login ---
+    if (method === 'POST' && pathname === '/setup/copilot/login') {
+      try {
+        const COPILOT_CLIENT_ID = 'Iv1.b507a08c87ecfe98';
+        const codeRes = await fetch('https://github.com/login/device/code', {
+          method: 'POST',
+          headers: { Accept: 'application/json', 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: `client_id=${COPILOT_CLIENT_ID}&scope=read:user`,
+        });
+        if (!codeRes.ok) {
+          this.sendJson(res, 500, { ok: false, error: `Device code request failed: ${codeRes.status}` });
+          return;
+        }
+        const codeData = await codeRes.json() as { device_code: string; user_code: string; verification_uri: string; expires_in: number; interval: number };
+        this.sendJson(res, 200, {
+          ok: true,
+          device_code: codeData.device_code,
+          user_code: codeData.user_code,
+          verification_uri: codeData.verification_uri,
+          expires_in: codeData.expires_in,
+          interval: codeData.interval,
+        });
+      } catch (error) {
+        this.sendJson(res, 500, { ok: false, error: error instanceof Error ? error.message : String(error) });
+      }
+      return;
+    }
+
+    if (method === 'POST' && pathname === '/setup/copilot/poll') {
+      try {
+        const body = await this.readJsonBody<{ device_code?: string }>(req);
+        const deviceCode = body?.device_code;
+        if (!deviceCode) {
+          this.sendJson(res, 400, { ok: false, error: 'device_code is required' });
+          return;
+        }
+        const COPILOT_CLIENT_ID = 'Iv1.b507a08c87ecfe98';
+        const pollInterval = 5000;
+        const maxAttempts = 180; // 15 minutes max
+        let attempts = 0;
+
+        while (attempts < maxAttempts) {
+          await new Promise((resolve) => setTimeout(resolve, pollInterval));
+          attempts++;
+
+          const tokenRes = await fetch('https://github.com/login/oauth/access_token', {
+            method: 'POST',
+            headers: { Accept: 'application/json', 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: `client_id=${COPILOT_CLIENT_ID}&device_code=${deviceCode}&grant_type=urn:ietf:params:oauth:grant-type:device_code`,
+          });
+          const tokenData = await tokenRes.json() as { access_token?: string; error?: string };
+
+          if (tokenData.access_token) {
+            this.sendJson(res, 200, { ok: true, token: tokenData.access_token });
+            return;
+          }
+          if (tokenData.error === 'authorization_pending') continue;
+          if (tokenData.error === 'slow_down') { await new Promise((r) => setTimeout(r, 2000)); continue; }
+          if (tokenData.error === 'expired_token') {
+            this.sendJson(res, 400, { ok: false, error: 'Device code expired. Please try again.' });
+            return;
+          }
+          if (tokenData.error === 'access_denied') {
+            this.sendJson(res, 400, { ok: false, error: 'Authorization denied by user.' });
+            return;
+          }
+        }
+        this.sendJson(res, 408, { ok: false, error: 'Device code flow timed out.' });
+      } catch (error) {
+        this.sendJson(res, 500, { ok: false, error: error instanceof Error ? error.message : String(error) });
+      }
+      return;
+    }
+
     if (method === 'POST' && pathname === '/setup/github/connect-url') {
       const state = this.createGitHubOAuthState();
       const origin = this.getRequestOrigin(req);
