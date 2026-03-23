@@ -68,18 +68,17 @@ export class WorkspaceManager {
   }
   
   private getWorkspacePath(): string {
-    // ~/.foxfang/workspace/ (user root)
+    // ~/.foxfang/ (user root — workspace files live here directly)
     // ~/.foxfang/workspace/projects/<projectId>/
     // ~/.foxfang/workspace/projects/<projectId>/agents/<agentId>/
-    const basePath = join(this.config.workspaceDir, 'workspace');
     if (this.config.projectId) {
-      const projectPath = join(basePath, 'projects', this.config.projectId);
+      const projectPath = join(this.config.workspaceDir, 'workspace', 'projects', this.config.projectId);
       if (this.config.agentId) {
         return join(projectPath, 'agents', this.config.agentId);
       }
       return projectPath;
     }
-    return basePath;
+    return this.config.workspaceDir;
   }
   
   private getFilePath(filename: string): string {

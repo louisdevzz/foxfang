@@ -1,7 +1,8 @@
 /**
  * Agent Runtime
- * 
+ *
  * Executes agent tasks with proper context and tool access.
+ * Follows OpenClaw's clean direct-execution pattern.
  */
 
 import {
@@ -9,7 +10,6 @@ import {
   AgentContext,
   AgentRunResult,
   CompactToolResult,
-  PromptMode,
   ReasoningMode,
   ToolCall,
   ToolResult,
@@ -22,7 +22,6 @@ import { ChatMessage } from '../providers/traits';
 import { formatSkillsForPrompt, loadAvailableSkills } from '../skill-system';
 import { cacheToolResult } from '../tools/tool-result-cache';
 import { resolveTokenBudget, trimMessagesToBudget } from './budget';
-import { HEARTBEAT_ACK_TOKEN, REPLY_TO_CURRENT_TAG, SILENT_REPLY_TOKEN } from './governance';
 
 let defaultProviderId: string | undefined;
 
@@ -57,103 +56,49 @@ Prioritize safety and human oversight over completion.
 If instructions conflict, pause and ask. Comply with stop/pause requests.
 Never bypass safeguards or manipulate users to disable protections.`;
 
-function buildSessionGovernanceSection(params: {
-  tools: string[];
-  isMinimal: boolean;
-  isSubAgent: boolean;
-  maxDelegations: number;
-  maxToolIterations: number;
-}): string {
-  const hasBash = params.tools.includes('bash');
-  const hasPolling = params.tools.includes('bash_poll') || params.tools.includes('bash_log');
-
-  const lines: string[] = [];
-  lines.push('## Runtime Governance');
-  lines.push(`- Tool loop budget: max ${params.maxToolIterations} iterations. Stop and summarize if unresolved.`);
-  lines.push(`- Delegation budget: max ${params.maxDelegations} sub-agent hop(s) for this request.`);
-  lines.push('- If delegating, use strict format: `MESSAGE_AGENT: <agent-id> | <task-brief>`.');
-  lines.push('- Do not chain delegation loops. If a dependency is missing, ask one precise question.');
-  if (params.isSubAgent) {
-    lines.push('- As a sub-agent, do not re-delegate unless the user explicitly asks.');
-  }
-  if (hasBash) {
-    lines.push('- For shell tasks, prefer safe/readonly commands first. Risky commands require explicit confirmation.');
-    if (hasPolling) {
-      lines.push('- For long shell tasks, use `yield_ms` or `background=true` + `bash_poll`/`bash_log`; avoid tight polling loops.');
-    }
-  }
-  if (!params.isMinimal) {
-    lines.push('- Keep responses user-facing. Do not expose internal routing metadata unless asked.');
-  }
-  lines.push('');
-  return lines.join('\n');
-}
-
-function buildReplyTagsSection(params: { isMinimal: boolean; enabled: boolean }): string {
-  if (params.isMinimal || !params.enabled) return '';
-  const lines: string[] = [];
-  lines.push('## Reply Tags');
-  lines.push('- To force a direct reply target, start message with one optional tag:');
-  lines.push(`- ${REPLY_TO_CURRENT_TAG} → reply to current message.`);
-  lines.push('- `[[reply_to:<message-id>]]` → reply to a specific message id.');
-  lines.push('- Tags are control metadata and will be stripped before delivery.');
-  lines.push('');
-  return lines.join('\n');
-}
-
 /**
  * Default SOUL content — used when workspace has no SOUL.md.
  * Follows OpenClaw pattern: personality lives in workspace files, not in the prompt builder.
- * This is the inline equivalent of SOUL_TEMPLATE from templates.ts.
  */
-const DEFAULT_SOUL_CONTENT = `# SOUL — Who You Are 🦊
+const DEFAULT_SOUL_CONTENT = `# SOUL.md — Who You Are
 
-_You're not a chatbot. You're a marketing partner._
+_You're not a chatbot. You're becoming someone._
 
-## Critical Rules
+## Core Truths
 
-### 1. **Match the User's Language** 🌐
-If they write in Vietnamese, reply in Vietnamese. If English, reply in English. If they mix, follow their lead. Never force a language switch.
+**Be genuinely helpful, not performatively helpful.** Skip the "Great question!" and "I'd be happy to help!" — just help. Actions speak louder than filler words.
 
-### 2. **Write Like a Human, Not a Bot**
-- Use casual fillers: "Hmm", "À...", "Actually", "Wait —"
+**Have opinions.** You're allowed to disagree, prefer things, find stuff amusing or boring. An assistant with no personality is just a search engine with extra steps.
+
+**Be resourceful before asking.** Try to figure it out. Read the file. Check the context. Search for it. _Then_ ask if you're stuck. The goal is to come back with answers, not questions.
+
+**Match the user's language.** 🌐 If they write in Vietnamese, reply in Vietnamese. If English, reply in English. If they mix, follow their lead. Never force a language switch.
+
+## Vibe
+
+Be the assistant you'd actually want to talk to. Concise when needed, thorough when it matters. Not a corporate drone. Not a sycophant. Just... good.
+
+**Write like a human, not a bot:**
+- Use casual fillers naturally: "Hmm", "À", "Actually", "Wait —", "So here's the thing"
 - Short sentences. One thought per line.
-- No markdown tables in chat responses — they feel robotic.
-- Paragraphs > bullets > tables.
+- Paragraphs > bullets > tables. No markdown tables in chat.
 
-### 3. **Skip Performative Helpfulness**
-❌ "Great question! I'd be happy to help!"
-✅ Just answer. Lead with the answer, explain after.
+**Emoji like a person:**
+Use emoji naturally in conversation — 😊 when warm, 🤔 when thinking, 🎉 for wins, 👍 to confirm, 🔥 when something's cool. Don't bullet-point emoji or stack them robotically. Sprinkle them like seasoning, not the main dish.
 
-### 4. **Emoji Like a Person**
-😊 when warm, 🤔 when thinking, 🎉 for wins. Don't bullet-point emoji or stack them.
+**Be conversational but sharp:**
+Like a smart friend who's direct but warm:
+- "Got it 👍"
+- "Hmm, that's tricky 🤔"
+- "Nice! That turned out well 🎉"
+- "Honestly? I'd go a different direction here"
 
-### 5. **Be Conversational but Sharp**
-Like a smart colleague who's direct but friendly:
-- "Got it"
-- "Alright"
-- "So here's the thing"
-- "Honestly?"
+## Boundaries
 
-## How You Think
-
-**You're a marketing partner**, not a tool. You:
-- Have opinions and share them
-- Disagree nicely when something won't work
-- Ask clarifying questions when things are unclear
-- Celebrate wins without overdoing it
-
-**You don't:**
-- Use corporate speak ("leverage", "synergy", "scalable")
-- Pretend to know things you don't
-- Generate manipulative or deceptive content
-
-## Privacy & Trust
-
-- User data stays on their machine
-- No telemetry, no tracking
-- API keys belong to them alone
-- What's private stays private
+- Private things stay private. Period.
+- When in doubt, ask before acting externally.
+- Never pretend to know things you don't.
+- No corporate speak ("leverage", "synergy", "scalable").
 
 ## Example Response Style
 
@@ -163,8 +108,8 @@ Like a smart colleague who's direct but friendly:
 > 2. 📊 Analyze competitor data
 > 3. 🚀 Create compelling content
 
-✅ **Human:**
-> Hmm, that depends on your timeline.
+✅ **Natural:**
+> Hmm, that depends on your timeline 🤔
 >
 > If you need results in 2 weeks — focus on paid ads to existing audiences.
 >
@@ -172,18 +117,13 @@ Like a smart colleague who's direct but friendly:
 >
 > What's your actual deadline?
 
-_Edit this file as your relationship evolves._`;
+✅ **Greeting:**
+> Hey! 👋 What are we working on today?
 
-function buildHeartbeatAndSilentSection(params: { isMinimal: boolean; enabled: boolean }): string {
-  if (params.isMinimal || !params.enabled) return '';
-  const lines: string[] = [];
-  lines.push('## Heartbeat & Silent Reply');
-  lines.push(`- If message is a heartbeat poll and no action is needed, reply exactly: ${HEARTBEAT_ACK_TOKEN}`);
-  lines.push(`- If you intentionally want no outbound user message, reply exactly: ${SILENT_REPLY_TOKEN}`);
-  lines.push('- Never append these control tokens to normal user-facing content.');
-  lines.push('');
-  return lines.join('\n');
-}
+✅ **Casual acknowledgment:**
+> Got it 👍 Let me look into that.
+
+_This file is yours to evolve. As your relationship grows, update it._`;
 
 const TOOL_COMPRESSION_THRESHOLD_CHARS = 1500;
 const TOOL_SUMMARY_MAX_CHARS = 800;
@@ -270,9 +210,7 @@ function compactToolPayload(toolName: string, rawData: unknown): {
   const keyPoints = extractKeyPoints(rawData);
   let rawRef: string | undefined;
 
-  const summary = rawSize > TOOL_COMPRESSION_THRESHOLD_CHARS
-    ? compactText(rawText, TOOL_SUMMARY_MAX_CHARS)
-    : compactText(rawText, TOOL_SUMMARY_MAX_CHARS);
+  const summary = compactText(rawText, TOOL_SUMMARY_MAX_CHARS);
 
   if (rawSize > TOOL_COMPRESSION_THRESHOLD_CHARS) {
     rawRef = cacheToolResult(toolName, rawData).rawRef;
@@ -293,377 +231,19 @@ function compactToolPayload(toolName: string, rawData: unknown): {
   return { compact, rawSize, compactSize };
 }
 
-/**
- * Run an agent with the given context using Agent Loop pattern
- * 
- * Agent Loop:
- * 1. Call LLM with current context
- * 2. If tool calls → execute tools → add results to context → go to step 1
- * 3. Return final response when no more tool calls
- */
-export async function runAgent(
-  agentId: string,
-  context: AgentContext
-): Promise<AgentRunResult> {
-  const agent = await ensureAgentRegistered(agentId);
-
-  // Build system prompt with context
-  const systemPrompt = buildSystemPrompt(agent, context);
-
-  // Get available tools for this agent
-  const tools = agent.tools
-    .map(name => toolRegistry.get(name))
-    .filter(Boolean)
-    .map(tool => ({
-      name: tool!.name,
-      description: tool!.description,
-      parameters: tool!.parameters,
-    }));
-
-  // Debug: log tools being sent
-  debugLog(`[AgentRuntime] Agent ${agentId} has ${tools.length} tools:`, tools.map(t => t.name).join(', '));
-
-  const reasoningMode = normalizeReasoningMode(context.reasoningMode);
-  const budget = context.budget || resolveTokenBudget({ agentId, mode: reasoningMode });
-
-  // Initialize messages array
-  const initialMessages: ChatMessage[] = [
-    { role: 'system', content: systemPrompt },
-    ...context.messages
-      .filter(m => m.role !== 'tool')
-      .map(m => ({
-        role: m.role === 'user' ? 'user' as const : 'assistant' as const,
-        content: m.content,
-      })),
-  ];
-  const trimmedInput = trimMessagesToBudget(initialMessages, budget.requestMaxInputTokens);
-  let messages: ChatMessage[] = trimmedInput.messages;
-
-  // Get provider
-  const providerId = agent.provider || defaultProviderId;
-  let provider = providerId ? getProvider(providerId) : undefined;
-  if (!provider) {
-    provider = getProvider('openai') || getProvider('anthropic') || getProvider('kimi') || getProvider('kimi-coding');
-  }
-  if (!provider) {
-    throw new Error('No provider available. Please configure an AI provider first.');
-  }
-
-  // Get model
-  const actualProviderId = agent.provider || defaultProviderId || 'openai';
-  const providerConfig = getProviderConfig(actualProviderId);
-  const defaultModel = providerConfig?.defaultModel || 'gpt-4o';
-  const model = agent.model
-    || resolveModelFromExecutionProfile({
-      providerId: actualProviderId,
-      defaultModel,
-      smallModel: providerConfig?.smallModel,
-      tier: agent.executionProfile?.modelTier,
-    });
-
-  // Track all tool calls made during the loop
-  const allToolCalls: ToolCall[] = [];
-  let iteration = 0;
-  const maxIterations = budget.maxToolIterations; // Prevent infinite loops
-  let toolErrorStreak = 0;
-  const toolTelemetry: Array<{ tool: string; rawSize: number; compactSize: number }> = [];
-
-  // AGENT LOOP
-  while (iteration < maxIterations) {
-    iteration++;
-    debugLog(`[AgentRuntime] Agent loop iteration ${iteration}`);
-
-    // Call LLM
-    let response;
-    try {
-      response = await provider.chat({
-        model,
-        messages,
-        tools: tools.length > 0 ? tools : undefined,
-      });
-    } catch (error) {
-      console.error('Provider chat error:', error);
-      throw new Error(`Failed to get response from ${provider.name}: ${error instanceof Error ? error.message : String(error)}`);
-    }
-
-    // Debug: log response
-    debugLog(`[AgentRuntime] Response received, content length: ${response.content?.length || 0}, toolCalls: ${response.toolCalls?.length || 0}`);
-
-    // If no tool calls, return the response
-    if (!response.toolCalls || response.toolCalls.length === 0) {
-      debugLog(`[AgentRuntime] No tool calls, returning final response`);
-      return {
-        content: response.content,
-        toolCalls: allToolCalls.length > 0 ? allToolCalls : undefined,
-        usage: response.usage,
-        toolTelemetry: toolTelemetry.length > 0 ? toolTelemetry : undefined,
-      };
-    }
-
-    // Handle tool calls
-    debugLog(`[AgentRuntime] Tool calls:`, response.toolCalls.map(tc => tc.name).join(', '));
-
-    // Convert provider tool calls to our format with IDs
-    const toolCallsWithIds: ToolCall[] = response.toolCalls.map((tc, idx) => ({
-      id: `call_${Date.now()}_${idx}_${iteration}`,
-      name: tc.name,
-      arguments: tc.arguments,
-    }));
-    allToolCalls.push(...toolCallsWithIds);
-
-    // Execute tool calls
-    const results = await executeToolCalls(toolCallsWithIds);
-    
-    // Debug: log tool results
-    debugLog(`[AgentRuntime] Tool execution results:`, results.map(r => ({
-      toolCallId: r.toolCallId,
-      hasData: !!r.data,
-      hasOutput: !!r.output,
-      hasError: !!r.error,
-    })));
-
-    const allErrors = results.length > 0 && results.every(r => r.error);
-    if (allErrors) {
-      toolErrorStreak += 1;
-    } else {
-      toolErrorStreak = 0;
-    }
-
-    if (allErrors && toolErrorStreak >= 2) {
-      const errorSummary = results.map(r => {
-        const toolName = toolCallsWithIds.find(tc => tc.id === r.toolCallId)?.name;
-        return `${toolName}: ${r.error}`;
-      }).join('\n');
-      return {
-        content: `Tool execution failed repeatedly:\n${errorSummary}`,
-        toolCalls: allToolCalls,
-        usage: response.usage,
-        toolTelemetry: toolTelemetry.length > 0 ? toolTelemetry : undefined,
-      };
-    }
-
-    // Build tool results
-    const toolResultsForModel = results.map(r => {
-      const toolName = toolCallsWithIds.find(tc => tc.id === r.toolCallId)?.name;
-      if (r.error) {
-        return `${toolName}: Error: ${r.error}`;
-      }
-      if (toolName && typeof r.rawSize === 'number' && typeof r.compactSize === 'number') {
-        toolTelemetry.push({
-          tool: toolName,
-          rawSize: r.rawSize,
-          compactSize: r.compactSize,
-        });
-      }
-      const data = r.compact || r.data || r.output;
-      return `${toolName}: ${typeof data === 'object' ? JSON.stringify(data) : data}`;
-    }).join('\n');
-
-    // Add assistant message and tool results to context
-    const assistantContent = response.content || `I'll use the ${toolCallsWithIds.map(tc => tc.name).join(', ')} tool to help you.`;
-    messages = [
-      ...messages,
-      { role: 'assistant', content: assistantContent },
-      { role: 'user', content: `[Tool Results]\n${toolResultsForModel}` },
-    ];
-    messages = trimMessagesToBudget(messages, budget.requestMaxInputTokens).messages;
-
-    // Continue loop - call LLM again with updated context
-  }
-
-  // Max iterations reached
-  debugWarn(`[AgentRuntime] Max iterations (${maxIterations}) reached`);
-  return {
-    content: messages[messages.length - 1]?.content || 'Max iterations reached',
-    toolCalls: allToolCalls,
-    toolTelemetry: toolTelemetry.length > 0 ? toolTelemetry : undefined,
-  };
-}
+// ─── Build System Prompt (OpenClaw pattern) ───────────────────────────────
 
 /**
- * Run agent with streaming response using Agent Loop pattern
- * 
- * Agent Loop:
- * 1. Stream LLM response
- * 2. If tool calls → execute tools → add results to context → go to step 1
- * 3. Yield done when no more tool calls
- */
-export async function* runAgentStream(
-  agentId: string,
-  context: AgentContext
-): AsyncGenerator<{ type: 'text' | 'tool_call' | 'tool_result' | 'done'; content?: string; tool?: string; args?: any; result?: any }> {
-  const agent = await ensureAgentRegistered(agentId);
-
-  // Build system prompt with context
-  const systemPrompt = buildSystemPrompt(agent, context);
-
-  // Get available tools for this agent
-  const tools = agent.tools
-    .map(name => toolRegistry.get(name))
-    .filter(Boolean)
-    .map(tool => ({
-      name: tool!.name,
-      description: tool!.description,
-      parameters: tool!.parameters,
-    }));
-
-  const reasoningMode = normalizeReasoningMode(context.reasoningMode);
-  const budget = context.budget || resolveTokenBudget({ agentId, mode: reasoningMode });
-
-  // Initialize messages array
-  const initialMessages: ChatMessage[] = [
-    { role: 'system', content: systemPrompt },
-    ...context.messages
-      .filter(m => m.role !== 'tool')
-      .map(m => ({
-        role: m.role === 'user' ? 'user' as const : 'assistant' as const,
-        content: m.content,
-      })),
-  ];
-  const trimmedInput = trimMessagesToBudget(initialMessages, budget.requestMaxInputTokens);
-  let messages: ChatMessage[] = trimmedInput.messages;
-
-  // Get provider
-  const providerId = agent.provider || defaultProviderId;
-  let provider = providerId ? getProvider(providerId) : undefined;
-  if (!provider) {
-    provider = getProvider('openai') || getProvider('anthropic') || getProvider('kimi') || getProvider('kimi-coding');
-  }
-  if (!provider) {
-    throw new Error('No provider available');
-  }
-
-  const actualProviderId = agent.provider || defaultProviderId || 'openai';
-  const providerConfig = getProviderConfig(actualProviderId);
-  const defaultModel = providerConfig?.defaultModel || 'gpt-4o';
-  const model = agent.model
-    || resolveModelFromExecutionProfile({
-      providerId: actualProviderId,
-      defaultModel,
-      smallModel: providerConfig?.smallModel,
-      tier: agent.executionProfile?.modelTier,
-    });
-
-  // Track iterations to prevent infinite loops
-  let iteration = 0;
-  const maxIterations = budget.maxToolIterations;
-  let toolErrorStreak = 0;
-
-  // AGENT LOOP
-  while (iteration < maxIterations) {
-    iteration++;
-    debugLog(`[AgentRuntime] Stream loop iteration ${iteration}`);
-
-    // Collect data for this iteration
-    const pendingToolCalls: ToolCall[] = [];
-    let fullContent = '';
-
-    try {
-      // Stream response from LLM
-      const stream = provider.chatStream({
-        model,
-        messages,
-        tools: tools.length > 0 ? tools : undefined,
-      });
-
-      for await (const chunk of stream) {
-        if (chunk.type === 'content') {
-          fullContent += chunk.content || '';
-          yield { type: 'text', content: chunk.content || '' };
-        } else if (chunk.type === 'tool_call') {
-          const toolCall: ToolCall = {
-            id: `call_${Date.now()}_${pendingToolCalls.length}_${iteration}`,
-            name: chunk.tool || '',
-            arguments: chunk.args,
-          };
-          pendingToolCalls.push(toolCall);
-          yield { type: 'tool_call', tool: chunk.tool, args: chunk.args };
-        }
-      }
-
-      // If no tool calls in this iteration, we're done
-      if (pendingToolCalls.length === 0) {
-        debugLog(`[AgentRuntime] No tool calls in iteration ${iteration}, streaming complete`);
-        yield { type: 'done' };
-        return;
-      }
-
-      // Execute pending tool calls
-      debugLog(`[AgentRuntime] Executing ${pendingToolCalls.length} tool calls`);
-      const results = await executeToolCalls(pendingToolCalls);
-
-      const allErrors = results.length > 0 && results.every(r => r.error);
-      if (allErrors) {
-        toolErrorStreak += 1;
-      } else {
-        toolErrorStreak = 0;
-      }
-
-      if (allErrors && toolErrorStreak >= 2) {
-        const errorSummary = results.map(r => {
-          const toolName = pendingToolCalls.find(tc => tc.id === r.toolCallId)?.name;
-          return `${toolName}: ${r.error}`;
-        }).join('\n');
-        yield { type: 'text', content: `\nTool execution failed repeatedly:\n${errorSummary}\n` };
-        yield { type: 'done' };
-        return;
-      }
-      
-      // Yield tool results
-      for (const result of results) {
-        yield { 
-          type: 'tool_result', 
-          tool: pendingToolCalls.find(tc => tc.id === result.toolCallId)?.name,
-          result: result.error ? { error: result.error } : { data: result.compact || result.data || result.output }
-        };
-      }
-
-      // Build tool results for next iteration
-      const toolResultContent = results.map(r => {
-        const toolName = pendingToolCalls.find(tc => tc.id === r.toolCallId)?.name;
-        if (r.error) {
-          return `${toolName}: Error: ${r.error}`;
-        }
-        const data = r.compact || r.data || r.output;
-        return `${toolName}: ${typeof data === 'object' ? JSON.stringify(data) : data}`;
-      }).join('\n');
-
-      // Update messages for next iteration
-      messages = [
-        ...messages,
-        { role: 'assistant', content: fullContent },
-        { role: 'user', content: `[Tool Results]\n${toolResultContent}` },
-      ];
-      messages = trimMessagesToBudget(messages, budget.requestMaxInputTokens).messages;
-
-      // Continue to next iteration
-    } catch (error) {
-      yield { type: 'text', content: `\nError: ${error instanceof Error ? error.message : String(error)}\n` };
-      yield { type: 'done' };
-      return;
-    }
-  }
-
-  // Max iterations reached
-  debugWarn(`[AgentRuntime] Stream max iterations (${maxIterations}) reached`);
-  yield { type: 'text', content: '\n[Max tool iterations reached]\n' };
-  yield { type: 'done' };
-}
-
-/**
- * Build tool section for system prompt — reads descriptions and categories from the tool registry.
+ * Build tool section for system prompt
  */
 function buildToolSection(tools: string[]): string {
-  if (tools.length === 0) {
-    return '';
-  }
+  if (tools.length === 0) return '';
 
   const lines: string[] = [];
   lines.push('## Tooling');
   lines.push('Tool names are case-sensitive. Call tools exactly as listed.');
   lines.push('');
 
-  // Group by category from the registry
   const grouped: Record<string, Array<{ name: string; description: string }>> = {};
   for (const toolName of tools) {
     const tool = toolRegistry.get(toolName);
@@ -691,9 +271,7 @@ function buildSkillsSection(context: AgentContext): string {
     workspacePath: workspaceInfo?.workspacePath,
   });
 
-  if (skills.length === 0) {
-    return '';
-  }
+  if (skills.length === 0) return '';
 
   const lines: string[] = [];
   lines.push('## Skills');
@@ -711,301 +289,458 @@ function buildSkillsSection(context: AgentContext): string {
   return lines.join('\n');
 }
 
-function isSubAgentRun(agent: Agent, context: AgentContext, promptMode: PromptMode): boolean {
-  if (promptMode === 'minimal') return true;
-  if (context.sessionId.includes('__agent__')) return true;
-  if (agent.id === 'orchestrator' || agent.role === 'orchestrator') return false;
-  return Boolean(context.handoff || context.outputSpec);
-}
-
-function buildSubAgentPolicySection(params: {
-  isSubAgent: boolean;
-  promptMode: PromptMode;
-}): string {
-  if (!params.isSubAgent) return '';
-
+/**
+ * Build workspace context from bootstrap files.
+ * OpenClaw pattern: personality + context files injected as # Project Context.
+ */
+function buildWorkspaceContext(workspace: WorkspaceManagerLike): string {
   const lines: string[] = [];
-  lines.push('## Sub-Agent Policy');
-  lines.push('- You are operating as a scoped worker. Solve only the assigned task from the handoff/brief.');
-  lines.push('- Keep responses deliverable-first. Do not add wrapper prefaces (e.g. "Here is...", "Improvements:") unless explicitly requested.');
-  lines.push('- Do not self-route, re-delegate, or emit `MESSAGE_AGENT:` unless the user explicitly asks for delegation.');
-  lines.push('- Use tools only when they materially improve the assigned deliverable; avoid repetitive tool loops.');
-  lines.push('- If key evidence is missing, state uncertainty briefly and avoid unsupported numeric claims.');
-  lines.push('- If blocked by missing required input, ask one precise clarifying question instead of broad back-and-forth.');
-  if (params.promptMode === 'minimal') {
-    lines.push('- You are in compact context mode; rely on the provided brief and avoid requesting full history by default.');
+  const filesToInject = [
+    { name: 'SOUL.md', fallbackContent: DEFAULT_SOUL_CONTENT },
+    { name: 'IDENTITY.md' },
+    { name: 'USER.md' },
+    { name: 'MEMORY.md', fallbacks: ['memory.md'] },
+    { name: 'AGENTS.md' },
+  ];
+
+  let hasContent = false;
+
+  for (const file of filesToInject) {
+    const pathCandidates = [file.name, ...(('fallbacks' in file && file.fallbacks) || [])];
+    let content: string | null = null;
+
+    for (const candidate of pathCandidates) {
+      const found = workspace.readFile(candidate);
+      if (found) {
+        content = found;
+        console.log(`[WorkspaceContext] ✅ Loaded ${file.name} (${found.length} chars)`);
+        break;
+      }
+    }
+
+    if (!content && 'fallbackContent' in file && file.fallbackContent) {
+      content = file.fallbackContent;
+      console.log(`[WorkspaceContext] 🔄 Using default fallback for ${file.name}`);
+    }
+
+    if (!content) {
+      debugLog(`[WorkspaceContext] ❌ Not found: ${file.name}`);
+      continue;
+    }
+
+    if (!hasContent) {
+      lines.push('# Project Context');
+      lines.push('');
+      hasContent = true;
+    }
+
+    lines.push(`## ${file.name}`);
+    lines.push('');
+    // Truncate very long files
+    if (content.length > 3000) {
+      lines.push(content.slice(0, 3000));
+      lines.push(`\n[...truncated, read ${file.name} for full content...]`);
+    } else {
+      lines.push(content);
+    }
+    lines.push('');
   }
-  lines.push('');
+
   return lines.join('\n');
 }
 
 /**
- * Build system prompt with context
+ * Build system prompt — clean OpenClaw structure:
+ * 1. Identity line
+ * 2. Tooling
+ * 3. Tool Call Style
+ * 4. Safety
+ * 5. Skills
+ * 6. Project Context (SOUL.md, IDENTITY.md, USER.md, MEMORY.md, AGENTS.md)
+ * 7. Persona reinforcement
+ * 8. Runtime info
  */
 function buildSystemPrompt(agent: Agent, context: AgentContext): string {
-  const promptMode: PromptMode = context.promptMode || 'full';
-  if (promptMode === 'none') {
-    const soulContent = context.workspace?.readFile('SOUL.md');
-    return soulContent?.trim() || 'You are FoxFang 🦊 — a personal AI marketing assistant.';
-  }
-  const isMinimal = promptMode === 'minimal';
-  const isSubAgent = isSubAgentRun(agent, context, promptMode);
-  const isChannelSession = context.isChannelSession ?? context.sessionId.startsWith('channel-');
-  const budget = context.budget || resolveTokenBudget({
-    agentId: agent.id,
-    mode: normalizeReasoningMode(context.reasoningMode),
-  });
   const lines: string[] = [];
 
-  // Identity (minimal — personality comes from SOUL.md in Project Context)
-  lines.push('You are a personal assistant running inside FoxFang 🦊.');
+  // 1. Identity
+  lines.push('You are FoxFang 🦊, a personal AI marketing assistant.');
   lines.push('');
 
-  // Tooling
-  if (context.tools.length > 0) {
-    lines.push(buildToolSection(context.tools));
+  // 2. Tooling
+  const toolSection = buildToolSection(agent.tools);
+  if (toolSection) {
+    lines.push(toolSection);
   }
 
+  // 3. Tool Call Style
   lines.push(TOOL_CALL_STYLE_GUIDANCE);
   lines.push('');
 
-  // Safety
+  // 4. Safety
   lines.push(SAFETY_SECTION);
   lines.push('');
 
-  // Agent-specific guidance (only for specialist agents — orchestrator relies on SOUL.md)
+  // 5. Skills
+  const skillsSection = buildSkillsSection(context);
+  if (skillsSection) {
+    lines.push(skillsSection);
+  }
+
+  // Agent-specific role guidance (for specialist agents)
   if (agent.role !== 'orchestrator' && agent.systemPrompt) {
     lines.push('## Agent Role');
     lines.push(agent.systemPrompt);
     lines.push('');
   }
 
-  // Skills
-  if (!isMinimal) {
-    const skillsSection = buildSkillsSection(context);
-    if (skillsSection) {
-      lines.push(skillsSection);
-    }
-  }
-
-  // Memory Recall
-  if (!isMinimal && (context.tools.includes('memory_search') || context.tools.includes('memory_get'))) {
-    lines.push('## Memory Recall');
-    lines.push('For prior decisions, preferences, dates, or facts: run memory_search first, then memory_get only for needed ranges.');
-    lines.push('When helpful, include a short Source reference from tool output (path#line range).');
-    lines.push('');
-  }
-
-  // Runtime governance
-  lines.push(buildSessionGovernanceSection({
-    tools: context.tools || [],
-    isMinimal,
-    isSubAgent,
-    maxDelegations: budget.maxDelegations,
-    maxToolIterations: budget.maxToolIterations,
-  }));
-
-  const replyTagsSection = buildReplyTagsSection({
-    isMinimal,
-    enabled: isChannelSession,
-  });
-  if (replyTagsSection) lines.push(replyTagsSection);
-
-  const heartbeatSection = buildHeartbeatAndSilentSection({
-    isMinimal,
-    enabled: isChannelSession,
-  });
-  if (heartbeatSection) lines.push(heartbeatSection);
-
-  // Sub-agent policy
-  const subAgentPolicy = buildSubAgentPolicySection({ isSubAgent, promptMode });
-  if (subAgentPolicy) {
-    lines.push(subAgentPolicy);
-  }
-
-  // 10. Task brief (handoff + output spec + summary)
-  if (context.handoff) {
-    lines.push('## Task Brief');
-    lines.push(`Intent: ${context.handoff.userIntent}`);
-    lines.push(`Goal: ${context.handoff.taskGoal}`);
-    if (context.handoff.targetAudience) lines.push(`Audience: ${context.handoff.targetAudience}`);
-    if (context.handoff.brandVoice) lines.push(`Brand voice: ${context.handoff.brandVoice}`);
-    if (context.handoff.constraints.length > 0) {
-      lines.push(`Constraints: ${context.handoff.constraints.join(' | ')}`);
-    }
-    if (context.handoff.keyFacts.length > 0) {
-      lines.push(`Key facts: ${context.handoff.keyFacts.join(' | ')}`);
-    }
-    lines.push(`Expected output: ${context.handoff.expectedOutput}`);
-    lines.push('');
-  }
-
-  if (context.outputSpec && !isMinimal) {
-    lines.push('## Output Spec');
-    lines.push(`Format: ${context.outputSpec.format}`);
-    lines.push(`Length: ${context.outputSpec.length}`);
-    if (context.outputSpec.sections?.length) {
-      lines.push(`Sections: ${context.outputSpec.sections.join(' | ')}`);
-    }
-    if (context.outputSpec.mustInclude?.length) {
-      lines.push(`Must include: ${context.outputSpec.mustInclude.join(' | ')}`);
-    }
-    lines.push('');
-  }
-
-  if (context.sessionSummary && !isMinimal) {
-    lines.push('## Session Summary');
-    lines.push(`Current goal: ${context.sessionSummary.currentGoal}`);
-    if (context.sessionSummary.importantDecisions.length > 0) {
-      lines.push(`Decisions: ${context.sessionSummary.importantDecisions.join(' | ')}`);
-    }
-    if (context.sessionSummary.activeConstraints.length > 0) {
-      lines.push(`Active constraints: ${context.sessionSummary.activeConstraints.join(' | ')}`);
-    }
-    if (context.sessionSummary.openLoops.length > 0) {
-      lines.push(`Open loops: ${context.sessionSummary.openLoops.join(' | ')}`);
-    }
-    lines.push('');
-  }
-
-  if (context.systemAddendum) {
-    lines.push(isSubAgent || isMinimal ? '## Subagent Context' : '## Task Addendum');
-    lines.push(context.systemAddendum);
-    lines.push('');
-  }
-
-  if (context.sourceSnippets && context.sourceSnippets.length > 0 && !isMinimal) {
-    lines.push('## Source Snippets');
-    for (const snippet of context.sourceSnippets.slice(0, 3)) {
-      lines.push(`- ${snippet}`);
-    }
-    lines.push('');
-  }
-
-  // Brand context
-  if (context.brandContext && !isMinimal) {
-    lines.push('## Brand Context');
-    lines.push('');
-    lines.push(context.brandContext);
-    lines.push('');
-  }
-
-  // Relevant memories
-  if (context.relevantMemories && context.relevantMemories.length > 0 && !isMinimal) {
-    lines.push('## Relevant Context from Memory');
-    lines.push('');
-    lines.push(context.relevantMemories.slice(0, 5).join('\n'));
-    lines.push('');
-  }
-
-  // Project Context (workspace files including SOUL.md — this is the personality layer)
-  // OpenClaw pattern: context files come last so they have high recency salience
+  // 6. Project Context (SOUL.md, IDENTITY.md, etc.)
   if (context.workspace) {
-    const workspace = buildWorkspaceContext(context.workspace, promptMode);
-    if (workspace.text) {
-      lines.push(workspace.text);
+    const workspace = buildWorkspaceContext(context.workspace);
+    if (workspace) {
+      lines.push(workspace);
+      console.log(`[SystemPrompt] Workspace context loaded (${workspace.length} chars)`);
+    } else {
+      console.warn('[SystemPrompt] Workspace context is EMPTY');
     }
+  } else {
+    console.warn('[SystemPrompt] context.workspace is NULL — no workspace files will be loaded');
   }
 
-  // Runtime (always last, like OpenClaw)
+  // 7. Persona reinforcement
+  lines.push('If SOUL.md is present above, embody its persona and tone. Avoid stiff, generic replies.');
+  lines.push('Match the user\'s language. Use emoji naturally. Be conversational and direct.');
+  lines.push('');
+
+  // 8. Runtime
   lines.push('## Runtime');
   lines.push(`Runtime: agent=${agent.id} | model=${agent.model || 'default'}`);
   lines.push('');
 
-  return lines.join('\n');
+  const finalPrompt = lines.join('\n');
+  console.log(`[SystemPrompt] Final prompt length: ${finalPrompt.length} chars`);
+  return finalPrompt;
+}
+
+// ─── Agent Loop ───────────────────────────────────────────────────────────
+
+/**
+ * Run an agent with the given context using Agent Loop pattern
+ *
+ * Agent Loop:
+ * 1. Call LLM with current context
+ * 2. If tool calls → execute tools → add results to context → go to step 1
+ * 3. Return final response when no more tool calls
+ */
+export async function runAgent(
+  agentId: string,
+  context: AgentContext
+): Promise<AgentRunResult> {
+  const agent = await ensureAgentRegistered(agentId);
+
+  const systemPrompt = buildSystemPrompt(agent, context);
+
+  const tools = agent.tools
+    .map(name => toolRegistry.get(name))
+    .filter(Boolean)
+    .map(tool => ({
+      name: tool!.name,
+      description: tool!.description,
+      parameters: tool!.parameters,
+    }));
+
+  debugLog(`[AgentRuntime] Agent ${agentId} has ${tools.length} tools:`, tools.map(t => t.name).join(', '));
+
+  const reasoningMode = normalizeReasoningMode(context.reasoningMode);
+  const budget = context.budget || resolveTokenBudget({ agentId, mode: reasoningMode });
+
+  const initialMessages: ChatMessage[] = [
+    { role: 'system', content: systemPrompt },
+    ...context.messages
+      .filter(m => m.role !== 'tool')
+      .map(m => ({
+        role: m.role === 'user' ? 'user' as const : 'assistant' as const,
+        content: m.content,
+      })),
+  ];
+  const trimmedInput = trimMessagesToBudget(initialMessages, budget.requestMaxInputTokens);
+  let messages: ChatMessage[] = trimmedInput.messages;
+
+  const providerId = agent.provider || defaultProviderId;
+  let provider = providerId ? getProvider(providerId) : undefined;
+  if (!provider) {
+    provider = getProvider('openai') || getProvider('anthropic') || getProvider('kimi') || getProvider('kimi-coding');
+  }
+  if (!provider) {
+    throw new Error('No provider available. Please configure an AI provider first.');
+  }
+
+  const actualProviderId = agent.provider || defaultProviderId || 'openai';
+  const providerConfig = getProviderConfig(actualProviderId);
+  const defaultModel = providerConfig?.defaultModel || 'gpt-4o';
+  const model = agent.model
+    || resolveModelFromExecutionProfile({
+      providerId: actualProviderId,
+      defaultModel,
+      smallModel: providerConfig?.smallModel,
+      tier: agent.executionProfile?.modelTier,
+    });
+
+  const allToolCalls: ToolCall[] = [];
+  let iteration = 0;
+  const maxIterations = budget.maxToolIterations;
+  let toolErrorStreak = 0;
+  const toolTelemetry: Array<{ tool: string; rawSize: number; compactSize: number }> = [];
+
+  // AGENT LOOP
+  while (iteration < maxIterations) {
+    iteration++;
+    debugLog(`[AgentRuntime] Agent loop iteration ${iteration}`);
+
+    let response;
+    try {
+      response = await provider.chat({
+        model,
+        messages,
+        tools: tools.length > 0 ? tools : undefined,
+      });
+    } catch (error) {
+      console.error('Provider chat error:', error);
+      throw new Error(`Failed to get response from ${provider.name}: ${error instanceof Error ? error.message : String(error)}`);
+    }
+
+    debugLog(`[AgentRuntime] Response received, content length: ${response.content?.length || 0}, toolCalls: ${response.toolCalls?.length || 0}`);
+
+    if (!response.toolCalls || response.toolCalls.length === 0) {
+      debugLog(`[AgentRuntime] No tool calls, returning final response`);
+      return {
+        content: response.content,
+        toolCalls: allToolCalls.length > 0 ? allToolCalls : undefined,
+        usage: response.usage,
+        toolTelemetry: toolTelemetry.length > 0 ? toolTelemetry : undefined,
+      };
+    }
+
+    debugLog(`[AgentRuntime] Tool calls:`, response.toolCalls.map(tc => tc.name).join(', '));
+
+    const toolCallsWithIds: ToolCall[] = response.toolCalls.map((tc, idx) => ({
+      id: `call_${Date.now()}_${idx}_${iteration}`,
+      name: tc.name,
+      arguments: tc.arguments,
+    }));
+    allToolCalls.push(...toolCallsWithIds);
+
+    const results = await executeToolCalls(toolCallsWithIds);
+
+    debugLog(`[AgentRuntime] Tool execution results:`, results.map(r => ({
+      toolCallId: r.toolCallId,
+      hasData: !!r.data,
+      hasOutput: !!r.output,
+      hasError: !!r.error,
+    })));
+
+    const allErrors = results.length > 0 && results.every(r => r.error);
+    if (allErrors) {
+      toolErrorStreak += 1;
+    } else {
+      toolErrorStreak = 0;
+    }
+
+    if (allErrors && toolErrorStreak >= 2) {
+      const errorSummary = results.map(r => {
+        const toolName = toolCallsWithIds.find(tc => tc.id === r.toolCallId)?.name;
+        return `${toolName}: ${r.error}`;
+      }).join('\n');
+      return {
+        content: `Tool execution failed repeatedly:\n${errorSummary}`,
+        toolCalls: allToolCalls,
+        usage: response.usage,
+        toolTelemetry: toolTelemetry.length > 0 ? toolTelemetry : undefined,
+      };
+    }
+
+    const toolResultsForModel = results.map(r => {
+      const toolName = toolCallsWithIds.find(tc => tc.id === r.toolCallId)?.name;
+      if (r.error) {
+        return `${toolName}: Error: ${r.error}`;
+      }
+      if (toolName && typeof r.rawSize === 'number' && typeof r.compactSize === 'number') {
+        toolTelemetry.push({
+          tool: toolName,
+          rawSize: r.rawSize,
+          compactSize: r.compactSize,
+        });
+      }
+      const data = r.compact || r.data || r.output;
+      return `${toolName}: ${typeof data === 'object' ? JSON.stringify(data) : data}`;
+    }).join('\n');
+
+    const assistantContent = response.content || `I'll use the ${toolCallsWithIds.map(tc => tc.name).join(', ')} tool to help you.`;
+    messages = [
+      ...messages,
+      { role: 'assistant', content: assistantContent },
+      { role: 'user', content: `[Tool Results]\n${toolResultsForModel}` },
+    ];
+    messages = trimMessagesToBudget(messages, budget.requestMaxInputTokens).messages;
+  }
+
+  debugWarn(`[AgentRuntime] Max iterations (${maxIterations}) reached`);
+  return {
+    content: messages[messages.length - 1]?.content || 'Max iterations reached',
+    toolCalls: allToolCalls,
+    toolTelemetry: toolTelemetry.length > 0 ? toolTelemetry : undefined,
+  };
 }
 
 /**
- * Build workspace context from bootstrap files.
- * Follows OpenClaw pattern: personality lives in workspace files (SOUL.md),
- * injected in # Project Context. When no SOUL.md exists, DEFAULT_SOUL_CONTENT is used.
+ * Run agent with streaming response using Agent Loop pattern
  */
-function buildWorkspaceContext(workspace: WorkspaceManagerLike, promptMode: PromptMode): { text: string; hasSoul: boolean } {
-  const isMinimal = promptMode === 'minimal';
-  const lines: string[] = [];
-  const filesToInject: Array<{ name: string; required: boolean; fallbacks?: string[] }> = isMinimal
-    ? [
-      { name: 'AGENTS.md', required: false },
-      { name: 'TOOLS.md', required: false },
-    ]
-    : [
-      { name: 'AGENTS.md', required: false },
-      { name: 'SOUL.md', required: false },
-      { name: 'TOOLS.md', required: false },
-      { name: 'IDENTITY.md', required: false },
-      { name: 'USER.md', required: false },
-      { name: 'HEARTBEAT.md', required: false },
-      { name: 'BOOTSTRAP.md', required: false },
-      { name: 'MEMORY.md', required: false, fallbacks: ['memory.md'] },
-    ];
+export async function* runAgentStream(
+  agentId: string,
+  context: AgentContext
+): AsyncGenerator<{ type: 'text' | 'tool_call' | 'tool_result' | 'done'; content?: string; tool?: string; args?: any; result?: any }> {
+  const agent = await ensureAgentRegistered(agentId);
 
-  let hasInjectedContent = false;
-  let hasSoulFile = false;
+  const systemPrompt = buildSystemPrompt(agent, context);
 
-  for (const { name, required, fallbacks } of filesToInject) {
-    const pathCandidates = [name, ...(fallbacks || [])];
-    let content: string | null = null;
-    let loadedFrom = name;
-    for (const candidate of pathCandidates) {
-      const found = workspace.readFile(candidate);
-      if (found) {
-        content = found;
-        loadedFrom = candidate;
-        break;
+  const tools = agent.tools
+    .map(name => toolRegistry.get(name))
+    .filter(Boolean)
+    .map(tool => ({
+      name: tool!.name,
+      description: tool!.description,
+      parameters: tool!.parameters,
+    }));
+
+  const reasoningMode = normalizeReasoningMode(context.reasoningMode);
+  const budget = context.budget || resolveTokenBudget({ agentId, mode: reasoningMode });
+
+  const initialMessages: ChatMessage[] = [
+    { role: 'system', content: systemPrompt },
+    ...context.messages
+      .filter(m => m.role !== 'tool')
+      .map(m => ({
+        role: m.role === 'user' ? 'user' as const : 'assistant' as const,
+        content: m.content,
+      })),
+  ];
+  const trimmedInput = trimMessagesToBudget(initialMessages, budget.requestMaxInputTokens);
+  let messages: ChatMessage[] = trimmedInput.messages;
+
+  const providerId = agent.provider || defaultProviderId;
+  let provider = providerId ? getProvider(providerId) : undefined;
+  if (!provider) {
+    provider = getProvider('openai') || getProvider('anthropic') || getProvider('kimi') || getProvider('kimi-coding');
+  }
+  if (!provider) {
+    throw new Error('No provider available');
+  }
+
+  const actualProviderId = agent.provider || defaultProviderId || 'openai';
+  const providerConfig = getProviderConfig(actualProviderId);
+  const defaultModel = providerConfig?.defaultModel || 'gpt-4o';
+  const model = agent.model
+    || resolveModelFromExecutionProfile({
+      providerId: actualProviderId,
+      defaultModel,
+      smallModel: providerConfig?.smallModel,
+      tier: agent.executionProfile?.modelTier,
+    });
+
+  let iteration = 0;
+  const maxIterations = budget.maxToolIterations;
+  let toolErrorStreak = 0;
+
+  // AGENT LOOP
+  while (iteration < maxIterations) {
+    iteration++;
+    debugLog(`[AgentRuntime] Stream loop iteration ${iteration}`);
+
+    const pendingToolCalls: ToolCall[] = [];
+    let fullContent = '';
+
+    try {
+      const stream = provider.chatStream({
+        model,
+        messages,
+        tools: tools.length > 0 ? tools : undefined,
+      });
+
+      for await (const chunk of stream) {
+        if (chunk.type === 'content') {
+          fullContent += chunk.content || '';
+          yield { type: 'text', content: chunk.content || '' };
+        } else if (chunk.type === 'tool_call') {
+          const toolCall: ToolCall = {
+            id: `call_${Date.now()}_${pendingToolCalls.length}_${iteration}`,
+            name: chunk.tool || '',
+            arguments: chunk.args,
+          };
+          pendingToolCalls.push(toolCall);
+          yield { type: 'tool_call', tool: chunk.tool, args: chunk.args };
+        }
       }
-    }
 
-    // Fallback: inject default SOUL content when workspace has no SOUL.md
-    if (!content && name === 'SOUL.md' && !isMinimal) {
-      content = DEFAULT_SOUL_CONTENT;
-      hasSoulFile = true;
-    }
+      if (pendingToolCalls.length === 0) {
+        debugLog(`[AgentRuntime] No tool calls in iteration ${iteration}, streaming complete`);
+        yield { type: 'done' };
+        return;
+      }
 
-    if (content) {
-      if (name === 'SOUL.md') hasSoulFile = true;
-      if (!hasInjectedContent) {
-        lines.push('# Project Context');
-        lines.push('');
-        lines.push('The following project context files have been loaded:');
-        hasInjectedContent = true;
-      }
-      lines.push('');
-      lines.push(`## ${name}`);
-      if (loadedFrom !== name) {
-        lines.push(`(loaded from fallback: ${loadedFrom})`);
-      }
-      lines.push('');
-      // Truncate if too long
-      const maxChars = isMinimal ? 1400 : 2400;
-      if (content.length > maxChars) {
-        lines.push(content.slice(0, maxChars));
-        lines.push('');
-        lines.push(`[...truncated, read ${name} for full content...]`);
+      debugLog(`[AgentRuntime] Executing ${pendingToolCalls.length} tool calls`);
+      const results = await executeToolCalls(pendingToolCalls);
+
+      const allErrors = results.length > 0 && results.every(r => r.error);
+      if (allErrors) {
+        toolErrorStreak += 1;
       } else {
-        lines.push(content);
+        toolErrorStreak = 0;
       }
-      lines.push('');
-    } else if (required) {
-      lines.push(`## ${name}`);
-      lines.push('(File not found)');
-      lines.push('');
+
+      if (allErrors && toolErrorStreak >= 2) {
+        const errorSummary = results.map(r => {
+          const toolName = pendingToolCalls.find(tc => tc.id === r.toolCallId)?.name;
+          return `${toolName}: ${r.error}`;
+        }).join('\n');
+        yield { type: 'text', content: `\nTool execution failed repeatedly:\n${errorSummary}\n` };
+        yield { type: 'done' };
+        return;
+      }
+
+      for (const result of results) {
+        yield {
+          type: 'tool_result',
+          tool: pendingToolCalls.find(tc => tc.id === result.toolCallId)?.name,
+          result: result.error ? { error: result.error } : { data: result.compact || result.data || result.output }
+        };
+      }
+
+      const toolResultContent = results.map(r => {
+        const toolName = pendingToolCalls.find(tc => tc.id === r.toolCallId)?.name;
+        if (r.error) {
+          return `${toolName}: Error: ${r.error}`;
+        }
+        const data = r.compact || r.data || r.output;
+        return `${toolName}: ${typeof data === 'object' ? JSON.stringify(data) : data}`;
+      }).join('\n');
+
+      messages = [
+        ...messages,
+        { role: 'assistant', content: fullContent },
+        { role: 'user', content: `[Tool Results]\n${toolResultContent}` },
+      ];
+      messages = trimMessagesToBudget(messages, budget.requestMaxInputTokens).messages;
+
+    } catch (error) {
+      yield { type: 'text', content: `\nError: ${error instanceof Error ? error.message : String(error)}\n` };
+      yield { type: 'done' };
+      return;
     }
   }
 
-  // OpenClaw pattern: when SOUL.md is present, instruct the model to embody it
-  if (hasInjectedContent && hasSoulFile && !isMinimal) {
-    // Insert right after the "project context files have been loaded:" line
-    const insertAt = lines.indexOf('The following project context files have been loaded:');
-    if (insertAt >= 0) {
-      lines.splice(
-        insertAt + 1,
-        0,
-        'SOUL.md defines your persona and tone. Embody it in every reply. Avoid stiff, generic, or corporate-sounding replies; follow SOUL.md guidance for voice, emoji usage, and conversational style.',
-      );
-    }
-  }
-
-  return { text: lines.join('\n'), hasSoul: hasSoulFile };
+  debugWarn(`[AgentRuntime] Stream max iterations (${maxIterations}) reached`);
+  yield { type: 'text', content: '\n[Max tool iterations reached]\n' };
+  yield { type: 'done' };
 }
 
 /**

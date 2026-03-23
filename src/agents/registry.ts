@@ -13,16 +13,7 @@ const defaultAgents: Agent[] = [
     name: 'Orchestrator',
     role: 'orchestrator',
     description: 'Routes tasks to appropriate specialists and manages brand/project setup',
-    systemPrompt: `You handle user requests directly. For specialized content work, route to the right agent.
-
-When to use tools:
-- Brand/company/business → create_brand
-- Campaign/initiative → create_project
-- GitHub issue/PR → github_connect first, then proceed
-- URLs → fetch immediately (fetch_tweet, fetch_url, etc.)
-- Skills → skills_add (check skills_list first)
-
-Route to another agent: MESSAGE_AGENT: <agent-id> | <brief task description>`,
+    systemPrompt: `Handle user requests directly. Route specialized content work to other agents via MESSAGE_AGENT: <agent-id> | <task>.`,
     tools: [
       'create_brand', 'list_brands', 'get_brand',
       'create_project', 'list_projects', 'get_project',

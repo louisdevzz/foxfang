@@ -1,60 +1,17 @@
 /**
  * Agent Types
- * 
+ *
  * Core type definitions for the agent system.
  */
 
 export type AgentRole = 'orchestrator' | (string & {});
 
 export type ReasoningMode = 'fast' | 'balanced' | 'deep';
-export type PromptMode = 'full' | 'minimal' | 'none';
 
 export type AgentExecutionProfile = {
   modelTier: 'small' | 'medium' | 'large';
   verbosity: 'low' | 'normal' | 'high';
   reasoningDepth: 'light' | 'normal' | 'deep';
-};
-
-export type AgentRoute = {
-  primaryAgent: string;
-  needsTools: boolean;
-  needsReview: boolean;
-  taskType: string;
-  outputMode: 'short' | 'normal' | 'deep';
-};
-
-export type AgentHandoff = {
-  userIntent: string;
-  taskGoal: string;
-  targetAudience?: string;
-  brandVoice?: string;
-  constraints: string[];
-  keyFacts: string[];
-  sourceSnippets: string[];
-  expectedOutput: string;
-};
-
-export type OutputSpec = {
-  format: 'bullet' | 'article' | 'thread' | 'plan' | 'json';
-  length: 'short' | 'medium' | 'long';
-  sections?: string[];
-  mustInclude?: string[];
-};
-
-export type ReviewResult = {
-  verdict: 'pass' | 'revise';
-  issues: string[];
-  strengths: string[];
-  recommendedEdits: string[];
-};
-
-export type QualityCheck = {
-  hasClearGoalMatch: boolean;
-  hasEnoughSpecificity: boolean;
-  hasActionableContent: boolean;
-  hasUnsupportedClaims: boolean;
-  tooGeneric: boolean;
-  tooShort: boolean;
 };
 
 export type SessionSummary = {
@@ -150,19 +107,11 @@ export interface AgentContext {
   userId: string;
   messages: AgentMessage[];
   tools: string[];
-  brandContext?: string; // BRAND.md content
-  relevantMemories?: string[];
-  sessionSummary?: SessionSummary;
-  handoff?: AgentHandoff;
-  outputSpec?: OutputSpec;
-  sourceSnippets?: string[];
-  systemAddendum?: string;
-  reasoningMode?: ReasoningMode;
-  promptMode?: PromptMode;
+  workspace?: WorkspaceManagerLike;
   budget?: TokenBudget;
-  trace?: RequestTrace;
-  workspace?: WorkspaceManagerLike; // For workspace file injection
+  reasoningMode?: ReasoningMode;
   isChannelSession?: boolean;
+  trace?: RequestTrace;
 }
 
 // Minimal interface to avoid circular dependency with WorkspaceManager

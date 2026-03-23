@@ -15,25 +15,25 @@ export function resolveTokenBudget(params: {
 
   const baseByProfile: Record<'orchestrator' | 'specialist' | 'reviewer', Omit<TokenBudget, 'remainingInputTokens' | 'remainingOutputTokens'>> = {
     orchestrator: {
-      requestMaxInputTokens: 800,
-      requestMaxOutputTokens: 450,
-      maxToolIterations: 2,
+      requestMaxInputTokens: 12000,
+      requestMaxOutputTokens: 2048,
+      maxToolIterations: 5,
       maxDelegations: 1,
       maxReviewPasses: 0,
     },
     specialist: {
-      requestMaxInputTokens: 2500,
-      requestMaxOutputTokens: 1400,
+      requestMaxInputTokens: 8000,
+      requestMaxOutputTokens: 2048,
       maxToolIterations: 5,
       maxDelegations: 0,
-      maxReviewPasses: 1,
+      maxReviewPasses: 0,
     },
     reviewer: {
-      requestMaxInputTokens: 1200,
-      requestMaxOutputTokens: 800,
+      requestMaxInputTokens: 8000,
+      requestMaxOutputTokens: 2048,
       maxToolIterations: 3,
       maxDelegations: 0,
-      maxReviewPasses: 1,
+      maxReviewPasses: 0,
     },
   };
 
@@ -66,13 +66,30 @@ export function trimMessagesToBudget<T extends { role: string; content: string }
   messages: T[],
   maxInputTokens: number,
 ) {
+  // ALWAYS keep the system message (first message if role=system) — never drop it.
+  const systemMessages: T[] = [];
+  const otherMessages: T[] = [];
+  let systemTokens = 0;
+
+  for (const msg of messages) {
+    if (msg.role === 'system') {
+      systemMessages.push(msg);
+      systemTokens += estimateTokensFromText(msg.content);
+    } else {
+      otherMessages.push(msg);
+    }
+  }
+
+  // Budget remaining after system messages
+  const remainingBudget = Math.max(0, maxInputTokens - systemTokens);
+
+  // Fill from most recent non-system messages
   const kept: T[] = [];
   let used = 0;
-
-  for (let idx = messages.length - 1; idx >= 0; idx -= 1) {
-    const msg = messages[idx];
+  for (let idx = otherMessages.length - 1; idx >= 0; idx -= 1) {
+    const msg = otherMessages[idx];
     const tokens = estimateTokensFromText(msg.content);
-    if (used + tokens > maxInputTokens) {
+    if (used + tokens > remainingBudget) {
       continue;
     }
     used += tokens;
@@ -80,7 +97,7 @@ export function trimMessagesToBudget<T extends { role: string; content: string }
   }
 
   return {
-    messages: kept,
-    usedTokens: used,
+    messages: [...systemMessages, ...kept],
+    usedTokens: systemTokens + used,
   };
 }

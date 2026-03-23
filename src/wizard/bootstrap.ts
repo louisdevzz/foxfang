@@ -133,7 +133,7 @@ Edit this to define how your FoxFang communicates:
 *Update this file as your brand voice evolves.*
 `,
 
-  'TOOL.md': `# TOOL — Your FoxFang's Capabilities
+  'TOOLS.md': `# TOOLS — Your FoxFang's Capabilities
 
 ## Available Tools
 
@@ -359,7 +359,7 @@ to this file:
 *This file is maintained automatically by agents during task execution.*
 `,
 
-  'AGENT.md': `# AGENT — Your FoxFang Agent Configuration
+  'AGENTS.md': `# AGENTS — Your FoxFang Agent Configuration
 
 ## Quick Start
 
@@ -497,5 +497,5 @@ export async function bootstrapFoxFang(): Promise<void> {
  * Check if FoxFang has been bootstrapped
  */
 export function isBootstrapped(): boolean {
-  return existsSync(join(FOXFANG_DIR, 'AGENT.md'));
+  return existsSync(join(FOXFANG_DIR, 'AGENTS.md'));
 }
