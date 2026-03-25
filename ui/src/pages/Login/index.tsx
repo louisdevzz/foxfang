@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { useAuth } from '../../hooks/useAuth'
 import { Sparkles, ArrowRight, AlertCircle } from 'lucide-react'
 import './Login.css'
@@ -8,12 +9,12 @@ export default function Login() {
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState('')
   const [isAutoLoggingIn, setIsAutoLoggingIn] = useState(false)
+  const [searchParams] = useSearchParams()
   const { login } = useAuth()
 
   // Check for token in URL on mount - only run once
   useEffect(() => {
-    const urlParams = new URLSearchParams(window.location.search)
-    const urlToken = urlParams.get('token')
+    const urlToken = searchParams.get('token')
     
     if (urlToken && !isAutoLoggingIn) {
       setToken(urlToken)
@@ -36,7 +37,7 @@ export default function Login() {
       
       attemptAutoLogin()
     }
-  }, []) // Empty deps - only run once on mount
+  }, [searchParams, isAutoLoggingIn, login])
   
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
