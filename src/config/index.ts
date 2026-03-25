@@ -151,8 +151,8 @@ export interface ProviderConfig {
 }
 
 const defaultConfig: AppConfig = {
-  defaultProvider: 'openai',
-  defaultModel: 'gpt-4o',
+  defaultProvider: 'kimi-coding',
+  defaultModel: 'k2p5',
   providers: [],
   tools: {},
   sessions: { maxSessions: 100, ttl: 86400000 },

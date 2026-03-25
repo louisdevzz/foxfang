@@ -113,8 +113,8 @@ export function initializeProviders(configs: ProviderConfig[]): void {
         case 'alibabacloud':
         case 'openrouter':
         case 'ollama':
+        case 'nvidia':
         case 'custom': {
-          // All OpenAI-compatible providers
           const { OpenAIProvider: OpenAICompatProvider } = require('./openai');
           provider = new OpenAICompatProvider(config);
           break;

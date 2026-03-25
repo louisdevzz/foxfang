@@ -79,6 +79,15 @@ const AVAILABLE_PROVIDERS = [
     models: ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'meta-llama/llama-4-scout-17b-16e-instruct', 'qwen/qwen3-32b', 'moonshotai/kimi-k2-instruct-0905', 'openai/gpt-oss-120b', 'openai/gpt-oss-20b']
   },
   {
+    id: 'nvidia',
+    name: 'NVIDIA NIM',
+    hint: 'NVIDIA NIM microservices — enterprise inference',
+    apiKeyPlaceholder: 'nvapi-...',
+    apiKeyPrefix: 'nvapi-',
+    baseUrl: 'https://integrate.api.nvidia.com/v1',
+    models: [] // Models fetched dynamically from NVIDIA API
+  },
+  {
     id: 'byteplus-ark',
     name: 'BytePlus Ark (Doubao/Seed)',
     hint: 'Free trial — Doubao, Seed 1.8 models',
@@ -262,6 +271,46 @@ function parseMetadata(input: string): Record<string, string | string[]> | undef
     result[key] = list.length === 1 ? list[0] : list;
   }
   return Object.keys(result).length > 0 ? result : undefined;
+}
+
+/**
+ * Fetch NVIDIA models from models.dev API
+ * Returns curated models with proper metadata (name, cost, context window)
+ */
+async function fetchNvidiaModels(): Promise<Array<{ id: string; name: string }>> {
+  try {
+    const response = await fetch('https://models.dev/api.json', {
+      headers: {
+        'Accept': 'application/json',
+        'User-Agent': 'foxfang/1.0.0',
+      },
+    });
+
+    if (!response.ok) {
+      console.log(chalk.yellow(`⚠️ models.dev API returned ${response.status}: ${response.statusText}`));
+      return [];
+    }
+
+    const data = await response.json();
+    
+    // Extract NVIDIA provider from models.dev
+    const nvidiaProvider = data.nvidia;
+    if (!nvidiaProvider || !nvidiaProvider.models) {
+      console.log(chalk.yellow('⚠️ No NVIDIA provider found in models.dev'));
+      return [];
+    }
+
+    // Map models from models.dev format
+    const models = Object.entries(nvidiaProvider.models).map(([modelId, modelData]: [string, any]) => ({
+      id: modelId,
+      name: modelData.name || modelId,
+    }));
+
+    return models;
+  } catch (error) {
+    console.log(chalk.yellow(`⚠️ Failed to fetch from models.dev: ${error instanceof Error ? error.message : String(error)}`));
+    return [];
+  }
 }
 
 function formatBindingLabel(binding: any, index: number): string {
@@ -761,11 +810,69 @@ async function runSetupWizard() {
     }
     
     // Select default model for this provider
-    const selectedModel = await select({
-      message: `Default model for ${providerMeta.name}:`,
-      options: providerMeta.models.map(m => ({ value: m, label: m })),
-      initialValue: providerMeta.models[0],
-    }) as string;
+    let selectedModel: string;
+    if (providerMeta.models.length === 0) {
+      // For providers with dynamic model fetching (like NVIDIA), fetch models from API
+      if (providerId === 'nvidia' && apiKey) {
+        console.log(chalk.dim('\n🔄 Fetching available models from models.dev...\n'));
+        const nvidiaModels = await fetchNvidiaModels();
+        
+        if (nvidiaModels.length > 0) {
+          const modelResult = await select({
+            message: `Select model for ${providerMeta.name}:`,
+            options: nvidiaModels.map(m => ({ value: m.id, label: `${m.name} (${m.id})` })),
+            initialValue: nvidiaModels[0].id,
+          });
+          if (isCancel(modelResult)) {
+            console.log(chalk.yellow(`⏭ Skipped ${providerMeta.name}`));
+            continue;
+          }
+          selectedModel = modelResult as string;
+        } else {
+          console.log(chalk.yellow('⚠️ Could not fetch models from models.dev.'));
+          console.log(chalk.dim('   Falling back to manual entry.\n'));
+          const modelInput = await text({
+            message: `Default model for ${providerMeta.name}:`,
+            placeholder: 'e.g., meta/llama-3.3-70b-instruct',
+            validate: (value) => {
+              if (!value || value.trim() === '') {
+                return 'Model ID is required';
+              }
+              return undefined;
+            },
+          });
+          if (isCancel(modelInput) || !modelInput) {
+            console.log(chalk.yellow(`⏭ Skipped ${providerMeta.name}: model required`));
+            continue;
+          }
+          selectedModel = modelInput as string;
+        }
+      } else {
+        // For other empty model lists, ask user to enter model name
+        console.log(chalk.dim(`\nℹ️ ${providerMeta.name} requires you to specify a model ID.`));
+        
+        const modelInput = await text({
+          message: `Default model for ${providerMeta.name}:`,
+          placeholder: 'e.g., gpt-4o',
+        });
+        if (isCancel(modelInput) || !modelInput) {
+          console.log(chalk.yellow(`⏭ Skipped ${providerMeta.name}: model required`));
+          continue;
+        }
+        selectedModel = modelInput as string;
+      }
+    } else {
+      const modelResult = await select({
+        message: `Default model for ${providerMeta.name}:`,
+        options: providerMeta.models.map(m => ({ value: m, label: m })),
+        initialValue: providerMeta.models[0],
+      });
+      if (isCancel(modelResult)) {
+        console.log(chalk.yellow(`⏭ Skipped ${providerMeta.name}`));
+        continue;
+      }
+      selectedModel = modelResult as string;
+    }
     
     // Save API key to credentials store (keychain or encrypted file)
     await saveCredential(providerId, {
@@ -910,7 +1017,19 @@ async function runSetupWizard() {
     message: 'Setup messaging channels (Telegram, Discord, Signal, Slack)?',
     initialValue: false,
   });
-  
+
+  // Setup channels immediately if requested (before saving config and Gateway Auth)
+  if (!isCancel(setupChannels) && setupChannels === true) {
+    console.log(chalk.dim('\n--- Channel Setup ---\n'));
+    await runChannelSetupWizard(config);
+    // Reload config to get channel settings that were just saved
+    const updatedConfig = await loadConfig();
+    // Merge channel settings into current config object
+    if (updatedConfig.channels) {
+      config.channels = updatedConfig.channels;
+    }
+  }
+
   const s2 = spinner();
   s2.start('Saving configuration...');
   
@@ -1006,8 +1125,7 @@ async function runSetupWizard() {
       },
     };
 
-    console.log(chalk.dim('\n   Gateway Token: ') + chalk.yellow(gatewayToken));
-    console.log(chalk.dim('   Save this token - you\'ll need it to access the web UI and API.\n'));
+    console.log(chalk.green('\n   ✓ Gateway authentication configured\n'));
   } else {
     // Password mode
     const gatewayPassword = await text({
@@ -1041,14 +1159,8 @@ async function runSetupWizard() {
   s3.stop('Database ready!');
   
   console.log(chalk.dim('\n💡 Tip: Start chatting and tell FoxFang about your brand/project.'));
-  console.log(chalk.dim('   Example: \"I need to create a marketing campaign for my coffee shop\"'));
-  
-  // Setup channels immediately if requested
-  if (!isCancel(setupChannels) && setupChannels === true) {
-    console.log(chalk.dim('\n--- Channel Setup ---\n'));
-    await runChannelSetupWizard(config);
-  }
-  
+  console.log(chalk.dim('   Example: "I need to create a marketing campaign for my coffee shop"'));
+
   // Setup GitHub integration
   console.log(chalk.dim('\n--- GitHub Integration ---\n'));
   const connectGitHub = await confirm({

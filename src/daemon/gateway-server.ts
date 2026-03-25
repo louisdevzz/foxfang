@@ -12,6 +12,7 @@ import { createServer, IncomingMessage, ServerResponse } from 'http';
 import { existsSync, readFileSync, statSync } from 'fs';
 import { join } from 'path';
 import { randomBytes } from 'crypto';
+import chalk from 'chalk';
 import { WebSocketServer, WebSocket } from 'ws';
 import { parse } from 'url';
 import { getConfigPath, loadConfig, loadConfigWithCredentials, saveConfig } from '../config/index';
@@ -114,6 +115,12 @@ const PROVIDER_PRESETS: Record<string, ProviderPreset> = {
     name: 'Ollama',
     baseUrl: 'http://localhost:11434/v1',
     models: ['llama3.1', 'qwen2.5', 'deepseek-coder'],
+  },
+  nvidia: {
+    id: 'nvidia',
+    name: 'NVIDIA NIM',
+    baseUrl: 'https://integrate.api.nvidia.com/v1',
+    models: [], // Fetched dynamically from NVIDIA API
   },
   custom: {
     id: 'custom',
@@ -246,8 +253,28 @@ class GatewayServer {
       process.exit(1);
     });
     
-    server.listen(port, () => {
+    server.listen(port, async () => {
       console.log(`[Gateway] Server listening on port ${port}`);
+      
+      // Display UI URL with auth token if available
+      try {
+        const config = await loadConfigWithCredentials();
+        const auth = config.gateway?.auth;
+        if (auth) {
+          let accessUrl: string;
+          if (auth.mode === 'token' && auth.token) {
+            accessUrl = `http://localhost:${port}/?token=${encodeURIComponent(auth.token)}`;
+          } else if (auth.mode === 'password' && auth.password) {
+            accessUrl = `http://localhost:${port}/?token=${encodeURIComponent(auth.password)}`;
+          } else {
+            accessUrl = `http://localhost:${port}/`;
+          }
+          console.log(`[Gateway] Web UI: ${accessUrl}`);
+          console.log(chalk.dim(`         Click or copy the link above to open the dashboard`));
+        }
+      } catch (error) {
+        console.log(`[Gateway] Web UI: http://localhost:${port}/`);
+      }
     });
   }
 
@@ -1101,6 +1128,35 @@ class GatewayServer {
 
     if (apiKey) {
       headers['authorization'] = `Bearer ${apiKey}`;
+    }
+
+    // NVIDIA NIM API handling - fetch from models.dev for curated list
+    if (providerId === 'nvidia') {
+      if (!apiKey) return [];
+      try {
+        const response = await this.fetchWithTimeout('https://models.dev/api.json', { 
+          method: 'GET',
+          headers: {
+            'Accept': 'application/json',
+            'User-Agent': 'foxfang-gateway/1.0.0',
+          }
+        });
+        if (!response.ok) {
+          console.log(`[Gateway] models.dev API response: ${response.status}`);
+          return [];
+        }
+        const payload = await response.json();
+        // Extract NVIDIA models from models.dev
+        const nvidiaProvider = payload?.nvidia;
+        if (!nvidiaProvider || !nvidiaProvider.models) {
+          console.log('[Gateway] No NVIDIA provider found in models.dev');
+          return [];
+        }
+        return Object.keys(nvidiaProvider.models);
+      } catch (error) {
+        console.log(`[Gateway] Failed to fetch from models.dev: ${error}`);
+        return [];
+      }
     }
 
     const openaiModels = async (): Promise<string[]> => {
