@@ -893,7 +893,18 @@ async function runSetupWizard() {
     placeholder: 'fc-...',
     defaultValue: config.firecrawl?.apiKey || '',
   });
-  
+
+  // Notion Integration
+  console.log(chalk.dim('\n📝 Notion Integration (Optional)\n'));
+  console.log(chalk.dim('   Connect FoxFang to your Notion workspace to read/write content.\n'));
+  console.log(chalk.dim('   To get your API key: https://www.notion.so/my-integrations\n'));
+
+  const notionApiKey = await text({
+    message: 'Notion API Key (optional):',
+    placeholder: 'secret_...',
+    defaultValue: config.notion?.apiKey || '',
+  });
+
   // Channels
   const setupChannels = await confirm({
     message: 'Setup messaging channels (Telegram, Discord, Signal, Slack)?',
@@ -939,7 +950,17 @@ async function runSetupWizard() {
     });
     config.firecrawl = { apiKeyRef: 'credential:firecrawl' };
   }
-  
+  const notionApiKeyStr = String(notionApiKey || '');
+  if (notionApiKeyStr && notionApiKeyStr !== 'secret_...' && notionApiKeyStr.startsWith('secret_')) {
+    await saveCredential('notion', {
+      provider: 'notion',
+      apiKey: notionApiKeyStr,
+      createdAt: new Date().toISOString(),
+    });
+    config.notion = { apiKeyRef: 'credential:notion' };
+    console.log(chalk.green('✓ Notion connected'));
+  }
+
   await saveConfig(config);
   s2.stop('Configuration saved!');
   

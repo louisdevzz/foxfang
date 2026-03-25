@@ -42,6 +42,8 @@ Skip filler phrases. Write like someone who actually cares about the reader.`,
     tools: [
       'web_search', 'brave_search', 'firecrawl_search', 'firecrawl_scrape',
       'fetch_tweet', 'fetch_user_tweets', 'fetch_url',
+      'notion_search', 'notion_get_page', 'notion_query_database', 'notion_create_page', 'notion_update_page', 'notion_list_databases',
+      'personas_sync',
       'memory_recall', 'memory_store', 'memory_search', 'memory_get',
       'create_task', 'list_tasks', 'update_task_status',
       'skills_list', 'skills_add',
@@ -65,6 +67,8 @@ Track strategic work through project tasks. If you don't have enough info, ask â
     tools: [
       'web_search', 'brave_search', 'firecrawl_search', 'firecrawl_scrape',
       'fetch_tweet', 'fetch_user_tweets', 'fetch_url',
+      'notion_search', 'notion_get_page', 'notion_query_database', 'notion_create_page', 'notion_update_page', 'notion_list_databases',
+      'personas_sync',
       'memory_recall', 'memory_store', 'memory_search', 'memory_get',
       'create_task', 'list_tasks', 'get_project',
       'skills_list', 'skills_add',

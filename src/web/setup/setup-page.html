@@ -290,6 +290,18 @@
       </div>
 
       <div class="card">
+        <h2>Notion Integration (optional)</h2>
+        <div class="desc">Connect FoxFang to your Notion workspace to read and write marketing content. <a href="https://www.notion.so/my-integrations" target="_blank">Get API key →</a></div>
+        <div class="grid-1">
+          <label>
+            Notion API Key
+            <input id="notionApiKey" type="password" placeholder="secret_..." />
+          </label>
+        </div>
+        <div id="notionStatus" class="models-note"></div>
+      </div>
+
+      <div class="card">
         <h2>GitHub (optional)</h2>
         <div class="actions">
           <button type="button" id="githubConnectBtn">Connect GitHub</button>
@@ -386,6 +398,8 @@
     const copilotTokenEl = document.getElementById('copilotToken');
     const braveSearchApiKeyEl = document.getElementById('braveSearchApiKey');
     const firecrawlApiKeyEl = document.getElementById('firecrawlApiKey');
+    const notionApiKeyEl = document.getElementById('notionApiKey');
+    const notionStatusEl = document.getElementById('notionStatus');
     const configPathEl = document.getElementById('configPath');
     const configPreviewEl = document.getElementById('configPreview');
     const refreshConfigBtn = document.getElementById('refreshConfigBtn');
@@ -1158,6 +1172,14 @@
           braveSearchApiKeyEl.placeholder = data.webTools.hasBraveSearchApiKey ? 'saved — leave blank to keep' : 'BS-...';
           firecrawlApiKeyEl.value = '';
           firecrawlApiKeyEl.placeholder = data.webTools.hasFirecrawlApiKey ? 'saved — leave blank to keep' : 'fc-...';
+          notionApiKeyEl.value = '';
+          notionApiKeyEl.placeholder = data.webTools.hasNotionApiKey ? 'saved — leave blank to keep' : 'secret_...';
+          if (data.webTools.hasNotionApiKey) {
+            notionStatusEl.textContent = '✓ Notion connected';
+            notionStatusEl.className = 'models-note ok';
+          } else {
+            notionStatusEl.textContent = '';
+          }
         }
 
         if (data.github?.connected) {
@@ -1362,6 +1384,7 @@
         },
         braveSearchApiKey: braveSearchApiKeyEl.value.trim(),
         firecrawlApiKey: firecrawlApiKeyEl.value.trim(),
+        notionApiKey: notionApiKeyEl.value.trim(),
       };
 
       try {

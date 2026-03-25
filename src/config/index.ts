@@ -111,6 +111,7 @@ export interface AppConfig {
   braveSearch?: { apiKey?: string; apiKeyRef?: string };
   firecrawl?: { apiKey?: string; apiKeyRef?: string; baseUrl?: string };
   github?: { connected?: boolean; username?: string; connectedAt?: string };
+  notion?: { apiKey?: string; apiKeyRef?: string; defaultDatabaseId?: string };
   agents?: Array<{
     id: string;
     name?: string;

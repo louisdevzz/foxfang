@@ -300,6 +300,7 @@ const BOOTSTRAP_FILES = [
   { name: 'SOUL.md', fallbackContent: DEFAULT_SOUL_CONTENT },
   { name: 'IDENTITY.md' },
   { name: 'USER.md' },
+  { name: 'PERSONAS.md' },
   { name: 'MEMORY.md', fallbacks: ['memory.md'] },
   { name: 'AGENTS.md' },
 ] as const;

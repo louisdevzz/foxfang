@@ -20,6 +20,8 @@ const { GitHubConnectTool, GitHubCreateIssueTool, GitHubCreatePRTool, GitHubList
 const { SkillsListTool, SkillsAddTool } = require('./builtin/skills');
 const { ExpandCachedResultTool, GetCachedSnippetTool } = require('./builtin/cached_results');
 const { SessionsSpawnTool, SessionsSendTool, SubagentsTool } = require('./builtin/subagents');
+const { NotionSearchTool, NotionGetPageTool, NotionQueryDatabaseTool, NotionCreatePageTool, NotionUpdatePageTool, NotionListDatabasesTool } = require('./builtin/notion');
+const { PersonasSyncTool } = require('./builtin/personas');
 
 export interface ToolInfo {
   name: string;
@@ -146,6 +148,17 @@ export function initializeTools(config: Record<string, any>): void {
   toolRegistry.register(new GitHubCreatePRTool());
   toolRegistry.register(new GitHubListIssuesTool());
   toolRegistry.register(new GitHubListPRsTool());
+
+  // Notion tools
+  toolRegistry.register(new NotionSearchTool());
+  toolRegistry.register(new NotionGetPageTool());
+  toolRegistry.register(new NotionQueryDatabaseTool());
+  toolRegistry.register(new NotionCreatePageTool());
+  toolRegistry.register(new NotionUpdatePageTool());
+  toolRegistry.register(new NotionListDatabasesTool());
+
+  // Personas tool
+  toolRegistry.register(new PersonasSyncTool());
 
   console.log(`Initialized ${toolRegistry.list().length} tools`);
 }

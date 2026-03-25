@@ -171,6 +171,12 @@ export interface BraveSearchConfig {
   apiKey?: string;
 }
 
+// Notion integration (optional)
+export interface NotionConfig {
+  apiKey?: string;
+  defaultDatabaseId?: string;
+}
+
 // GitHub integration metadata (optional)
 export interface GitHubConfig {
   connected?: boolean;
@@ -221,6 +227,7 @@ export interface AppConfig {
   firecrawl?: FirecrawlConfig;
   braveSearch?: BraveSearchConfig;
   github?: GitHubConfig;
+  notion?: NotionConfig;
   agents?: Array<{
     id: string;
     name?: string;

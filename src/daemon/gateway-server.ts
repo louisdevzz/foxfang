@@ -172,6 +172,7 @@ type SetupPayload = {
   };
   braveSearchApiKey?: string;
   firecrawlApiKey?: string;
+  notionApiKey?: string;
 };
 
 type SetupModelsPayload = {
@@ -423,6 +424,11 @@ class GatewayServer {
         config.firecrawl?.apiKeyRef,
         'firecrawl',
       );
+      const notionApiKey = await this.resolveToolApiKey(
+        config.notion?.apiKey,
+        config.notion?.apiKeyRef,
+        'notion',
+      );
       this.sendJson(res, 200, {
         ready: this.hasConfiguredProvider(config),
         defaultProvider: config.defaultProvider,
@@ -468,6 +474,7 @@ class GatewayServer {
         webTools: {
           hasBraveSearchApiKey: Boolean(braveSearchApiKey),
           hasFirecrawlApiKey: Boolean(firecrawlApiKey),
+          hasNotionApiKey: Boolean(notionApiKey),
         },
         github: {
           connected: Boolean(githubToken),
@@ -1694,6 +1701,17 @@ class GatewayServer {
       });
       config.firecrawl = { ...(config.firecrawl || {}), apiKeyRef: 'credential:firecrawl' };
       delete (config.firecrawl as any).apiKey;
+    }
+
+    const notionApiKey = this.sanitizeString(payload.notionApiKey);
+    if (notionApiKey && notionApiKey.startsWith('secret_')) {
+      await saveCredential('notion', {
+        provider: 'notion',
+        apiKey: notionApiKey,
+        createdAt: new Date().toISOString(),
+      });
+      config.notion = { ...(config.notion || {}), apiKeyRef: 'credential:notion' };
+      delete (config.notion as any).apiKey;
     }
 
     await saveConfig(config);
