@@ -1,28 +1,17 @@
-# FoxFang 🦊
+# 🦊 FoxFang — Personal AI Marketing Assistant
 
-**Your personal AI marketing assistant.**
+<p align="center">
+  <strong>Your sharp marketing partner, right in the terminal.</strong>
+</p>
 
-FoxFang is a local AI assistant that helps you with marketing tasks — from content creation and campaign planning to social media management. It runs entirely on your machine, keeps your data private, and learns your style over time.
+**FoxFang** is a _personal AI marketing assistant_ you run on your own devices.
+It helps you create content, plan campaigns, manage outreach, and coordinate marketing across the channels you already use (Signal, Telegram, Discord, Slack). The Gateway is the control plane — the product is a marketing teammate that learns your style.
 
-Think of it as having a brilliant marketing teammate in your terminal, ready to help 24/7.
+If you want a local, privacy-first marketing assistant that feels fast and always-on, this is it.
 
----
+## Install (recommended)
 
-## What is FoxFang?
-
-Unlike complex marketing platforms, FoxFang is a **personal AI assistant** that:
-
-- **Runs locally** — Your data stays on your machine
-- **Works in your terminal** — No browser tabs, no context switching
-- **Learns your style** — The more you use it, the better it gets
-- **Integrates with your tools** — Slack, Discord, Telegram, Signal
-- **Uses your API keys** — You control which AI models (OpenAI, Anthropic, Kimi)
-
----
-
-## Quick Start
-
-### Installation
+Runtime: **Node 18+**.
 
 ```bash
 # Clone the repository
@@ -39,238 +28,136 @@ pnpm run build
 pnpm foxfang onboard
 ```
 
-The onboard wizard will guide you through:
-1. Setting up your AI provider API keys
-2. Choosing a default provider/model
-3. Optionally configuring channels and GitHub
+FoxFang Onboard guides you step by step through setting up providers, workspace, channels, and skills.
 
-### Usage
+## Quick start (TL;DR)
 
 ```bash
+pnpm foxfang onboard
+
 # Start interactive chat
 pnpm foxfang chat
 
 # Run a single task
-pnpm foxfang run "Create a LinkedIn post about AI trends"
+pnpm foxfang run "Write a Twitter thread about AI trends"
 
-# Manage the gateway (background service)
-pnpm foxfang gateway install              # Install as system service
-pnpm foxfang gateway start                # Start service
-pnpm foxfang gateway stop                 # Stop service
-pnpm foxfang gateway restart              # Restart service
-pnpm foxfang gateway status               # Check service status
-pnpm foxfang gateway logs                 # View service logs
-pnpm foxfang gateway uninstall            # Remove service
-
-# Run gateway in foreground (for development)
+# Start the gateway (background mode with channels)
 pnpm foxfang gateway run
 
 # Check system status
 pnpm foxfang status
 ```
 
----
+## Models (selection + auth)
 
-## Features
+FoxFang supports multiple AI providers — you bring your own API keys:
 
-### 🎯 Content Creation
+- **OpenAI** (GPT-4, GPT-4o, etc.)
+- **Anthropic** (Claude Sonnet, Claude Opus)
+- **Kimi** (Moonshot)
+- **GitHub Copilot** (via device-code OAuth)
+- **Groq**, **Gemini**, **Ollama**, **OpenRouter**, **BytePlus**, **Alibaba Cloud**
+- **Custom OpenAI-compatible** endpoints
 
-Generate content that matches your voice:
+Configure providers via the setup wizard or directly in `~/.foxfang/foxfang.json`.
 
-```bash
-$ pnpm foxfang run "Write a Twitter thread about productivity"
+## Highlights
 
-🦊 FoxFang:
-Here's a 5-tweet thread on productivity...
+- **Local-first** — All data stays on your machine. No cloud dependency.
+- **CLI-native** — Primary interface is your terminal. No browser tabs needed.
+- **Multi-agent routing** — Orchestrator delegates to Content Specialist, Strategy Lead, and Growth Analyst.
+- **Multi-channel inbox** — Signal, Telegram, Discord, Slack with auto-reply bindings.
+- **Memory system** — SQLite FTS + JSON store that learns your style and preferences.
+- **30+ built-in tools** — Web search, tweet fetching, brand/project management, task tracking, bash execution, cron scheduling, GitHub integration.
+- **Outreach CRM** — Contacts, campaigns, and multi-step sequences.
+- **Observability** — Request tracing with per-agent token usage, tool call stats, and latency metrics.
+- **Optional Web UI** — Next.js dashboard for visual management.
+- **Deployable** — Railway template included for cloud deployment.
+
+## How it works
+
+```
+Signal / Telegram / Discord / Slack / CLI
+               │
+               ▼
+┌───────────────────────────────┐
+│        FoxFang Gateway        │
+│       (control plane)         │
+│      Express HTTP server      │
+└──────────────┬────────────────┘
+               │
+               ├─ Agent Orchestrator
+               ├─ CLI (foxfang …)
+               ├─ Channel Adapters
+               └─ Web UI (optional)
 ```
 
-### 💬 Interactive Chat
+## Key subsystems
 
-Have a conversation to refine ideas:
+- **Agent Orchestrator** — Routes tasks to specialist agents with token budgets and delegation limits.
+- **Memory Store** — Dual-layer storage: JSON for fast access, SQLite with BM25 full-text search for deep recall.
+- **Tool Registry** — 30+ tools spanning research, content, brand management, task tracking, shell execution, and scheduling.
+- **Channel Manager** — Auto-reply routing with configurable bindings per channel/chat/user.
+- **Session Manager** — Rolling session summaries with goal tracking and decision logging.
+- **Cron Scheduler** — SQLite-backed recurring jobs that fire through the orchestrator.
+- **Workspace Files** — SOUL.md (personality), BRAND.md (identity), USER.md (preferences) shape every response.
 
-```bash
-$ pnpm foxfang chat
+## Agent system
 
-🦊 FoxFang: Ready! What are we working on today?
+FoxFang uses a coordinator + specialist pattern:
 
-> I need ideas for a blog post about remote work
-🦊 FoxFang: Here are 5 angles you could take...
+| Agent | Role | Strength |
+|-------|------|----------|
+| **Orchestrator** | Routes tasks, manages brands/projects | Coordination |
+| **Content Specialist** | Writes marketing content, enforces tone | Creative writing |
+| **Strategy Lead** | Plans campaigns, researches competitors | Strategic thinking |
+| **Growth Analyst** | Reviews content, tracks performance | Analysis |
 
-> Make it more focused on async communication
-🦊 FoxFang: Got it. Here are refined ideas...
-```
+Agents can delegate work to each other via `MESSAGE_AGENT:` directives, up to a configurable delegation depth.
 
-### 📱 Channel Integration
+## Channel integration
 
-Connect FoxFang to messaging platforms to receive and respond to messages directly from chat apps.
-
-**How it works:**
-1. You run the messaging service (e.g., signal-cli) separately
-2. FoxFang Gateway connects to the service's HTTP API
-3. Incoming messages are routed to AI agents
-4. Agent responses are sent back to the chat
-
-**Quick Setup:**
-```bash
-# Setup channel (interactive wizard)
-pnpm foxfang channels setup
-
-# Run gateway with all configured channels
-pnpm foxfang gateway run
-
-# Or specify channels explicitly
-pnpm foxfang gateway run --channels signal,telegram
-```
-
-**Supported Channels:**
+Connect FoxFang to messaging platforms for always-on marketing assistance:
 
 | Channel | Service Required | Status |
 |---------|------------------|--------|
-| Signal | signal-cli | ✅ Available |
-| Telegram | Bot API | ✅ Available |
-| Discord | Bot token | ✅ Available |
-| Slack | Slack app | ✅ Available |
+| Signal | signal-cli daemon | Available |
+| Telegram | Bot API token | Available |
+| Discord | Bot token | Available |
+| Slack | Slack app | Available |
 
-#### Signal Setup (Full Guide)
-
-**Step 1: Install signal-cli**
 ```bash
-# macOS
-brew install signal-cli
-
-# Linux (Ubuntu/Debian)
-sudo apt install signal-cli
-
-# Or download binary:
-# https://github.com/AsamK/signal-cli/releases
-```
-
-**Step 2: Register your phone number**
-```bash
-# Link to existing Signal app (recommended)
-signal-cli -a +84912345678 link
-# Then scan QR code with Signal app
-
-# Or register new (will receive SMS code)
-signal-cli -a +84912345678 register
-signal-cli -a +84912345678 verify CODE
-```
-
-**Step 3: Run signal-cli daemon**
-```bash
-# Terminal 1: Keep this running
-signal-cli -a +84912345678 daemon --http 127.0.0.1:8686
-```
-
-**Step 4: Configure FoxFang**
-```bash
-# Terminal 2: Run setup wizard
+# Setup channels (interactive wizard)
 pnpm foxfang channels setup
-# Enter phone: +84912345678
-# Enter URL: http://127.0.0.1:8686
+
+# Run gateway with channels
+pnpm foxfang gateway run --channels signal,telegram
 ```
 
-**Step 5: Run FoxFang Gateway**
-```bash
-# Terminal 3: Start gateway
-pnpm foxfang gateway run
+Auto-reply bindings let you route specific chats/users to specific agents with isolated sessions.
 
-# You should see:
-# [Signal] Connected to http://127.0.0.1:8686 for +84912345678
-```
+## Commands
 
-**Step 6: Test it!**
-Send a message to your Signal number from another phone. FoxFang will:
-1. Receive the message via signal-cli
-2. Process it through the AI agent
-3. Send a reply back automatically
-
-```
-[Signal] 📩 Message from John: Hello!
-[Signal] 🤖 Agent thinking...
-[Signal] 📤 Sending reply to +84123456789...
-```
-
-**Troubleshooting:**
-
-| Issue | Solution |
-|-------|----------|
-| "Cannot connect to signal-cli" | Make sure the signal-cli daemon is running on the correct port |
-| "Not receiving messages" | Check `signal-cli receive` works manually |
-| "Permission denied" | Run with `--config` flag to specify config location |
-
-**Install as System Service (auto-start):**
-```bash
-# Install gateway service with Signal support
-pnpm foxfang gateway install --channels signal
-
-# Start the service
-pnpm foxfang gateway start
-
-# Check logs
-pnpm foxfang gateway logs
-
-# View status
-pnpm foxfang gateway status
-```
-
-### 🧠 Memory
-
-FoxFang remembers your preferences and past work:
-
-```bash
-# Store important information
-pnpm foxfang memory add --content "Brand voice: casual, helpful, no jargon" --type note
-
-# Recall when needed
-pnpm foxfang memory search "brand voice"
-```
-
----
-
-## Architecture
-
-FoxFang follows a modular agent architecture with an optional gateway service:
-
-**Local Mode:**
-```
-┌─────────────────────────────────────┐
-│           FoxFang CLI               │
-│  (chat | run | status | wizard)     │
-└─────────────┬───────────────────────┘
-              │
-┌─────────────▼───────────────────────┐
-│        Agent Orchestrator           │
-│   (routes tasks to specialists)     │
-└─────────────┬───────────────────────┘
-              │
-    ┌─────────┼─────────┐
-    ▼         ▼         ▼
-┌───────┐ ┌───────┐ ┌───────┐
-│Content│ │Strategy│ │Growth │
-│Agent  │ │ Agent  │ │Agent  │
-└───────┘ └───────┘ └───────┘
-```
-
-**Gateway Mode (with Channels):**
-```
-┌──────────┐  ┌──────────┐  ┌──────────┐
-│ Signal   │  │Telegram  │  │ Discord  │
-└────┬─────┘  └────┬─────┘  └────┬─────┘
-     │             │             │
-     └─────────────┼─────────────┘
-                   ▼
-┌─────────────────────────────────────┐
-│      FoxFang Gateway (Daemon)       │
-│   (WebSocket + Channel Adapters)    │
-└─────────────┬───────────────────────┘
-              │
-┌─────────────▼───────────────────────┐
-│        Agent Orchestrator           │
-└─────────────────────────────────────┘
-```
-
----
+| Command | Description |
+|---------|-------------|
+| `foxfang chat` | Start interactive chat session |
+| `foxfang run <message>` | Execute a single marketing task |
+| `foxfang gateway run` | Start gateway in foreground |
+| `foxfang gateway install` | Install gateway as system service |
+| `foxfang gateway start/stop` | Manage gateway service |
+| `foxfang gateway status` | Check gateway status |
+| `foxfang gateway logs` | View gateway logs |
+| `foxfang channels setup` | Configure messaging channels |
+| `foxfang channels list` | Show configured channels |
+| `foxfang memory list` | Show stored memories |
+| `foxfang memory search <q>` | Search memories |
+| `foxfang outreach` | Manage contacts and campaigns |
+| `foxfang dashboard` | View usage analytics |
+| `foxfang sessions list` | List chat sessions |
+| `foxfang status` | Show system status |
+| `foxfang config edit` | Edit configuration |
+| `foxfang onboard` | Run setup wizard |
+| `foxfang github connect` | Connect GitHub account |
 
 ## Configuration
 
@@ -278,89 +165,79 @@ All configuration is stored locally in `~/.foxfang/`:
 
 ```
 ~/.foxfang/
-├── foxfang.json         # Main configuration (API keys, settings)
-├── memory/              # Local memory storage
+├── foxfang.json         # Main config (providers, channels, agents)
+├── credentials/         # API keys (keychain store)
+├── memory/              # Memory storage
 │   └── memories.json
 ├── sessions/            # Chat session history
-└── workspace/           # Project files
-    └── projects/
+├── workspace/           # Workspace files (SOUL.md, BRAND.md, etc.)
+├── logs/                # Request trace logs (JSONL)
+└── foxfang.db           # SQLite (memory FTS, cron jobs)
 ```
 
-### Setup
-
-FoxFang uses a setup wizard to configure everything. No `.env` files needed!
-
 ```bash
-# Run the wizard to setup API keys and preferences
+# Run the wizard to setup everything
 pnpm foxfang onboard
 ```
 
-The wizard will:
-1. Ask for your AI provider API keys (OpenAI, Anthropic, Kimi, OpenRouter, Ollama, or custom)
-2. Configure optional channels (Telegram, Discord, Slack, Signal)
-3. Set your preferences (default provider/model, workspace, daemon)
+No `.env` files needed — the wizard handles all configuration.
 
-All data is stored in `~/.foxfang/foxfang.json` — no environment variables needed.
+## Development (from source)
 
----
+```bash
+git clone https://github.com/potlock/foxfang.git
+cd foxfang
 
-## Commands
+pnpm install
+pnpm run build
 
-| Command | Description |
-|---------|-------------|
-| `pnpm foxfang chat` | Start interactive chat session |
-| `pnpm foxfang run <message>` | Execute a single task |
-| `pnpm foxfang gateway start` | Start background gateway service |
-| `pnpm foxfang gateway stop` | Stop background gateway service |
-| `pnpm foxfang channels list` | Show configured channels |
-| `pnpm foxfang channels enable <name>` | Enable a channel |
-| `pnpm foxfang memory list` | Show stored memories |
-| `pnpm foxfang memory search <query>` | Search memories |
-| `pnpm foxfang onboard` | Run setup wizard |
-| `pnpm foxfang status` | Show system status |
-| `pnpm foxfang config edit` | Edit configuration |
+# Dev loop (TypeScript directly)
+pnpm foxfang chat
 
----
+# Build production output
+pnpm run build
+```
 
 ## Deploy on Railway
 
-FoxFang now includes a Railway template in this repo (`railway.toml` + `Dockerfile`).
-
-### Quick checklist
+FoxFang includes a Railway template (`railway.toml` + `Dockerfile`).
 
 1. Create a Railway project from this repository.
-2. Attach a Volume mounted at `/data` (quick CLI: `railway volume add -m /data`).
-3. Set setup auth envs:
-   - `SETUP_USERNAME`
-   - `SETUP_PASSWORD`
-4. Open setup page and login:
-   - `https://<your-domain>/setup`
-5. Configure provider/channels in the web form (optionally click `Connect GitHub` OAuth), then save.
-6. Optional Signal channel on Railway: deploy sidecar image `bbernhard/signal-cli-rest-api` and set `SIGNAL_HTTP_URL` (default `http://signal-api:8080`).
-7. FoxFang will auto-restart after each save and persist config to `/data/.foxfang/foxfang.json`.
+2. Attach a Volume mounted at `/data`.
+3. Set `SETUP_USERNAME` and `SETUP_PASSWORD` environment variables.
+4. Open `https://<your-domain>/setup` and configure providers/channels.
+5. Verify health: `https://<your-domain>/healthz`.
 
-Optional (bootstrap from env, no manual setup):
-   - `OPENAI_API_KEY` or
-   - `ANTHROPIC_API_KEY` or
-   - `KIMI_API_KEY` or
-   - `OPENROUTER_API_KEY`
-8. Deploy and verify health endpoint:
-   - `https://<your-domain>/healthz`
-
-### Runtime notes
-
-- App starts with `scripts/start-railway.sh`
-- Railway `PORT` is mapped to `FOXFANG_GATEWAY_PORT`
-- State is persisted at `/data/.foxfang` (via `HOME=/data`)
-- `SIGNAL_HTTP_URL` defaults to `http://signal-api:8080` in Railway start script
-- Web setup is protected by HTTP Basic Auth (`SETUP_USERNAME`/`SETUP_PASSWORD`)
-- Web setup saves runtime config to `foxfang.json`; GitHub OAuth token (if connected) is saved in FoxFang credentials storage
-- Signal channel setup only requires phone number in web setup; endpoint comes from `SIGNAL_HTTP_URL`
-- On first boot, FoxFang can auto-create `foxfang.json` from provider env vars (optional)
+Optional: set `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, or `KIMI_API_KEY` to bootstrap without manual setup.
 
 See full guide: [`docs/RAILWAY.md`](./docs/RAILWAY.md)
 
----
+## Architecture
+
+```
+foxfang.cjs           # Entry point
+src/
+  cli/                # CLI commands (chat, run, gateway, channels, etc.)
+  agents/             # Orchestrator, registry, runtime, budget
+  providers/          # LLM adapters (OpenAI, Anthropic, Kimi, Copilot, etc.)
+  tools/              # Tool registry + 30+ built-in tools
+  channels/           # Signal, Telegram, Discord, Slack adapters
+  sessions/           # Chat session management
+  memory/             # JSON + SQLite memory stores
+  config/             # Configuration management
+  credentials/        # Keychain / credential store
+  workspace/          # Workspace file manager
+  outreach/           # CRM: contacts, campaigns, sequences
+  cron/               # Recurring job scheduler
+  gateway/            # Express HTTP API
+  daemon/             # Background service management
+  observability/      # Request tracing (JSONL logs)
+  auto-reply/         # Auto-reply routing
+  wizard/             # Setup wizard helpers
+  skill-system/       # Skills loading
+  database/           # SQLite client
+ui/                   # Optional Next.js web dashboard
+```
 
 ## License
 
