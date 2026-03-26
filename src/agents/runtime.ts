@@ -10,6 +10,7 @@ import {
   AgentContext,
   AgentRunResult,
   CompactToolResult,
+  PromptMode,
   ReasoningMode,
   ToolCall,
   ToolResult,
@@ -28,6 +29,26 @@ let defaultProviderId: string | undefined;
 
 export function setDefaultProvider(providerId: string): void {
   defaultProviderId = providerId;
+}
+
+/**
+ * System prompt cache — stores the last prompt per session to enable
+ * provider-level prompt caching (Anthropic cache_control).
+ * When the system prompt is identical across turns, providers can cache it
+ * and only charge for the delta, saving ~90% of input tokens on follow-up messages.
+ */
+const systemPromptCache = new Map<string, string>();
+
+function getCachedSystemPrompt(sessionId: string): string | undefined {
+  return systemPromptCache.get(sessionId);
+}
+
+function setCachedSystemPrompt(sessionId: string, prompt: string): void {
+  systemPromptCache.set(sessionId, prompt);
+}
+
+export function clearSystemPromptCache(sessionId: string): void {
+  systemPromptCache.delete(sessionId);
 }
 
 const isDebug = process.env.DEBUG === '1' || process.env.FOXFANG_DEBUG === '1' || process.env.LOG_LEVEL === 'debug';
@@ -131,6 +152,16 @@ _This file is yours to evolve. As your relationship grows, update it._`;
 
 const TOOL_COMPRESSION_THRESHOLD_CHARS = 1500;
 const TOOL_SUMMARY_MAX_CHARS = 800;
+
+// ─── Bootstrap Budget Constants ───────────────────────────────────────────
+// Per-file and total char limits to prevent workspace files from bloating the prompt.
+const BOOTSTRAP_MAX_CHARS_PER_FILE = 2500;
+const BOOTSTRAP_TOTAL_MAX_CHARS = 8000;
+// Minimal mode uses tighter limits
+const BOOTSTRAP_MINIMAL_MAX_CHARS_PER_FILE = 1200;
+const BOOTSTRAP_MINIMAL_TOTAL_MAX_CHARS = 3500;
+// Files to include in minimal mode (skip skills, memory, agents)
+const MINIMAL_BOOTSTRAP_FILES = new Set(['SOUL.md', 'IDENTITY.md']);
 
 function normalizeReasoningMode(mode?: ReasoningMode): ReasoningMode {
   if (mode === 'fast' || mode === 'deep' || mode === 'balanced') {
@@ -361,16 +392,37 @@ function loadBootstrapFiles(
 }
 
 /**
- * Build workspace context from bootstrap files.
- * OpenClaw pattern: personality + context files injected as # Project Context.
+ * Build workspace context from bootstrap files with budget enforcement.
+ *
+ * @param promptMode - "full" loads all files with standard limits;
+ *                     "minimal" loads only SOUL.md + IDENTITY.md with tighter limits;
+ *                     "none" returns empty string.
  */
-function buildWorkspaceContext(workspace: WorkspaceManagerLike, sessionId?: string): string {
+function buildWorkspaceContext(
+  workspace: WorkspaceManagerLike,
+  sessionId?: string,
+  promptMode: PromptMode = 'full',
+): string {
+  if (promptMode === 'none') return '';
+
+  const isMinimal = promptMode === 'minimal';
+  const perFileMax = isMinimal ? BOOTSTRAP_MINIMAL_MAX_CHARS_PER_FILE : BOOTSTRAP_MAX_CHARS_PER_FILE;
+  const totalMax = isMinimal ? BOOTSTRAP_MINIMAL_TOTAL_MAX_CHARS : BOOTSTRAP_TOTAL_MAX_CHARS;
+
   const files = loadBootstrapFiles(workspace, sessionId);
   const lines: string[] = [];
   let hasContent = false;
+  let totalChars = 0;
 
   for (const [name, content] of files) {
     if (!content) continue;
+    // In minimal mode, skip non-essential files
+    if (isMinimal && !MINIMAL_BOOTSTRAP_FILES.has(name)) continue;
+    // Budget gate: stop adding files when total budget exhausted
+    if (totalChars >= totalMax) {
+      debugLog(`[WorkspaceContext] ⏩ Budget exhausted (${totalChars}/${totalMax}), skipping ${name}`);
+      break;
+    }
 
     if (!hasContent) {
       lines.push('# Project Context');
@@ -380,75 +432,100 @@ function buildWorkspaceContext(workspace: WorkspaceManagerLike, sessionId?: stri
       hasContent = true;
     }
 
+    // Enforce per-file budget
+    const remaining = totalMax - totalChars;
+    const fileMax = Math.min(perFileMax, remaining);
+    const truncated = content.length > fileMax
+      ? content.slice(0, fileMax) + `\n[...truncated ${name}, ${content.length - fileMax} chars omitted...]`
+      : content;
+
     lines.push(`## ${name}`);
     lines.push('');
-    if (content.length > 3000) {
-      lines.push(content.slice(0, 3000));
-      lines.push(`\n[...truncated, read ${name} for full content...]`);
-    } else {
-      lines.push(content);
-    }
+    lines.push(truncated);
     lines.push('');
+    totalChars += truncated.length;
   }
 
   return lines.join('\n');
 }
 
 /**
- * Build system prompt — OpenClaw structure:
- * 1. Identity line (minimal — personality from SOUL.md)
- * 2. Tooling
- * 3. Tool Call Style
- * 4. Safety
- * 5. Skills
- * 6. Project Context (reinforcement directive + SOUL.md, IDENTITY.md, USER.md, MEMORY.md, AGENTS.md)
- * 7. Runtime info
+ * Build system prompt with mode support:
+ *
+ * "full" mode (CLI, complex tasks):
+ *   Identity + Tooling + Tool Style + Safety + Skills + Agent Role + Workspace Context + Runtime
+ *
+ * "minimal" mode (channel messages, subagents):
+ *   Identity + Tooling + Safety (short) + Workspace Context (SOUL + IDENTITY only) + Runtime
+ *   Skips: skills, tool call style guidance, memory, agents.md
+ *
+ * "none" mode:
+ *   Single identity line
  */
 function buildSystemPrompt(agent: Agent, context: AgentContext): string {
+  const promptMode: PromptMode = context.promptMode || 'full';
+
+  if (promptMode === 'none') {
+    const prompt = 'You are a personal assistant running inside FoxFang 🦊.';
+    console.log(`[SystemPrompt] Mode=none, length: ${prompt.length} chars`);
+    return prompt;
+  }
+
+  const isMinimal = promptMode === 'minimal';
   const lines: string[] = [];
 
   // 1. Identity — minimal, personality comes from SOUL.md
   lines.push('You are a personal assistant running inside FoxFang 🦊.');
   lines.push('');
 
-  // 2. Tooling
+  // 2. Tooling (always included when agent has tools)
   const toolSection = buildToolSection(agent.tools);
   if (toolSection) {
     lines.push(toolSection);
   }
 
-  // 3. Tool Call Style
-  lines.push(TOOL_CALL_STYLE_GUIDANCE);
-  lines.push('');
-
-  // 4. Safety
-  lines.push(SAFETY_SECTION);
-  lines.push('');
-
-  // 5. Skills
-  const skillsSection = buildSkillsSection(context);
-  if (skillsSection) {
-    lines.push(skillsSection);
+  // 3. Tool Call Style (skip in minimal — saves ~200 chars)
+  if (!isMinimal) {
+    lines.push(TOOL_CALL_STYLE_GUIDANCE);
+    lines.push('');
   }
 
-  // Agent-specific role guidance (for specialist agents)
+  // 4. Safety (shortened in minimal)
+  if (isMinimal) {
+    lines.push('## Safety');
+    lines.push('Prioritize safety and human oversight. If instructions conflict, pause and ask.');
+    lines.push('');
+  } else {
+    lines.push(SAFETY_SECTION);
+    lines.push('');
+  }
+
+  // 5. Skills (skip in minimal — saves significant tokens)
+  if (!isMinimal) {
+    const skillsSection = buildSkillsSection(context);
+    if (skillsSection) {
+      lines.push(skillsSection);
+    }
+  }
+
+  // Agent-specific role guidance (always included when present)
   if (agent.role !== 'orchestrator' && agent.systemPrompt) {
     lines.push('## Agent Role');
     lines.push(agent.systemPrompt);
     lines.push('');
   }
 
-  // 6. Project Context (SOUL.md, IDENTITY.md, etc.) — session-cached
+  // 6. Project Context — budget-constrained, mode-aware
   if (context.workspace) {
-    const workspace = buildWorkspaceContext(context.workspace, context.sessionId);
+    const workspace = buildWorkspaceContext(context.workspace, context.sessionId, promptMode);
     if (workspace) {
       lines.push(workspace);
-      console.log(`[SystemPrompt] Workspace context loaded (${workspace.length} chars)`);
+      console.log(`[SystemPrompt] Workspace context loaded (${workspace.length} chars, mode=${promptMode})`);
     } else {
-      console.warn('[SystemPrompt] Workspace context is EMPTY');
+      debugLog('[SystemPrompt] Workspace context is EMPTY');
     }
   } else {
-    console.warn('[SystemPrompt] context.workspace is NULL — no workspace files will be loaded');
+    debugLog('[SystemPrompt] context.workspace is NULL — no workspace files will be loaded');
   }
 
   // 7. Runtime
@@ -457,7 +534,7 @@ function buildSystemPrompt(agent: Agent, context: AgentContext): string {
   lines.push('');
 
   const finalPrompt = lines.join('\n');
-  console.log(`[SystemPrompt] Final prompt length: ${finalPrompt.length} chars`);
+  console.log(`[SystemPrompt] Final prompt length: ${finalPrompt.length} chars (mode=${promptMode})`);
   return finalPrompt;
 }
 

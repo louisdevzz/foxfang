@@ -101,6 +101,14 @@ export interface ToolResult {
   rawRef?: string;
 }
 
+/**
+ * Prompt mode controls how much context is injected into the system prompt.
+ * - "full": All sections (tooling, safety, skills, workspace context, runtime)
+ * - "minimal": Stripped-down prompt for subagents and channel messages (no skills, truncated workspace)
+ * - "none": Single identity line only
+ */
+export type PromptMode = 'full' | 'minimal' | 'none';
+
 export interface AgentContext {
   sessionId: string;
   projectId?: string;
@@ -110,6 +118,7 @@ export interface AgentContext {
   workspace?: WorkspaceManagerLike;
   budget?: TokenBudget;
   reasoningMode?: ReasoningMode;
+  promptMode?: PromptMode;
   isChannelSession?: boolean;
   trace?: RequestTrace;
 }

@@ -16,6 +16,7 @@ import {
 import { agentRegistry, ensureAgentRegistered } from './registry';
 import { parseDirectives, runAgent, runAgentStream } from './runtime';
 import { resolveTokenBudget } from './budget';
+import { pruneHistory, estimateTotalTokens } from './compaction';
 import { SessionManager } from '../sessions/manager';
 import { toolRegistry } from '../tools/index';
 import { storeMemory } from '../memory/database';
@@ -94,14 +95,38 @@ export class AgentOrchestrator {
     // Direct execution — full system prompt with SOUL.md personality
     const directAgent = await ensureAgentRegistered(request.agentId);
     const userId = request.userId || 'default_user';
+
+    // Use minimal prompt mode for channel sessions to reduce token usage
+    const isChannelSession = request.sessionId.startsWith('channel-');
+    const promptMode = isChannelSession ? 'minimal' as const : 'full' as const;
+
+    const budget = resolveTokenBudget({ agentId: request.agentId, mode: 'balanced' });
+
+    // Prune history if it exceeds budget — drops oldest messages first
+    const rawTokens = estimateTotalTokens(messages);
+    let prunedMessages = messages;
+    if (rawTokens > budget.requestMaxInputTokens * 0.5) {
+      const pruned = pruneHistory({
+        messages,
+        maxContextTokens: budget.requestMaxInputTokens * 2,
+        maxHistoryShare: 0.5,
+      });
+      prunedMessages = pruned.messages;
+      if (pruned.droppedCount > 0) {
+        console.log(`[Orchestrator] ✂️ Pruned ${pruned.droppedCount} old messages (${rawTokens} → ${pruned.keptTokens} est. tokens)`);
+      }
+    }
+
     const agentContext: AgentContext = {
       sessionId: request.sessionId,
       projectId: request.projectId,
       userId,
-      messages,
+      messages: prunedMessages,
       tools: directAgent.tools || [],
       workspace: this.workspaceManager,
-      budget: resolveTokenBudget({ agentId: request.agentId, mode: 'balanced' }),
+      budget,
+      promptMode,
+      isChannelSession,
     };
 
     let runResponse: RunResponse;

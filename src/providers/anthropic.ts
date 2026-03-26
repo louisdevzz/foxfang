@@ -27,6 +27,52 @@ export class AnthropicProvider implements Provider {
     }
   }
 
+  /**
+   * Extract system messages and use Anthropic's native `system` parameter
+   * with `cache_control` for prompt caching. This keeps the system prompt
+   * stable across turns, enabling ~90% input token savings on follow-ups.
+   */
+  private buildRequestBody(request: ChatRequest) {
+    // Separate system messages from conversation messages
+    const systemContent: string[] = [];
+    const conversationMessages: Array<{ role: string; content: string }> = [];
+
+    for (const m of request.messages) {
+      if (m.role === 'system') {
+        systemContent.push(m.content);
+      } else {
+        conversationMessages.push({ role: m.role, content: m.content });
+      }
+    }
+
+    const body: Record<string, unknown> = {
+      model: request.model || 'claude-3-sonnet-20240229',
+      max_tokens: 4096,
+      messages: conversationMessages,
+    };
+
+    // Use native system parameter with cache_control for prompt caching
+    if (systemContent.length > 0) {
+      body.system = [
+        {
+          type: 'text',
+          text: systemContent.join('\n\n'),
+          cache_control: { type: 'ephemeral' },
+        },
+      ];
+    }
+
+    if (request.tools && request.tools.length > 0) {
+      body.tools = request.tools.map(t => ({
+        name: t.name,
+        description: t.description,
+        input_schema: t.parameters,
+      }));
+    }
+
+    return body;
+  }
+
   async chat(request: ChatRequest): Promise<ChatResponse> {
     const response = await fetch(`${this.baseUrl}/messages`, {
       method: 'POST',
@@ -35,19 +81,7 @@ export class AnthropicProvider implements Provider {
         'x-api-key': this.apiKey,
         'anthropic-version': '2023-06-01',
       },
-      body: JSON.stringify({
-        model: request.model || 'claude-3-sonnet-20240229',
-        max_tokens: 4096,
-        messages: request.messages.map(m => ({
-          role: m.role === 'system' ? 'user' : m.role,
-          content: m.content,
-        })),
-        tools: request.tools?.map(t => ({
-          name: t.name,
-          description: t.description,
-          input_schema: t.parameters,
-        })),
-      }),
+      body: JSON.stringify(this.buildRequestBody(request)),
     });
 
     if (!response.ok) {
@@ -83,6 +117,9 @@ export class AnthropicProvider implements Provider {
   }
 
   async *chatStream(request: ChatRequest): AsyncIterable<StreamChunk> {
+    const body = this.buildRequestBody(request);
+    (body as Record<string, unknown>).stream = true;
+
     const response = await fetch(`${this.baseUrl}/messages`, {
       method: 'POST',
       headers: {
@@ -90,20 +127,7 @@ export class AnthropicProvider implements Provider {
         'x-api-key': this.apiKey,
         'anthropic-version': '2023-06-01',
       },
-      body: JSON.stringify({
-        model: request.model || 'claude-3-sonnet-20240229',
-        max_tokens: 4096,
-        messages: request.messages.map(m => ({
-          role: m.role === 'system' ? 'user' : m.role,
-          content: m.content,
-        })),
-        tools: request.tools?.map(t => ({
-          name: t.name,
-          description: t.description,
-          input_schema: t.parameters,
-        })),
-        stream: true,
-      }),
+      body: JSON.stringify(body),
     });
 
     if (!response.ok) {
