@@ -39,8 +39,6 @@ const ENV_CHANNELS = (process.env.FOXFANG_CHANNELS || '')
   .split(',')
   .map((channel) => channel.trim())
   .filter(Boolean);
-// Gateway auth will be loaded from config dynamically
-let GATEWAY_AUTH: { mode: 'token' | 'password'; token?: string; password?: string } | null = null;
 
 type ProviderPreset = {
   id: string;
