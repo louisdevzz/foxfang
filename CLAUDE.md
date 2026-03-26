@@ -6,7 +6,7 @@ This document defines execution rules for coding agents working on FoxFang 🦊.
 
 Build FoxFang — a personal AI marketing assistant that runs locally and helps users create content, plan campaigns, and manage their marketing:
 
-- CLI-first interface (like OpenClaw)
+- CLI-first interface
 - Local storage for privacy
 - Multiple AI provider support (user brings their own keys)
 - Optional channel integrations (Telegram, Discord, Slack, Signal)

@@ -1080,7 +1080,7 @@ async function runSetupWizard() {
     console.log(chalk.green('✓ Notion connected'));
   }
 
-  // Gateway Auth Setup (similar to OpenClaw)
+  // Gateway Auth Setup
   console.log(chalk.dim('\n🔐 Gateway Authentication\n'));
   console.log(chalk.dim('   Protect access to the FoxFang gateway and web UI.\n'));
 

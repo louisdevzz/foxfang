@@ -55,4 +55,3 @@ Source:
 
 - bindings and routing can target custom agents safely
 - agent topology can evolve via config without code edits
-- system is closer to an OpenClaw-style dynamic multi-agent architecture

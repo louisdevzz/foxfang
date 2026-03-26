@@ -1,7 +1,7 @@
 /**
  * Session and sub-agent orchestration tools.
  *
- * These tools provide OpenClaw-like explicit control over sub-sessions:
+ * These tools provider explicit control over sub-sessions:
  * - sessions_spawn: spawn a sub-session and run a task on a target agent
  * - sessions_send: send a message into an existing session
  * - subagents: list/inspect/close sub-agent sessions

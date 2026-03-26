@@ -1,7 +1,7 @@
 /**
  * Agent Orchestrator
  *
- * Clean direct-execution pattern following OpenClaw.
+ * Clean direct-execution pattern following.
  * user -> orchestrator -> agent with full system prompt (SOUL.md personality).
  */
 

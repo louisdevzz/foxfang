@@ -2,7 +2,6 @@
  * Agent Runtime
  *
  * Executes agent tasks with proper context and tool access.
- * Follows OpenClaw's clean direct-execution pattern.
  */
 
 import {
@@ -80,7 +79,6 @@ Never bypass safeguards or manipulate users to disable protections.`;
 
 /**
  * Default SOUL content — used when workspace has no SOUL.md.
- * Follows OpenClaw pattern: personality lives in workspace files, not in the prompt builder.
  */
 const DEFAULT_SOUL_CONTENT = `# SOUL.md — Who You Are
 
@@ -265,8 +263,6 @@ function compactToolPayload(toolName: string, rawData: unknown): {
   const compactSize = safeJson(compact).length;
   return { compact, rawSize, compactSize };
 }
-
-// ─── Build System Prompt (OpenClaw pattern) ───────────────────────────────
 
 /**
  * Build tool section for system prompt

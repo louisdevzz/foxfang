@@ -63,4 +63,3 @@ Workspace isolation is also scoped by binding/session seed + agent, so specialis
 - deterministic channel/account/thread routing
 - less cross-agent context contamination
 - cleaner state separation for multi-agent runs
-- closer behavior to OpenClaw-style session partitioning

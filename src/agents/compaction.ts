@@ -1,7 +1,7 @@
 /**
  * History Compaction
  *
- * Two-level strategy following OpenClaw pattern:
+ * Two-level strategy pattern:
  * Level 1 — Pruning: drop oldest message chunks when history > budget
  * Level 2 — Summarization: LLM-assisted compaction for long conversations
  *

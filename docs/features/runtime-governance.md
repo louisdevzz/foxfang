@@ -1,6 +1,6 @@
 # Runtime Governance
 
-FoxFang now includes a stronger runtime governance layer aligned with OpenClaw-style operation patterns.
+FoxFang now includes a stronger runtime governance layer aligned.
 
 ## What was added
 
