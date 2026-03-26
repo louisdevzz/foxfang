@@ -15,9 +15,7 @@
  */
 
 import { Tool, ToolCategory } from '../traits';
-import { readFileSync } from 'fs';
-import { join } from 'path';
-import { homedir } from 'os';
+import { loadConfigWithCredentials } from '../../config';
 
 // Brave Search API response types
 interface BraveWebResult {
@@ -44,19 +42,17 @@ interface BraveSearchResponse {
 }
 
 // Get Brave API key from config
-function getBraveConfig(): { apiKey?: string } {
-  const configPath = join(homedir(), '.foxfang', 'foxfang.json');
-  let config: any = {};
-  
+async function getBraveConfig(): Promise<{ apiKey?: string }> {
   try {
-    config = JSON.parse(readFileSync(configPath, 'utf-8'));
+    const config = await loadConfigWithCredentials();
+    return {
+      apiKey: config.braveSearch?.apiKey || process.env.BRAVE_API_KEY,
+    };
   } catch {
-    // Config doesn't exist or is invalid
+    return {
+      apiKey: process.env.BRAVE_API_KEY,
+    };
   }
-
-  return {
-    apiKey: config.braveSearch?.apiKey || process.env.BRAVE_API_KEY,
-  };
 }
 
 /**
@@ -103,7 +99,7 @@ export class BraveSearchTool implements Tool {
     data?: BraveWebResult[]; 
     error?: string 
   }> {
-    const config = getBraveConfig();
+    const config = await getBraveConfig();
     
     if (!config.apiKey) {
       return {

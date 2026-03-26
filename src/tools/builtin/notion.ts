@@ -21,9 +21,7 @@
  */
 
 import { Tool, ToolCategory } from '../traits';
-import { readFileSync } from 'fs';
-import { join } from 'path';
-import { homedir } from 'os';
+import { loadConfigWithCredentials } from '../../config';
 
 const NOTION_VERSION = '2022-06-28';
 const NOTION_BASE_URL = 'https://api.notion.com/v1';
@@ -35,20 +33,19 @@ interface NotionToolConfig {
   defaultDatabaseId?: string;
 }
 
-function getNotionConfig(): NotionToolConfig {
-  const configPath = join(homedir(), '.foxfang', 'foxfang.json');
-  let config: any = {};
-
+async function getNotionConfig(): Promise<NotionToolConfig> {
   try {
-    config = JSON.parse(readFileSync(configPath, 'utf-8'));
+    const config = await loadConfigWithCredentials();
+    return {
+      apiKey: config.notion?.apiKey || process.env.NOTION_API_KEY,
+      defaultDatabaseId: config.notion?.defaultDatabaseId,
+    };
   } catch {
-    // Config doesn't exist or is invalid
+    return {
+      apiKey: process.env.NOTION_API_KEY,
+      defaultDatabaseId: undefined,
+    };
   }
-
-  return {
-    apiKey: config.notion?.apiKey || process.env.NOTION_API_KEY,
-    defaultDatabaseId: config.notion?.defaultDatabaseId,
-  };
 }
 
 function notionHeaders(apiKey: string): Record<string, string> {
@@ -59,14 +56,14 @@ function notionHeaders(apiKey: string): Record<string, string> {
   };
 }
 
-function requireApiKey(): { apiKey: string } | { error: string } {
-  const config = getNotionConfig();
+async function requireApiKey(): Promise<{ apiKey: string; defaultDatabaseId?: string } | { error: string }> {
+  const config = await getNotionConfig();
   if (!config.apiKey) {
     return {
-      error: 'Notion API key not configured. Add to ~/.foxfang/foxfang.json: {"notion": {"apiKey": "ntn_..."}} or set NOTION_API_KEY env var.',
+      error: 'Notion API key not configured. Add `notion.apiKey`, or `notion.apiKeyRef: "credential:notion"` via setup wizard, or set NOTION_API_KEY env var.',
     };
   }
-  return { apiKey: config.apiKey };
+  return { apiKey: config.apiKey, defaultDatabaseId: config.defaultDatabaseId };
 }
 
 // ─── Block → Markdown Conversion ─────────────────────────────────────────
@@ -136,7 +133,118 @@ function blocksToMarkdown(blocks: any[]): string {
   return blocks.map(blockToMarkdown).filter(Boolean).join('\n\n');
 }
 
+interface NotionDatabaseSummary {
+  id: string;
+  title: string;
+  url?: string;
+  accessible: boolean;
+  properties?: string[];
+  propertyTypes?: Array<{ name: string; type: string }>;
+}
+
+function extractLinkedDatabaseIds(blocks: any[]): string[] {
+  const ids = new Set<string>();
+
+  for (const block of blocks || []) {
+    if (!block || typeof block !== 'object') continue;
+
+    // Inline or child database block
+    if (block.type === 'child_database' && typeof block.id === 'string') {
+      ids.add(block.id);
+    }
+
+    // Linked database reference block
+    if (
+      block.type === 'link_to_page' &&
+      block.link_to_page?.type === 'database_id' &&
+      typeof block.link_to_page.database_id === 'string'
+    ) {
+      ids.add(block.link_to_page.database_id);
+    }
+
+    // Database mention in rich text
+    const richText = block?.[block.type]?.rich_text;
+    if (Array.isArray(richText)) {
+      for (const rt of richText) {
+        const dbId = rt?.mention?.database?.id;
+        if (typeof dbId === 'string' && dbId) {
+          ids.add(dbId);
+        }
+      }
+    }
+  }
+
+  return Array.from(ids);
+}
+
+function normalizeNotionId(value?: string): string | undefined {
+  const raw = String(value || '').trim();
+  if (!raw) return undefined;
+
+  const dashed = raw.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i);
+  if (dashed) return dashed[0];
+
+  const compact = raw.match(/[0-9a-f]{32}/i);
+  if (compact) return compact[0];
+
+  return raw;
+}
+
+function collectReferencedProperties(filter?: any, sorts?: any[]): string[] {
+  const props = new Set<string>();
+
+  const walk = (node: any): void => {
+    if (!node || typeof node !== 'object') return;
+    if (Array.isArray(node)) {
+      for (const item of node) walk(item);
+      return;
+    }
+
+    for (const [key, value] of Object.entries(node)) {
+      if (key === 'property' && typeof value === 'string' && value.trim()) {
+        props.add(value.trim());
+      }
+      walk(value);
+    }
+  };
+
+  walk(filter);
+  walk(sorts);
+  return Array.from(props);
+}
+
+function scoreDatabaseMatch(
+  candidate: { properties?: string[]; title?: string },
+  referencedProperties: string[],
+): number {
+  if (referencedProperties.length === 0) return 1;
+  const properties = (candidate.properties || []).map((p) => p.toLowerCase());
+  let score = 0;
+
+  for (const ref of referencedProperties) {
+    const target = ref.toLowerCase();
+    if (properties.includes(target)) {
+      score += 5;
+      continue;
+    }
+    if (properties.some((p) => p.includes(target) || target.includes(p))) {
+      score += 2;
+    }
+  }
+
+  const title = String(candidate.title || '').toLowerCase();
+  if (title.includes('content calendar')) score += 1;
+  if (title.includes('reply cash') || title.includes('reply.cash')) score += 1;
+
+  return score;
+}
+
 function extractPageTitle(page: any): string {
+  // Database objects expose title at top-level `title` rich text array.
+  if (Array.isArray(page?.title) && page.title.length > 0) {
+    return richTextToMarkdown(page.title);
+  }
+
   const properties = page.properties || {};
   for (const [, prop] of Object.entries(properties) as [string, any][]) {
     if (prop.type === 'title' && Array.isArray(prop.title)) {
@@ -243,6 +351,79 @@ async function fetchAllBlocks(apiKey: string, blockId: string): Promise<any[]> {
   return blocks;
 }
 
+async function resolveLinkedDatabases(apiKey: string, databaseIds: string[]): Promise<NotionDatabaseSummary[]> {
+  if (databaseIds.length === 0) return [];
+
+  return Promise.all(databaseIds.map(async (id) => {
+    try {
+      const db = await notionFetch(apiKey, `/databases/${id}`);
+      const propertyTypes = db?.properties
+        ? Object.entries(db.properties).map(([name, prop]: [string, any]) => ({
+            name,
+            type: prop?.type || 'unknown',
+          }))
+        : [];
+      return {
+        id,
+        title: extractPageTitle(db),
+        url: db.url,
+        accessible: true,
+        properties: propertyTypes.map((p) => p.name),
+        propertyTypes,
+      };
+    } catch {
+      return {
+        id,
+        title: '',
+        accessible: false,
+        properties: [],
+        propertyTypes: [],
+      };
+    }
+  }));
+}
+
+async function listAccessibleDatabases(apiKey: string, limit = 10): Promise<NotionDatabaseSummary[]> {
+  const result = await notionFetch(apiKey, '/search', {
+    method: 'POST',
+    body: {
+      filter: { value: 'database', property: 'object' },
+      page_size: Math.min(Math.max(limit, 1), 100),
+    },
+  });
+
+  const databases = await Promise.all((result.results || []).map(async (db: any) => {
+    try {
+      const schema = await notionFetch(apiKey, `/databases/${db.id}`);
+      const propertyTypes = schema?.properties
+        ? Object.entries(schema.properties).map(([name, prop]: [string, any]) => ({
+            name,
+            type: prop?.type || 'unknown',
+          }))
+        : [];
+      return {
+        id: db.id,
+        title: extractPageTitle(schema || db),
+        url: db.url,
+        accessible: true,
+        properties: propertyTypes.map((p) => p.name),
+        propertyTypes,
+      };
+    } catch {
+      return {
+        id: db.id,
+        title: extractPageTitle(db),
+        url: db.url,
+        accessible: false,
+        properties: [],
+        propertyTypes: [],
+      };
+    }
+  }));
+
+  return databases;
+}
+
 // ─── Tools ───────────────────────────────────────────────────────────────
 
 /**
@@ -276,7 +457,7 @@ export class NotionSearchTool implements Tool {
     filter?: 'page' | 'database';
     limit?: number;
   }): Promise<{ success: boolean; data?: any; error?: string }> {
-    const auth = requireApiKey();
+    const auth = await requireApiKey();
     if ('error' in auth) return { success: false, error: auth.error };
 
     try {
@@ -330,7 +511,7 @@ export class NotionListDatabasesTool implements Tool {
   async execute(args: {
     limit?: number;
   }): Promise<{ success: boolean; data?: any; error?: string }> {
-    const auth = requireApiKey();
+    const auth = await requireApiKey();
     if ('error' in auth) return { success: false, error: auth.error };
 
     try {
@@ -347,10 +528,11 @@ export class NotionListDatabasesTool implements Tool {
         (result.results || []).map(async (db: any) => {
           // Get database schema
           const schema = await notionFetch(auth.apiKey, `/databases/${db.id}`).catch(() => null);
+          const resolvedTitle = extractPageTitle(schema || db);
           
           return {
             id: db.id,
-            title: extractPageTitle(db),
+            title: resolvedTitle,
             url: db.url,
             description: db.description?.[0]?.plain_text || '',
             properties: schema?.properties ? Object.keys(schema.properties) : [],
@@ -399,7 +581,7 @@ export class NotionGetPageTool implements Tool {
   async execute(args: {
     pageId: string;
   }): Promise<{ success: boolean; data?: any; error?: string }> {
-    const auth = requireApiKey();
+    const auth = await requireApiKey();
     if ('error' in auth) return { success: false, error: auth.error };
 
     try {
@@ -407,6 +589,9 @@ export class NotionGetPageTool implements Tool {
         notionFetch(auth.apiKey, `/pages/${args.pageId}`),
         fetchAllBlocks(auth.apiKey, args.pageId),
       ]);
+      const linkedDatabaseIds = extractLinkedDatabaseIds(blocks);
+      const linkedDatabases = await resolveLinkedDatabases(auth.apiKey, linkedDatabaseIds);
+      const accessibleLinkedDatabases = linkedDatabases.filter((db) => db.accessible);
 
       const title = extractPageTitle(page);
       const properties = formatPageProperties(page.properties || {});
@@ -420,6 +605,8 @@ export class NotionGetPageTool implements Tool {
           url: page.url,
           properties,
           content: markdown,
+          linkedDatabases,
+          suggestedDatabaseId: accessibleLinkedDatabases[0]?.id,
           lastEdited: page.last_edited_time,
         },
       };
@@ -441,7 +628,15 @@ export class NotionQueryDatabaseTool implements Tool {
     properties: {
       databaseId: {
         type: 'string',
-        description: 'Notion database ID. If omitted, uses defaultDatabaseId from config.',
+        description: 'Notion database ID. Optional: if omitted or invalid, tool auto-resolves from page context and accessible databases.',
+      },
+      pageId: {
+        type: 'string',
+        description: 'Optional page ID that contains the target database. Helps auto-resolve database without manual ID.',
+      },
+      pageUrl: {
+        type: 'string',
+        description: 'Optional Notion page URL that contains the target database. Helps auto-resolve database without manual ID.',
       },
       filter: {
         type: 'object',
@@ -461,46 +656,169 @@ export class NotionQueryDatabaseTool implements Tool {
 
   async execute(args: {
     databaseId?: string;
+    pageId?: string;
+    pageUrl?: string;
     filter?: any;
     sorts?: any[];
     limit?: number;
   }): Promise<{ success: boolean; data?: any; error?: string }> {
-    const auth = requireApiKey();
+    const auth = await requireApiKey();
     if ('error' in auth) return { success: false, error: auth.error };
 
-    const config = getNotionConfig();
-    const databaseId = args.databaseId || config.defaultDatabaseId;
-    if (!databaseId) {
-      return {
-        success: false,
-        error: 'No database ID provided. Pass databaseId or set notion.defaultDatabaseId in config.',
-      };
-    }
+    const body: any = {
+      page_size: Math.min(args.limit || 20, 100),
+    };
+    if (args.filter) body.filter = args.filter;
+    if (args.sorts) body.sorts = args.sorts;
 
-    try {
-      const body: any = {
-        page_size: Math.min(args.limit || 20, 100),
-      };
-      if (args.filter) body.filter = args.filter;
-      if (args.sorts) body.sorts = args.sorts;
+    const requestedDatabaseId = normalizeNotionId(args.databaseId);
+    const defaultDatabaseId = normalizeNotionId(auth.defaultDatabaseId);
+    const pageContextId = normalizeNotionId(args.pageId || args.pageUrl);
+    const referencedProperties = collectReferencedProperties(args.filter, args.sorts);
+    const tried = new Set<string>();
 
-      const result = await notionFetch(auth.apiKey, `/databases/${databaseId}/query`, {
-        method: 'POST',
-        body,
+    const queryByDatabaseId = async (databaseId: string): Promise<{ success: true; data: any } | { success: false; error: string }> => {
+      try {
+        const result = await notionFetch(auth.apiKey, `/databases/${databaseId}/query`, {
+          method: 'POST',
+          body,
+        });
+
+        const pages = (result.results || []).map((page: any) => ({
+          id: page.id,
+          title: extractPageTitle(page),
+          url: page.url,
+          properties: formatPageProperties(page.properties || {}),
+          lastEdited: page.last_edited_time,
+        }));
+
+        return {
+          success: true,
+          data: { pages, total: pages.length, hasMore: result.has_more },
+        };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Database query failed',
+        };
+      }
+    };
+
+    const tryCandidate = async (
+      database: NotionDatabaseSummary,
+      source: 'requested' | 'default' | 'page-linked' | 'workspace-scan',
+    ): Promise<{ matched: boolean; response?: { success: boolean; data?: any; error?: string }; error?: string }> => {
+      const dbId = normalizeNotionId(database.id);
+      if (!dbId || tried.has(dbId)) return { matched: false };
+      tried.add(dbId);
+
+      const queried = await queryByDatabaseId(dbId);
+      if (queried.success) {
+        return {
+          matched: true,
+          response: {
+            success: true,
+            data: {
+              ...queried.data,
+              databaseResolution: {
+                databaseId: dbId,
+                source,
+                title: database.title || 'Untitled',
+                matchedProperties: referencedProperties,
+              },
+            },
+          },
+        };
+      }
+
+      return { matched: false, error: queried.error };
+    };
+
+    const pageLinkedCandidates = pageContextId
+      ? await (async () => {
+          const blocks = await fetchAllBlocks(auth.apiKey, pageContextId).catch(() => [] as any[]);
+          const linkedIds = extractLinkedDatabaseIds(blocks);
+          const linked = await resolveLinkedDatabases(auth.apiKey, linkedIds).catch(() => [] as NotionDatabaseSummary[]);
+          return linked.filter((db) => db.accessible);
+        })()
+      : [];
+
+    const workspaceCandidates = await listAccessibleDatabases(auth.apiKey, 20).catch(() => [] as NotionDatabaseSummary[]);
+
+    const primaryCandidates: Array<{ db: NotionDatabaseSummary; source: 'requested' | 'default' | 'page-linked' | 'workspace-scan' }> = [];
+    if (requestedDatabaseId) {
+      primaryCandidates.push({
+        db: { id: requestedDatabaseId, title: 'Requested Database', accessible: true },
+        source: 'requested',
       });
-
-      const pages = (result.results || []).map((page: any) => ({
-        id: page.id,
-        title: extractPageTitle(page),
-        url: page.url,
-        properties: formatPageProperties(page.properties || {}),
-        lastEdited: page.last_edited_time,
-      }));
-
-      return { success: true, data: { pages, total: pages.length, hasMore: result.has_more } };
-    } catch (error) {
-      return { success: false, error: error instanceof Error ? error.message : 'Database query failed' };
     }
+    if (!requestedDatabaseId && defaultDatabaseId) {
+      primaryCandidates.push({
+        db: { id: defaultDatabaseId, title: 'Default Database', accessible: true },
+        source: 'default',
+      });
+    }
+
+    for (const candidate of pageLinkedCandidates) {
+      primaryCandidates.push({ db: candidate, source: 'page-linked' });
+    }
+    for (const candidate of workspaceCandidates) {
+      primaryCandidates.push({ db: candidate, source: 'workspace-scan' });
+    }
+
+    // Deduplicate and rank candidates by property match score.
+    const deduped = new Map<string, { db: NotionDatabaseSummary; source: 'requested' | 'default' | 'page-linked' | 'workspace-scan' }>();
+    for (const candidate of primaryCandidates) {
+      const id = normalizeNotionId(candidate.db.id);
+      if (!id || deduped.has(id)) continue;
+      deduped.set(id, { ...candidate, db: { ...candidate.db, id } });
+    }
+
+    const ranked = Array.from(deduped.values())
+      .map((candidate) => ({
+        ...candidate,
+        score: scoreDatabaseMatch(candidate.db, referencedProperties),
+      }))
+      .sort((a, b) => b.score - a.score);
+
+    const viable = referencedProperties.length > 0
+      ? ranked.filter((candidate) => candidate.source === 'requested' || candidate.source === 'default' || candidate.score > 0)
+      : ranked;
+
+    let lastError = 'Database query failed';
+    for (const candidate of viable.slice(0, 12)) {
+      const attempted = await tryCandidate(candidate.db, candidate.source);
+      if (attempted.matched && attempted.response) {
+        return attempted.response;
+      }
+      if (attempted.error) {
+        lastError = attempted.error;
+      }
+    }
+
+    const suggestionList = ranked.slice(0, 10).map((candidate) => ({
+      id: candidate.db.id,
+      title: candidate.db.title || 'Untitled',
+      url: candidate.db.url,
+      source: candidate.source,
+      properties: candidate.db.properties || [],
+      score: candidate.score,
+    }));
+
+    return {
+      success: false,
+      error: requestedDatabaseId
+        ? `Could not query requested database ${requestedDatabaseId}. The tool tried to auto-resolve alternatives but none succeeded.`
+        : 'Could not auto-resolve a queryable database from context. Provide pageId/pageUrl for stronger matching.',
+      data: {
+        lastError,
+        requestedDatabaseId: requestedDatabaseId || null,
+        pageContextId: pageContextId || null,
+        referencedProperties,
+        accessibleDatabaseSuggestions: suggestionList,
+        hint: 'Call notion_get_page on the related page, then use linkedDatabases/suggestedDatabaseId to query.',
+      },
+    };
   }
 }
 
@@ -535,11 +853,10 @@ export class NotionCreatePageTool implements Tool {
     properties: any;
     content?: string;
   }): Promise<{ success: boolean; data?: any; error?: string }> {
-    const auth = requireApiKey();
+    const auth = await requireApiKey();
     if ('error' in auth) return { success: false, error: auth.error };
 
-    const config = getNotionConfig();
-    const databaseId = args.databaseId || config.defaultDatabaseId;
+    const databaseId = args.databaseId || auth.defaultDatabaseId;
     if (!databaseId) {
       return {
         success: false,
@@ -608,7 +925,7 @@ export class NotionUpdatePageTool implements Tool {
     properties?: any;
     appendContent?: string;
   }): Promise<{ success: boolean; data?: any; error?: string }> {
-    const auth = requireApiKey();
+    const auth = await requireApiKey();
     if ('error' in auth) return { success: false, error: auth.error };
 
     try {

@@ -217,15 +217,28 @@ export class ChannelManager {
     // Resolve sender info early — needed for reactions and IncomingMessage
     const msgMetadata = msg.metadata || {};
     const senderId = String(msgMetadata.senderId || msgMetadata.userId || msgMetadata.authorId || msg.from || '');
+    let ackReactionAdded = false;
 
     // Add "eyes" reaction to acknowledge receipt
     if (adapter.reactToMessage) {
       try {
         await adapter.reactToMessage(msg.id, '👀', chatId, senderId);
+        ackReactionAdded = true;
       } catch {
         // Ignore reaction errors
       }
     }
+
+    const cleanupAckReaction = async (): Promise<void> => {
+      if (!ackReactionAdded || !adapter.removeReaction) {
+        return;
+      }
+      try {
+        await adapter.removeReaction(msg.id, chatId, senderId);
+      } catch {
+        // Ignore removal errors
+      }
+    };
 
     // Convert to IncomingMessage format
     const metadata = msgMetadata;
@@ -297,15 +310,6 @@ export class ChannelManager {
           `[ChannelManager] 📤 Sent channel=${msg.channel} kind=${chatKind}` +
           `${threadId ? ` thread=${threadId}` : ''}`
         );
-        
-        // Remove the "eyes" reaction after reply is sent
-        if (adapter.removeReaction) {
-          try {
-            await adapter.removeReaction(msg.id, chatId, senderId);
-          } catch {
-            // Ignore removal errors
-          }
-        }
 
         return {
           messageId: msg.id,
@@ -318,21 +322,13 @@ export class ChannelManager {
       
       // Send error message
       await adapter.send(replyTarget, errorMsg);
-      
-      // Remove the "eyes" reaction after error message
-      if (adapter.removeReaction) {
-        try {
-          await adapter.removeReaction(msg.id, chatId, senderId);
-        } catch {
-          // Ignore removal errors
-        }
-      }
-      
 
       return {
         messageId: msg.id,
         content: errorMsg,
       };
+    } finally {
+      await cleanupAckReaction();
     }
   }
 

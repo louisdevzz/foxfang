@@ -618,6 +618,40 @@ export async function runAgent(
   const maxIterations = budget.maxToolIterations;
   let toolErrorStreak = 0;
   const toolTelemetry: Array<{ tool: string; rawSize: number; compactSize: number }> = [];
+  const isToolIntentOnlyText = (content: string): boolean => {
+    const text = String(content || '').trim();
+    if (!text) return false;
+    return (
+      /^i(?:'| wi)ll use the [a-z0-9_\- ]+ tool(?: to help you)?\.?$/i.test(text) ||
+      /^let me use the [a-z0-9_\- ]+ tool(?: to help)?\.?$/i.test(text)
+    );
+  };
+  const finalizeWithoutTools = async (reason: string): Promise<{ content?: string; usage?: { promptTokens: number; completionTokens: number; totalTokens: number } }> => {
+    const finalizeInstruction = [
+      reason,
+      'Provide the final user-facing answer now.',
+      'Do not call or mention tools.',
+      'Do not output placeholders like tool invocation or tool results.',
+    ].join(' ');
+
+    const finalizeMessages = trimMessagesToBudget(
+      [
+        ...messages,
+        { role: 'user' as const, content: finalizeInstruction },
+      ],
+      budget.requestMaxInputTokens,
+    ).messages;
+
+    const finalized = await provider.chat({
+      model,
+      messages: finalizeMessages,
+      tools: undefined,
+    });
+    return {
+      content: String(finalized.content || '').trim(),
+      usage: finalized.usage,
+    };
+  };
 
   // AGENT LOOP
   while (iteration < maxIterations) {
@@ -639,6 +673,31 @@ export async function runAgent(
     debugLog(`[AgentRuntime] Response received, content length: ${response.content?.length || 0}, toolCalls: ${response.toolCalls?.length || 0}`);
 
     if (!response.toolCalls || response.toolCalls.length === 0) {
+      const normalizedContent = String(response.content || '').trim();
+      if (isToolIntentOnlyText(normalizedContent)) {
+        debugWarn(`[AgentRuntime] Detected tool-intent placeholder text from provider; forcing no-tools finalization`);
+        try {
+          const finalized = await finalizeWithoutTools('The previous assistant response was a tool-intent placeholder.');
+          if (finalized.content && !isToolIntentOnlyText(finalized.content)) {
+            return {
+              content: finalized.content,
+              toolCalls: allToolCalls.length > 0 ? allToolCalls : undefined,
+              usage: finalized.usage || response.usage,
+              toolTelemetry: toolTelemetry.length > 0 ? toolTelemetry : undefined,
+            };
+          }
+        } catch (error) {
+          debugWarn(`[AgentRuntime] Placeholder finalization failed: ${error instanceof Error ? error.message : String(error)}`);
+        }
+
+        return {
+          content: 'I gathered context but could not finalize the answer in time. Please retry.',
+          toolCalls: allToolCalls.length > 0 ? allToolCalls : undefined,
+          usage: response.usage,
+          toolTelemetry: toolTelemetry.length > 0 ? toolTelemetry : undefined,
+        };
+      }
+
       debugLog(`[AgentRuntime] No tool calls, returning final response`);
       return {
         content: response.content,
@@ -702,7 +761,7 @@ export async function runAgent(
       return `${toolName}: ${typeof data === 'object' ? JSON.stringify(data) : data}`;
     }).join('\n');
 
-    const assistantContent = response.content || `I'll use the ${toolCallsWithIds.map(tc => tc.name).join(', ')} tool to help you.`;
+    const assistantContent = (response.content || '').trim() || '[Tool invocation]';
     messages = [
       ...messages,
       { role: 'assistant', content: assistantContent },
@@ -712,8 +771,33 @@ export async function runAgent(
   }
 
   debugWarn(`[AgentRuntime] Max iterations (${maxIterations}) reached`);
+  try {
+    const finalized = await finalizeWithoutTools(
+      'Tool iteration limit reached. Use the latest tool results already in context.',
+    );
+    const finalizedContent = String(finalized.content || '').trim();
+    if (finalizedContent) {
+      return {
+        content: finalizedContent,
+        toolCalls: allToolCalls,
+        usage: finalized.usage,
+        toolTelemetry: toolTelemetry.length > 0 ? toolTelemetry : undefined,
+      };
+    }
+  } catch (error) {
+    debugWarn(`[AgentRuntime] Finalize-without-tools failed after max iterations: ${error instanceof Error ? error.message : String(error)}`);
+  }
+
+  const rawFallback = String(messages[messages.length - 1]?.content || '').trim();
+  const safeFallback =
+    !rawFallback
+      ? 'I gathered context but could not finalize the answer in time. Please retry.'
+      : (/^\[Tool Results\]/.test(rawFallback) || /^\[Tool invocation\]$/.test(rawFallback))
+        ? 'I gathered context but could not finalize the answer in time. Please retry.'
+        : rawFallback;
+
   return {
-    content: messages[messages.length - 1]?.content || 'Max iterations reached',
+    content: safeFallback,
     toolCalls: allToolCalls,
     toolTelemetry: toolTelemetry.length > 0 ? toolTelemetry : undefined,
   };

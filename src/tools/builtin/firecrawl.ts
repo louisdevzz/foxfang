@@ -17,9 +17,7 @@
  */
 
 import { Tool, ToolCategory } from '../traits';
-import { readFileSync } from 'fs';
-import { join } from 'path';
-import { homedir } from 'os';
+import { loadConfigWithCredentials } from '../../config';
 
 // Firecrawl API response types
 interface FirecrawlSearchResult {
@@ -54,20 +52,19 @@ interface FirecrawlScrapeResponse {
 }
 
 // Get Firecrawl API key from config
-function getFirecrawlConfig(): { apiKey?: string; baseUrl: string } {
-  const configPath = join(homedir(), '.foxfang', 'foxfang.json');
-  let config: any = {};
-  
+async function getFirecrawlConfig(): Promise<{ apiKey?: string; baseUrl: string }> {
   try {
-    config = JSON.parse(readFileSync(configPath, 'utf-8'));
+    const config = await loadConfigWithCredentials();
+    return {
+      apiKey: config.firecrawl?.apiKey || process.env.FIRECRAWL_API_KEY,
+      baseUrl: config.firecrawl?.baseUrl || process.env.FIRECRAWL_BASE_URL || 'https://api.firecrawl.dev',
+    };
   } catch {
-    // Config doesn't exist or is invalid
+    return {
+      apiKey: process.env.FIRECRAWL_API_KEY,
+      baseUrl: process.env.FIRECRAWL_BASE_URL || 'https://api.firecrawl.dev',
+    };
   }
-
-  return {
-    apiKey: config.firecrawl?.apiKey || process.env.FIRECRAWL_API_KEY,
-    baseUrl: config.firecrawl?.baseUrl || process.env.FIRECRAWL_BASE_URL || 'https://api.firecrawl.dev',
-  };
 }
 
 /**
@@ -108,7 +105,7 @@ export class FirecrawlSearchTool implements Tool {
     data?: FirecrawlSearchResult[]; 
     error?: string 
   }> {
-    const config = getFirecrawlConfig();
+    const config = await getFirecrawlConfig();
     
     if (!config.apiKey) {
       return {
@@ -174,7 +171,7 @@ export class FirecrawlScrapeTool implements Tool {
     data?: FirecrawlScrapeResponse['data']; 
     error?: string 
   }> {
-    const config = getFirecrawlConfig();
+    const config = await getFirecrawlConfig();
     
     if (!config.apiKey) {
       return {

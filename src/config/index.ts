@@ -227,7 +227,29 @@ export async function loadConfigWithCredentials(): Promise<AppConfig> {
   const config = await loadConfig();
   
   // Dynamically import credentials to avoid circular dependency
-  const { getCredential, isKeychainAvailable } = await import('../credentials/index');
+  const { getCredential } = await import('../credentials/index');
+  const resolveToolApiKey = async (
+    inlineApiKey: string | undefined,
+    apiKeyRef: string | undefined,
+    fallbackProvider: string,
+  ): Promise<string | undefined> => {
+    const inline = String(inlineApiKey || '').trim();
+    if (inline) {
+      return inline;
+    }
+
+    const ref = String(apiKeyRef || '').trim();
+    const provider = ref.startsWith('credential:')
+      ? ref.slice('credential:'.length).trim()
+      : fallbackProvider;
+    if (!provider) {
+      return undefined;
+    }
+
+    const credential = await getCredential(provider).catch(() => null);
+    const apiKey = String(credential?.apiKey || '').trim();
+    return apiKey || undefined;
+  };
   
   // Merge credentials from keychain into provider configs
   if (config.providers) {
@@ -258,6 +280,40 @@ export async function loadConfigWithCredentials(): Promise<AppConfig> {
           channelConfig.botToken = credential.apiKey;
         }
       }
+    }
+  }
+
+  // Merge web tool credentials (apiKeyRef -> apiKey)
+  if (config.braveSearch) {
+    const apiKey = await resolveToolApiKey(
+      config.braveSearch.apiKey,
+      config.braveSearch.apiKeyRef,
+      'brave-search',
+    );
+    if (apiKey) {
+      config.braveSearch.apiKey = apiKey;
+    }
+  }
+
+  if (config.firecrawl) {
+    const apiKey = await resolveToolApiKey(
+      config.firecrawl.apiKey,
+      config.firecrawl.apiKeyRef,
+      'firecrawl',
+    );
+    if (apiKey) {
+      config.firecrawl.apiKey = apiKey;
+    }
+  }
+
+  if (config.notion) {
+    const apiKey = await resolveToolApiKey(
+      config.notion.apiKey,
+      config.notion.apiKeyRef,
+      'notion',
+    );
+    if (apiKey) {
+      config.notion.apiKey = apiKey;
     }
   }
   

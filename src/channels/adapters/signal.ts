@@ -17,6 +17,7 @@ interface SignalSseEvent {
 }
 
 type SignalApiMode = 'daemon-rpc' | 'rest-wrapper';
+const ACK_REACTION_EMOJI = '👀';
 
 export class SignalAdapter implements ChannelAdapter {
   readonly name = 'signal';
@@ -239,6 +240,19 @@ export class SignalAdapter implements ChannelAdapter {
     }
   }
 
+  private buildReactionTargetFields(to: string): Record<string, unknown> {
+    if (this.isLikelyGroupId(to)) {
+      return {
+        groupId: to,
+        group_id: to,
+        recipient: to,
+      };
+    }
+    return {
+      recipient: to,
+    };
+  }
+
   async reactToMessage(messageId: string, emoji: string, to?: string, from?: string): Promise<void> {
     if (!this.connected || !to) return;
     const timestamp = this.parseTimestamp(messageId);
@@ -262,20 +276,22 @@ export class SignalAdapter implements ChannelAdapter {
       }
 
       const body: Record<string, unknown> = {
+        emoji,
         reaction: emoji,
+        targetAuthor: from || to,
         target_author: from || to,
         timestamp,
+        ...this.buildReactionTargetFields(to),
       };
-      if (this.isLikelyGroupId(to)) {
-        body.recipient = to;
-      } else {
-        body.recipient = to;
-      }
-      await fetch(`${this.httpUrl}/v1/reactions/${encodeURIComponent(this.phoneNumber)}`, {
+      const response = await fetch(`${this.httpUrl}/v1/reactions/${encodeURIComponent(this.phoneNumber)}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
       });
+      if (!response.ok) {
+        const errorText = await response.text().catch(() => 'Unknown error');
+        throw new Error(`HTTP ${response.status}: ${errorText}`);
+      }
     } catch {
       // Ignore reaction errors
     }
@@ -288,37 +304,80 @@ export class SignalAdapter implements ChannelAdapter {
 
     try {
       if (this.apiMode === 'daemon-rpc') {
-        const params: Record<string, unknown> = {
+        const paramsPrimary: Record<string, unknown> = {
           account: this.phoneNumber,
           targetTimestamp: timestamp,
           targetAuthor: from || to,
-          emoji: '',
+          emoji: ACK_REACTION_EMOJI,
           remove: true,
         };
         if (this.isLikelyGroupId(to)) {
-          params.groupId = to;
+          paramsPrimary.groupId = to;
         } else {
-          params.recipient = [to];
+          paramsPrimary.recipient = [to];
         }
-        await this.callDaemonRpc('sendReaction', params);
-        return;
+        try {
+          await this.callDaemonRpc('sendReaction', paramsPrimary);
+          return;
+        } catch {
+          const paramsFallback: Record<string, unknown> = {
+            ...paramsPrimary,
+            emoji: '',
+          };
+          await this.callDaemonRpc('sendReaction', paramsFallback);
+          return;
+        }
       }
 
-      const body: Record<string, unknown> = {
-        reaction: '',
+      const targetAuthor = from || to;
+      const baseBody: Record<string, unknown> = {
+        targetAuthor,
         target_author: from || to,
         timestamp,
+        ...this.buildReactionTargetFields(to),
       };
-      if (this.isLikelyGroupId(to)) {
-        body.recipient = to;
-      } else {
-        body.recipient = to;
+
+      const endpoint = `${this.httpUrl}/v1/reactions/${encodeURIComponent(this.phoneNumber)}`;
+      const attempts: Array<{ method: 'POST' | 'DELETE'; body: Record<string, unknown> }> = [
+        {
+          method: 'POST',
+          body: {
+            ...baseBody,
+            emoji: ACK_REACTION_EMOJI,
+            reaction: ACK_REACTION_EMOJI,
+            remove: true,
+          },
+        },
+        {
+          method: 'DELETE',
+          body: {
+            ...baseBody,
+            emoji: ACK_REACTION_EMOJI,
+            reaction: ACK_REACTION_EMOJI,
+            remove: true,
+          },
+        },
+        {
+          method: 'DELETE',
+          body: {
+            ...baseBody,
+            emoji: '',
+            reaction: '',
+            remove: true,
+          },
+        },
+      ];
+
+      for (const attempt of attempts) {
+        const response = await fetch(endpoint, {
+          method: attempt.method,
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(attempt.body),
+        });
+        if (response.ok) {
+          return;
+        }
       }
-      await fetch(`${this.httpUrl}/v1/reactions/${encodeURIComponent(this.phoneNumber)}`, {
-        method: 'DELETE',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      });
     } catch {
       // Ignore removal errors
     }
