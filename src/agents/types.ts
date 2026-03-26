@@ -4,7 +4,7 @@
  * Core type definitions for the agent system.
  */
 
-export type AgentRole = 'orchestrator' | (string & {});
+export type AgentRole = string;
 
 export type ReasoningMode = 'fast' | 'balanced' | 'deep';
 
@@ -69,10 +69,18 @@ export interface Agent {
   role: AgentRole;
   description: string;
   systemPrompt: string;
-  tools: string[]; // Tool names this agent can use
+  tools: string[];
+  isDefault?: boolean;
   model?: string;
   provider?: string;
   executionProfile?: AgentExecutionProfile;
+  /** Skills filter: undefined = all; [] = none; ["skill1"] = specific */
+  skills?: string[];
+  /** Sub-agent spawn policy */
+  subagents?: {
+    allowAgents?: string[];
+    model?: string;
+  };
 }
 
 export interface AgentMessage {

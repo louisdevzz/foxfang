@@ -504,8 +504,8 @@ function buildSystemPrompt(agent: Agent, context: AgentContext): string {
     }
   }
 
-  // Agent-specific role guidance (always included when present)
-  if (agent.role !== 'orchestrator' && agent.systemPrompt) {
+  // Agent-specific role guidance (from config systemPrompt)
+  if (agent.systemPrompt) {
     lines.push('## Agent Role');
     lines.push(agent.systemPrompt);
     lines.push('');
@@ -900,29 +900,4 @@ async function executeToolCalls(toolCalls: ToolCall[]): Promise<ToolResult[]> {
   return results;
 }
 
-/**
- * Parse agent directives from response
- */
-export function parseDirectives(content: string): Array<{ type: string; target?: string; payload: string }> {
-  const directives: Array<{ type: string; target?: string; payload: string }> = [];
-
-  const messageRegex = /MESSAGE_AGENT:\s*([a-zA-Z0-9._-]+)\s*\|\s*(.+)/gi;
-  let match: RegExpExecArray | null;
-  while ((match = messageRegex.exec(content)) !== null) {
-    directives.push({
-      type: 'MESSAGE_AGENT',
-      target: match[1],
-      payload: match[2].trim(),
-    });
-  }
-
-  const yieldMatch = content.match(/YIELD:\s*(.+)/i);
-  if (yieldMatch) {
-    directives.push({
-      type: 'YIELD',
-      payload: yieldMatch[1].trim(),
-    });
-  }
-
-  return directives;
-}
+// parseDirectives removed — delegation now handled by sessions_spawn tool

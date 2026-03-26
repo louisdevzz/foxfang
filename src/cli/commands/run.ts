@@ -12,13 +12,14 @@ import { initializeProviders } from '../../providers/index';
 import { initializeTools, wireDelegateOrchestrator } from '../../tools/index';
 import { setDefaultProvider } from '../../agents/runtime';
 import { createWorkspaceManager, initFoxFangHome } from '../../workspace';
+import { hydrateAgentRegistryFromConfig, resolveDefaultAgentId } from '../../agents/registry';
 
 export async function registerRunCommand(program: Command): Promise<void> {
   program
     .command('run')
     .description('Run a single agent task')
     .argument('<message>', 'Message or task description')
-    .option('-a, --agent <agent>', 'Agent ID to use', 'orchestrator')
+    .option('-a, --agent <agent>', 'Agent ID to use')
     .option('-p, --project <project>', 'Project ID')
     .option('-s, --session <session>', 'Session ID (creates new if not provided)')
     .option('--stream', 'Stream output', true)
@@ -41,6 +42,10 @@ export async function registerRunCommand(program: Command): Promise<void> {
         
         // Initialize tools
         initializeTools(config.tools?.tools || {});
+
+        // Hydrate agent registry and resolve the agent ID to use
+        await hydrateAgentRegistryFromConfig();
+        const agentId = options.agent || await resolveDefaultAgentId();
         
         // Create session manager
         const sessionManager = new SessionManager(config.sessions);
@@ -51,7 +56,7 @@ export async function registerRunCommand(program: Command): Promise<void> {
           'default_user',
           foxfangHome,
           options.project,
-          options.agent,
+          agentId,
         );
         
         // Create orchestrator
@@ -64,7 +69,7 @@ export async function registerRunCommand(program: Command): Promise<void> {
         const sessionId = options.session || `cli-${Date.now()}`;
         
         console.log(chalk.dim(`Session: ${sessionId}`));
-        console.log(chalk.dim(`Agent: ${options.agent}`));
+        console.log(chalk.dim(`Agent: ${agentId}`));
         console.log();
         
         // Run the task
@@ -72,7 +77,7 @@ export async function registerRunCommand(program: Command): Promise<void> {
           // Streaming output
           const result = await orchestrator.run({
             sessionId,
-            agentId: options.agent,
+            agentId,
             message,
             projectId: options.project,
             model: options.model,
@@ -94,7 +99,7 @@ export async function registerRunCommand(program: Command): Promise<void> {
           // Run non-streaming
           const result = await orchestrator.run({
             sessionId,
-            agentId: options.agent,
+            agentId,
             message,
             projectId: options.project,
             model: options.model,

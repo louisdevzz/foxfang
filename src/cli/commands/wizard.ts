@@ -17,7 +17,7 @@ import { initDatabase } from '../../database/sqlite';
 import { runMigrations } from '../../compat';
 import { saveCredential, deleteCredential, isKeychainAvailable, migrateFromConfig } from '../../credentials/index';
 import { isGitHubConnected, saveGitHubToken, startGitHubOAuthFlow } from '../../integrations/github';
-import { agentRegistry, hydrateAgentRegistryFromConfig } from '../../agents/registry';
+import { agentRegistry, hydrateAgentRegistryFromConfig, resolveDefaultAgentId } from '../../agents/registry';
 import { loginWithDeviceCode } from '../../providers/github-copilot';
 
 // Available providers with metadata
@@ -192,13 +192,20 @@ async function buildAgentSelectOptions(config: any): Promise<AgentSelectOption[]
     // Keep setup resilient even if agent hydration fails.
   }
 
+  // Resolve the default agent ID from the registry (or config fallback)
+  const defaultId = agentRegistry.resolveDefaultAgentId();
+
   const ids = new Set<string>();
-  ids.add('orchestrator');
+  ids.add(defaultId);
   for (const agent of agentRegistry.list()) {
     if (agent.id) ids.add(agent.id);
   }
 
-  const configuredAgents = Array.isArray(config?.agents) ? config.agents : [];
+  const configuredAgents = Array.isArray(config?.agents)
+    ? config.agents
+    : Array.isArray(config?.agents?.list)
+    ? config.agents.list
+    : [];
   for (const candidate of configuredAgents) {
     const id = String(candidate?.id || '').trim();
     if (id) ids.add(id);
@@ -221,8 +228,8 @@ async function buildAgentSelectOptions(config: any): Promise<AgentSelectOption[]
   });
 
   options.sort((a, b) => {
-    if (a.value === 'orchestrator') return -1;
-    if (b.value === 'orchestrator') return 1;
+    if (a.value === defaultId) return -1;
+    if (b.value === defaultId) return 1;
     return a.value.localeCompare(b.value);
   });
   return options;
@@ -316,7 +323,7 @@ async function fetchNvidiaModels(): Promise<Array<{ id: string; name: string }>>
 function formatBindingLabel(binding: any, index: number): string {
   const id = String(binding?.id || `binding-${index + 1}`);
   const channel = binding?.channel || '*';
-  const agent = binding?.agentId || 'orchestrator';
+  const agent = binding?.agentId || 'main';
   const scope = binding?.sessionScope || 'chat-thread';
   const status = binding?.enabled === false ? 'off' : 'on';
   return `${id} [${status}] ${channel} -> ${agent} (${scope})`;
@@ -357,7 +364,7 @@ async function promptBindingInput(existing: any | undefined, agentOptions: Agent
   });
   if (isCancel(enabled)) return null;
 
-  const currentAgent = String(existing?.agentId || 'orchestrator').trim() || 'orchestrator';
+  const currentAgent = String(existing?.agentId || 'main').trim() || 'main';
   const resolvedAgentOptions = agentOptions.some((option) => option.value === currentAgent)
     ? agentOptions
     : [
@@ -952,7 +959,7 @@ async function runSetupWizard() {
   });
 
   // Auto-reply defaults — no need to ask the user, sensible defaults work for everyone
-  const autoReplyDefaultAgent = String(config.autoReply?.defaultAgent || 'orchestrator').trim() || 'orchestrator';
+  const autoReplyDefaultAgent = String(config.autoReply?.defaultAgent || 'main').trim() || 'main';
   const autoReplyDefaultSessionScope = String(config.autoReply?.defaultSessionScope || 'chat-thread').trim() || 'chat-thread';
 
   // Tool cache TTL — use sensible default (24h), no need to ask

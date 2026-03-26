@@ -12,12 +12,13 @@ import { initializeProviders } from '../../providers/index';
 import { initializeTools, toolRegistry, wireDelegateOrchestrator } from '../../tools/index';
 import { setDefaultProvider } from '../../agents/runtime';
 import { createWorkspaceManager, initFoxFangHome } from '../../workspace';
+import { hydrateAgentRegistryFromConfig, resolveDefaultAgentId } from '../../agents/registry';
 
 export async function registerChatCommand(program: Command): Promise<void> {
   program
     .command('chat')
     .description('Start an interactive chat session with an agent')
-    .option('-a, --agent <agent>', 'Agent ID to use', 'orchestrator')
+    .option('-a, --agent <agent>', 'Agent ID to use')
     .option('-p, --project <project>', 'Project ID')
     .option('-s, --session <session>', 'Session ID (creates new if not provided)')
     .option('-m, --model <model>', 'Model to use')
@@ -35,6 +36,10 @@ export async function registerChatCommand(program: Command): Promise<void> {
       
       // Initialize tools
       initializeTools(config.tools?.tools || {});
+
+      // Hydrate agent registry and resolve the agent ID to use
+      await hydrateAgentRegistryFromConfig();
+      const agentId = options.agent || await resolveDefaultAgentId();
       
       // Create session manager
       const sessionManager = new SessionManager(config.sessions);
@@ -45,7 +50,7 @@ export async function registerChatCommand(program: Command): Promise<void> {
         'default_user',
         foxfangHome,
         options.project,
-        options.agent,
+        agentId,
       );
       
       // Create orchestrator
@@ -60,7 +65,7 @@ export async function registerChatCommand(program: Command): Promise<void> {
       console.log(chalk.cyan('╚════════════════════════════════════════╝'));
       console.log();
       console.log(chalk.dim(`Session: ${sessionId}`));
-      console.log(chalk.dim(`Agent: ${options.agent}`));
+      console.log(chalk.dim(`Agent: ${agentId}`));
       console.log(chalk.dim('Type "exit" or "quit" to end the chat'));
       console.log(chalk.dim('Type "/help" for available commands'));
       console.log();
@@ -164,7 +169,7 @@ export async function registerChatCommand(program: Command): Promise<void> {
           
           const result = await orchestrator.run({
             sessionId,
-            agentId: options.agent,
+            agentId,
             message,
             projectId: options.project,
             model: options.model,

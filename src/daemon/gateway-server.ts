@@ -18,7 +18,7 @@ import { parse } from 'url';
 import { getConfigPath, loadConfig, loadConfigWithCredentials, saveConfig } from '../config/index';
 import { initializeProviders } from '../providers/index';
 import { AgentOrchestrator } from '../agents/orchestrator';
-import { agentRegistry, hydrateAgentRegistryFromConfig } from '../agents/registry';
+import { agentRegistry, hydrateAgentRegistryFromConfig, DEFAULT_AGENT_ID } from '../agents/registry';
 import { SessionManager } from '../sessions/manager';
 import { initializeTools, wireDelegateOrchestrator } from '../tools/index';
 import { setDefaultProvider } from '../agents/runtime';
@@ -39,8 +39,6 @@ const ENV_CHANNELS = (process.env.FOXFANG_CHANNELS || '')
   .split(',')
   .map((channel) => channel.trim())
   .filter(Boolean);
-// Gateway auth will be loaded from config dynamically
-let GATEWAY_AUTH: { mode: 'token' | 'password'; token?: string; password?: string } | null = null;
 
 type ProviderPreset = {
   id: string;
@@ -237,8 +235,10 @@ class GatewayServer {
     this.wss = new WebSocketServer({ server });
     this.channelManager = new ChannelManager(this.enabledChannels, {
       autoReply: {
-        enabled: true,
-        defaultAgent: 'orchestrator',
+        // Auto-reply is initially disabled to avoid using a hard-coded default
+        // agent before config/agent registry hydration completes in initialize().
+        enabled: false,
+        defaultAgent: 'main',
         requireMention: false,
         replyToMessage: true,
       },
@@ -1407,7 +1407,38 @@ class GatewayServer {
 
   private resolveAutoReplyDefaultAgent(config: any): string {
     const value = this.sanitizeString(config?.autoReply?.defaultAgent);
-    return value || 'orchestrator';
+    if (value) {
+      return value;
+    }
+
+    // Prefer a default/first agent from the hydrated registry, if available.
+    const registryAgents = agentRegistry.list();
+    const registryDefault = registryAgents.find((agent) => agent.isDefault);
+    if (registryDefault?.id) {
+      const sanitized = this.sanitizeString(registryDefault.id);
+      if (sanitized) return sanitized;
+    } else if (registryAgents.length > 0 && registryAgents[0].id) {
+      const sanitized = this.sanitizeString(registryAgents[0].id);
+      if (sanitized) return sanitized;
+    }
+
+    // Fallback to configured agents in config, if any.
+    const configuredAgents = Array.isArray(config?.agents)
+      ? config.agents
+      : Array.isArray(config?.agents?.list)
+      ? config.agents.list
+      : [];
+    const configDefault = configuredAgents.find((agent: any) => agent?.default === true);
+    if (configDefault?.id) {
+      const sanitized = this.sanitizeString(configDefault.id);
+      if (sanitized) return sanitized;
+    } else if (configuredAgents.length > 0 && configuredAgents[0]?.id) {
+      const sanitized = this.sanitizeString(configuredAgents[0].id);
+      if (sanitized) return sanitized;
+    }
+
+    // Last resort: the legacy hardcoded fallback ID.
+    return DEFAULT_AGENT_ID;
   }
 
   private resolveAutoReplyDefaultSessionScope(config: any): 'from' | 'chat' | 'thread' | 'chat-thread' {
@@ -1425,12 +1456,19 @@ class GatewayServer {
       // Ignore hydration errors; continue with config-only fallback below.
     }
 
-    const ids = new Set<string>(['orchestrator']);
+    // Seed with the registry-resolved default so the first entry is always valid.
+    const defaultId = agentRegistry.resolveDefaultAgentId();
+    const ids = new Set<string>([defaultId]);
     for (const agent of agentRegistry.list()) {
       if (agent.id) ids.add(agent.id);
     }
 
-    const configured = Array.isArray(config?.agents) ? config.agents : [];
+    // Support both config.agents (array) and config.agents.list (nested)
+    const configured = Array.isArray(config?.agents)
+      ? config.agents
+      : Array.isArray(config?.agents?.list)
+      ? config.agents.list
+      : [];
     for (const agent of configured) {
       const id = this.sanitizeString(agent?.id);
       if (id) ids.add(id);
@@ -1443,8 +1481,8 @@ class GatewayServer {
     }
 
     return Array.from(ids).sort((a, b) => {
-      if (a === 'orchestrator') return -1;
-      if (b === 'orchestrator') return 1;
+      if (a === defaultId) return -1;
+      if (b === defaultId) return 1;
       return a.localeCompare(b);
     });
   }
@@ -2089,7 +2127,7 @@ class GatewayServer {
 
           const result = await this.orchestrator.run({
             sessionId: job.sessionKey || `cron-${job.id}`,
-            agentId: job.agentId || 'orchestrator',
+            agentId: job.agentId || agentRegistry.resolveDefaultAgentId(),
             message,
             stream: false,
           });
@@ -2205,7 +2243,7 @@ class GatewayServer {
     // Stream response
     const result = await this.orchestrator.run({
       sessionId: message.sessionId || `gateway-${Date.now()}`,
-      agentId: message.agentId || 'orchestrator',
+      agentId: message.agentId || agentRegistry.resolveDefaultAgentId(),
       message: message.content,
       projectId: message.projectId,
       stream: true,
