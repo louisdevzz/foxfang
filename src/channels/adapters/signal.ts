@@ -222,63 +222,85 @@ export class SignalAdapter implements ChannelAdapter {
     }
   }
 
-  async reactToMessage(messageId: string, emoji: string, to?: string): Promise<void> {
+  async reactToMessage(messageId: string, emoji: string, to?: string, from?: string): Promise<void> {
     if (!this.connected || !to) return;
     const timestamp = this.parseTimestamp(messageId);
     if (!timestamp) return;
 
     try {
       if (this.apiMode === 'daemon-rpc') {
-        await this.callDaemonRpc('sendReaction', {
+        const params: Record<string, unknown> = {
           account: this.phoneNumber,
-          recipient: [to],
           targetTimestamp: timestamp,
+          targetAuthor: from || to,
           emoji,
-        });
+        };
+        if (this.isLikelyGroupId(to)) {
+          params.groupId = to;
+        } else {
+          params.recipient = [to];
+        }
+        await this.callDaemonRpc('sendReaction', params);
         return;
       }
 
+      const body: Record<string, unknown> = {
+        reaction: emoji,
+        target_author: from || to,
+        timestamp,
+      };
+      if (this.isLikelyGroupId(to)) {
+        body.recipient = to;
+      } else {
+        body.recipient = to;
+      }
       await fetch(`${this.httpUrl}/v1/reactions/${encodeURIComponent(this.phoneNumber)}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          recipient: to,
-          reaction: emoji,
-          target_author: to,
-          timestamp,
-        }),
+        body: JSON.stringify(body),
       });
     } catch {
       // Ignore reaction errors
     }
   }
 
-  async removeReaction(messageId: string, to?: string): Promise<void> {
+  async removeReaction(messageId: string, to?: string, from?: string): Promise<void> {
     if (!this.connected || !to) return;
     const timestamp = this.parseTimestamp(messageId);
     if (!timestamp) return;
 
     try {
       if (this.apiMode === 'daemon-rpc') {
-        await this.callDaemonRpc('sendReaction', {
+        const params: Record<string, unknown> = {
           account: this.phoneNumber,
-          recipient: [to],
           targetTimestamp: timestamp,
+          targetAuthor: from || to,
           emoji: '',
           remove: true,
-        });
+        };
+        if (this.isLikelyGroupId(to)) {
+          params.groupId = to;
+        } else {
+          params.recipient = [to];
+        }
+        await this.callDaemonRpc('sendReaction', params);
         return;
       }
 
+      const body: Record<string, unknown> = {
+        reaction: '',
+        target_author: from || to,
+        timestamp,
+      };
+      if (this.isLikelyGroupId(to)) {
+        body.recipient = to;
+      } else {
+        body.recipient = to;
+      }
       await fetch(`${this.httpUrl}/v1/reactions/${encodeURIComponent(this.phoneNumber)}`, {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          recipient: to,
-          reaction: '',
-          target_author: to,
-          timestamp,
-        }),
+        body: JSON.stringify(body),
       });
     } catch {
       // Ignore removal errors
@@ -669,6 +691,12 @@ export class SignalAdapter implements ChannelAdapter {
       envelope?.sourceUuid || envelope?.sourceServiceId || envelope?.source_uuid || ''
     ).trim();
     const sourceAddress = sourcePhone || sourceUuid || (this.isUuid(normalizedSource) ? normalizedSource : '');
+
+    // Self-loop filter: skip messages from the bot itself
+    const ownPhone = this.normalizePhone(this.phoneNumber);
+    if (sourcePhone && this.normalizePhone(sourcePhone) === ownPhone) return;
+    if (envelope?.syncMessage) return;
+
     const sourceLabel = sourceAddress || rawSource;
     const sourceName = String(envelope?.sourceName || sourceLabel || 'Signal').trim();
     const groupId = dataMessage?.groupInfo?.groupId || dataMessage?.groupV2?.id || '';
@@ -680,13 +708,20 @@ export class SignalAdapter implements ChannelAdapter {
       : sourceName;
 
     const chatType = groupId ? 'group' : 'private';
+
+    // Mention detection: check if message text contains the bot's phone number
+    // Signal uses \uFFFC (object replacement char) for mentions in some versions
+    const messageText = String(dataMessage.message || '');
+    const wasMentioned = this.detectMention(messageText, dataMessage?.mentions);
+    const canDetectMention = Boolean(this.phoneNumber);
+
     console.log(`[Signal] 📨 inbound type=${chatType} from=${from}`);
 
     const channelMsg: ChannelMessage = {
       id: String(timestamp),
       channel: 'signal',
       from,
-      content: dataMessage.message,
+      content: messageText,
       timestamp: new Date(timestamp),
       threadId: groupId || undefined,
       metadata: {
@@ -696,14 +731,36 @@ export class SignalAdapter implements ChannelAdapter {
         sourcePhone,
         sourceUuid,
         replyTarget,
-        wasMentioned: false,
-        canDetectMention: false,
+        senderId: sourceAddress,
+        senderName: sourceName,
+        wasMentioned,
+        canDetectMention,
       },
     };
 
     this.messageHandler(channelMsg).catch((err) => {
       console.error('[Signal] Error:', err);
     });
+  }
+
+  /**
+   * Detect if the bot was mentioned in a Signal message.
+   * Checks: explicit mentions array, phone number in text, \uFFFC replacement chars.
+   */
+  private detectMention(text: string, mentions?: any[]): boolean {
+    // Check explicit mentions array (signal-cli v2 format)
+    if (Array.isArray(mentions) && mentions.length > 0) {
+      const ownPhone = this.normalizePhone(this.phoneNumber);
+      for (const mention of mentions) {
+        const mentionNumber = this.normalizePhone(String(mention?.number || mention?.uuid || ''));
+        if (mentionNumber && mentionNumber === ownPhone) return true;
+      }
+    }
+
+    // Check if phone number appears in text
+    if (this.phoneNumber && text.includes(this.phoneNumber)) return true;
+
+    return false;
   }
 
   private sleep(ms: number, abortSignal: AbortSignal): Promise<void> {

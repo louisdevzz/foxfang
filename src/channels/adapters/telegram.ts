@@ -437,37 +437,38 @@ export class TelegramAdapter implements ChannelAdapter {
     // Skip messages from the bot itself
     if (message.from?.id === this.botInfo?.id) return;
 
-    // Use numeric chat ID as sender for proper reply routing
-    // Store username in metadata for display
     const chatId = message.chat.id.toString();
-    const senderUsername = message.from?.username 
-      ? `@${message.from.username}` 
+    const senderId = message.from?.id?.toString() || '';
+    const senderUsername = message.from?.username
+      ? `@${message.from.username}`
       : message.from?.first_name || 'Unknown';
+    const senderName = `${message.from?.first_name || ''} ${message.from?.last_name || ''}`.trim() || senderUsername;
 
-    // Build content with context
-    let content = message.text;
-    if (message.chat.type !== 'private') {
-      content = `[${message.chat.title || message.chat.type}] ${content}`;
-    }
+    // Do NOT prefix content with [GroupTitle] — send raw text to the agent.
+    // Group context is available in metadata for the agent to use if needed.
+    const content = message.text;
 
-    const wasMentioned = this.detectBotMention(message);
+    const isReplyToBot = message.reply_to_message?.from?.id === this.botInfo?.id;
+    const wasMentioned = this.detectBotMention(message) || isReplyToBot;
     const canDetectMention = Boolean(this.botInfo?.username) && message.chat.type !== 'private';
 
     const channelMsg: ChannelMessage = {
       id: message.message_id.toString(),
       channel: 'telegram',
-      from: chatId,  // Use numeric chat ID for sending replies
-      content: content,
+      from: senderName,
+      content,
       timestamp: new Date(message.date * 1000),
       metadata: {
-        chatId: chatId,
+        chatId,
         chatType: message.chat.type,
+        chatTitle: message.chat.type !== 'private' ? (message.chat.title || '') : undefined,
         messageId: message.message_id.toString(),
         threadId: message.message_thread_id?.toString(),
         replyToMessageId: message.reply_to_message?.message_id?.toString(),
-        senderId: message.from?.id?.toString(),
-        senderUsername: senderUsername,
-        senderName: `${message.from?.first_name || ''} ${message.from?.last_name || ''}`.trim() || senderUsername,
+        replyTarget: chatId,
+        senderId,
+        senderUsername,
+        senderName,
         wasMentioned,
         canDetectMention,
       },

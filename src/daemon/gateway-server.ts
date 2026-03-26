@@ -214,7 +214,7 @@ class GatewayServer {
   private clients: Map<string, ClientConnection> = new Map();
   private orchestrator: AgentOrchestrator | null = null;
   private sessionManager: SessionManager | null = null;
-  private channelManager: ChannelManager;
+  private channelManager: ChannelManager | null = null;
   private cronService: CronService | null = null;
   private startedAt = Date.now();
   private restartScheduled = false;
@@ -233,15 +233,7 @@ class GatewayServer {
       });
     });
     this.wss = new WebSocketServer({ server });
-    this.channelManager = new ChannelManager(this.enabledChannels, {
-      autoReply: {
-        enabled: true,
-        defaultAgent: 'main',
-        requireMention: false,
-        replyToMessage: true,
-      },
-    });
-    
+
     // Initialize cron tables
     initCronTables();
     
@@ -1955,7 +1947,7 @@ class GatewayServer {
     setTimeout(async () => {
       try {
         this.cronService?.stop();
-        await this.channelManager.disconnectAll();
+        await this.channelManager?.disconnectAll();
       } catch (error) {
         console.error('[Gateway] Error while preparing restart:', error);
       } finally {
@@ -2064,7 +2056,7 @@ class GatewayServer {
     this.initializeCronService();
     
     // Connect channels
-    if (this.enabledChannels.length > 0) {
+    if (this.enabledChannels.length > 0 && this.channelManager) {
       this.channelManager.setOrchestrator(this.orchestrator!);
       await this.channelManager.connectAll();
     }
@@ -2252,7 +2244,7 @@ class GatewayServer {
     wireDelegateOrchestrator(this.orchestrator);
     
     // Set workspace manager for channel manager too
-    this.channelManager.setWorkspaceManager(workspaceManager);
+    this.channelManager?.setWorkspaceManager(workspaceManager);
     
     console.log('[Gateway] Agents initialized');
   }
@@ -2286,13 +2278,13 @@ const server = new GatewayServer(PORT);
 process.on('SIGTERM', async () => {
   console.log('[Gateway] SIGTERM received, shutting down...');
   server['cronService']?.stop();
-  await server['channelManager'].disconnectAll();
+  await server['channelManager']?.disconnectAll();
   process.exit(0);
 });
 
 process.on('SIGINT', async () => {
   console.log('[Gateway] SIGINT received, shutting down...');
   server['cronService']?.stop();
-  await server['channelManager'].disconnectAll();
+  await server['channelManager']?.disconnectAll();
   process.exit(0);
 });

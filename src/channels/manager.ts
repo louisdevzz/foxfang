@@ -213,22 +213,28 @@ export class ChannelManager {
       return;
     }
 
+    // Resolve sender info early — needed for reactions and IncomingMessage
+    const msgMetadata = msg.metadata || {};
+    const senderId = String(msgMetadata.senderId || msgMetadata.userId || msgMetadata.authorId || msg.from || '');
+
     // Add "eyes" reaction to acknowledge receipt
     if (adapter.reactToMessage) {
       try {
-        await adapter.reactToMessage(msg.id, '👀', chatId);
+        await adapter.reactToMessage(msg.id, '👀', chatId, senderId);
       } catch {
         // Ignore reaction errors
       }
     }
 
     // Convert to IncomingMessage format
+    const metadata = msgMetadata;
+    const senderName = String(metadata.senderName || msg.from || 'Unknown');
     const incomingMessage: IncomingMessage = {
       id: msg.id,
       channel: msg.channel,
       from: {
-        id: msg.from,
-        name: msg.from,
+        id: senderId,
+        name: senderName,
       },
       chat: {
         id: chatId || msg.from,
@@ -294,7 +300,7 @@ export class ChannelManager {
         // Remove the "eyes" reaction after reply is sent
         if (adapter.removeReaction) {
           try {
-            await adapter.removeReaction(msg.id, chatId);
+            await adapter.removeReaction(msg.id, chatId, senderId);
           } catch {
             // Ignore removal errors
           }
@@ -315,7 +321,7 @@ export class ChannelManager {
       // Remove the "eyes" reaction after error message
       if (adapter.removeReaction) {
         try {
-          await adapter.removeReaction(msg.id, chatId);
+          await adapter.removeReaction(msg.id, chatId, senderId);
         } catch {
           // Ignore removal errors
         }
