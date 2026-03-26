@@ -56,6 +56,9 @@ const debugWarn = (...args: unknown[]) => {
 const TOOL_CALL_STYLE_GUIDANCE = `## Tool Call Style
 When a tool exists for the task, call it directly — do not ask the user to do it manually.
 If a tool call fails, explain the issue; do not preemptively claim inability.
+When web tools fail on a URL, try \`bash_exec\` in safe mode (for example \`curl\` + \`head\`) to diagnose and continue.
+If the user asks about visual/page-location details (for example footer/header/nav/button text, what is visible on page, click path), prefer \`agent_browser\` directly instead of static crawl.
+If \`fetch_url\`/crawl tools miss content on JS-heavy, interaction-driven, or client-rendered pages, switch to \`agent_browser\` (real browser) and inspect via snapshot/find/get text.
 Narrate only when it adds value (multi-step work, sensitive actions, or user asks).
 Keep narration brief and value-dense.`;
 
@@ -310,7 +313,7 @@ function buildSkillsSection(context: AgentContext): string {
   lines.push('Before replying: scan `<available_skills>` descriptions.');
   lines.push('- If exactly one skill clearly matches, follow it.');
   lines.push('- If multiple skills might match, pick the most specific one.');
-  lines.push('- If needed, load full instructions via `bash` with `cat "<location>"`.');
+  lines.push('- If needed, load full instructions via `bash_exec` (or legacy `bash`) with `cat "<location>"`.');
   lines.push('- Read at most one skill file before your first answer.');
   lines.push('- If user asks to add/install a skill, use `skills_add`.');
   lines.push('');

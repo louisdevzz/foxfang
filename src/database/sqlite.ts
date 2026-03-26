@@ -103,37 +103,6 @@ export function initDatabase(): DatabaseSync {
     CREATE INDEX IF NOT EXISTS idx_memories_brand_id ON memories(brand_id);
     CREATE INDEX IF NOT EXISTS idx_memories_project_id ON memories(project_id);
 
-    -- FTS for memories
-    CREATE VIRTUAL TABLE IF NOT EXISTS memories_fts USING fts5(
-      content,
-      content_rowid,
-      user_id UNINDEXED
-    );
-
-    -- Backfill FTS index for existing memory rows
-    INSERT INTO memories_fts (rowid, content, content_rowid, user_id)
-    SELECT m.id, m.content, m.id, m.user_id
-    FROM memories m
-    WHERE NOT EXISTS (
-      SELECT 1 FROM memories_fts f WHERE f.rowid = m.id
-    );
-
-    -- Keep FTS index synchronized with memories table
-    CREATE TRIGGER IF NOT EXISTS memories_ai AFTER INSERT ON memories BEGIN
-      INSERT INTO memories_fts (rowid, content, content_rowid, user_id)
-      VALUES (new.id, new.content, new.id, new.user_id);
-    END;
-
-    CREATE TRIGGER IF NOT EXISTS memories_ad AFTER DELETE ON memories BEGIN
-      DELETE FROM memories_fts WHERE rowid = old.id;
-    END;
-
-    CREATE TRIGGER IF NOT EXISTS memories_au AFTER UPDATE ON memories BEGIN
-      DELETE FROM memories_fts WHERE rowid = old.id;
-      INSERT INTO memories_fts (rowid, content, content_rowid, user_id)
-      VALUES (new.id, new.content, new.id, new.user_id);
-    END;
-
     -- Tasks - belong to a project
     CREATE TABLE IF NOT EXISTS tasks (
       id TEXT PRIMARY KEY,
@@ -241,6 +210,44 @@ export function initDatabase(): DatabaseSync {
     -- Insert default user
     INSERT OR IGNORE INTO users (id, name) VALUES ('default_user', 'Default User');
   `);
+
+  // Optional FTS5 index for memories.
+  // Some Linux/node:sqlite builds do not include the FTS5 module.
+  // In that case, we keep memory storage working and rely on LIKE fallback search.
+  try {
+    db.exec(`
+      CREATE VIRTUAL TABLE IF NOT EXISTS memories_fts USING fts5(
+        content,
+        content_rowid,
+        user_id UNINDEXED
+      );
+
+      INSERT INTO memories_fts (rowid, content, content_rowid, user_id)
+      SELECT m.id, m.content, m.id, m.user_id
+      FROM memories m
+      WHERE NOT EXISTS (
+        SELECT 1 FROM memories_fts f WHERE f.rowid = m.id
+      );
+
+      CREATE TRIGGER IF NOT EXISTS memories_ai AFTER INSERT ON memories BEGIN
+        INSERT INTO memories_fts (rowid, content, content_rowid, user_id)
+        VALUES (new.id, new.content, new.id, new.user_id);
+      END;
+
+      CREATE TRIGGER IF NOT EXISTS memories_ad AFTER DELETE ON memories BEGIN
+        DELETE FROM memories_fts WHERE rowid = old.id;
+      END;
+
+      CREATE TRIGGER IF NOT EXISTS memories_au AFTER UPDATE ON memories BEGIN
+        DELETE FROM memories_fts WHERE rowid = old.id;
+        INSERT INTO memories_fts (rowid, content, content_rowid, user_id)
+        VALUES (new.id, new.content, new.id, new.user_id);
+      END;
+    `);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.warn(`[Database] FTS5 unavailable; memory full-text index disabled (${message})`);
+  }
 
   return db;
 }

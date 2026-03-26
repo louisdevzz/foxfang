@@ -428,6 +428,10 @@ class GatewayServer {
         connected: false,
         username: '',
         connectedAt: '',
+        mode: undefined,
+        appId: '',
+        installationId: '',
+        apiBaseUrl: '',
       };
       await saveConfig(config);
       this.sendJson(res, 200, {
@@ -448,6 +452,7 @@ class GatewayServer {
       const configPath = await getConfigPath().catch(() => '');
       const githubToken = await getGitHubToken().catch(() => null);
       const githubUsername = githubToken?.username || config.github?.username || '';
+      const githubMode = githubToken?.mode || config.github?.mode || '';
       const braveSearchApiKey = await this.resolveToolApiKey(
         config.braveSearch?.apiKey,
         config.braveSearch?.apiKeyRef,
@@ -513,6 +518,7 @@ class GatewayServer {
         github: {
           connected: Boolean(githubToken),
           username: githubUsername,
+          mode: githubMode,
         },
         configPath,
         configSnapshot: this.createSetupConfigSnapshot(config),
@@ -970,6 +976,10 @@ class GatewayServer {
       connected: true,
       username: username || '',
       connectedAt: new Date().toISOString(),
+      mode: 'oauth',
+      appId: '',
+      installationId: '',
+      apiBaseUrl: 'https://api.github.com',
     };
     await saveConfig(config);
 

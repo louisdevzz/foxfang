@@ -12,6 +12,8 @@ import { Tool, ToolCategory } from '../traits';
 import { existsSync, writeFileSync, mkdirSync } from 'fs';
 import { basename, join } from 'path';
 import { homedir } from 'os';
+import { fetchLinkContent } from '../../link-understanding/fetch';
+import { storeMemory } from '../../memory/database';
 
 const DEFAULT_PERSONAS_URL = 'https://marketing.reply.cash';
 
@@ -29,6 +31,10 @@ function resolveOutputFileName(args: { filename?: string; scope?: string }): str
   }
 
   return 'AUDIENCE_PERSONAS.md';
+}
+
+function looksLikeHtml(content: string): boolean {
+  return /<html[\s>]|<body[\s>]|<div[\s>]|<main[\s>]|<article[\s>]/i.test(content);
 }
 
 /**
@@ -56,13 +62,66 @@ function htmlToText(html: string): string {
     .trim();
 }
 
+function normalizeExtractedContent(content: string): string {
+  const input = content.replace(/\r\n/g, '\n');
+  const lines = input.split('\n');
+  const cleaned: string[] = [];
+
+  for (const rawLine of lines) {
+    const line = rawLine.replace(/\t/g, ' ').replace(/[ \u00A0]+/g, ' ').trim();
+    if (!line) {
+      cleaned.push('');
+      continue;
+    }
+    if (/^[-*•]\s*$/.test(line)) continue;
+    if (line.includes('<!--') || line.includes('-->')) continue;
+    if (!/[\p{L}\p{N}]/u.test(line)) continue;
+    cleaned.push(line);
+  }
+
+  const compacted: string[] = [];
+  let prevBlank = false;
+  let prevLine = '';
+
+  for (const line of cleaned) {
+    if (!line) {
+      if (!prevBlank) compacted.push('');
+      prevBlank = true;
+      continue;
+    }
+
+    if (line === prevLine && line.length < 40) continue;
+    compacted.push(line);
+    prevBlank = false;
+    prevLine = line;
+  }
+
+  return compacted.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+}
+
+function isLowSignalPersonaContent(content: string): boolean {
+  const lines = content.split('\n').map((line) => line.trim()).filter(Boolean);
+  if (content.length < 250 && lines.length <= 8) return true;
+
+  const suspiciousMarkers = [
+    'unsupported for link rel=preload',
+    'gptengineer.js',
+    'modulepreload',
+    'reply.cash - send stablecoins locally',
+  ];
+  const markerHits = suspiciousMarkers.filter((marker) => content.toLowerCase().includes(marker)).length;
+  if (content.length < 600 && markerHits >= 1) return true;
+
+  return false;
+}
+
 /**
  * Personas Sync Tool
  * Fetches personas from a URL, extracts content, saves as a scoped personas markdown file.
  */
 export class PersonasSyncTool implements Tool {
   name = 'personas_sync';
-  description = 'Fetch personas from a URL and save to a scoped workspace personas file (default: PERSONAS_REPLY_CASH.md).';
+  description = 'Fetch personas from a URL (Firecrawl-first, native fallback), save to scoped workspace personas file, and store a memory snapshot.';
   category = ToolCategory.EXTERNAL;
   parameters = {
     type: 'object' as const,
@@ -83,6 +142,10 @@ export class PersonasSyncTool implements Tool {
         type: 'string',
         description: 'Optional output filename (overrides scope default).',
       },
+      writeMemory: {
+        type: 'boolean',
+        description: 'Store synced personas snapshot into memory DB (default: true).',
+      },
     },
     required: [],
   };
@@ -92,39 +155,61 @@ export class PersonasSyncTool implements Tool {
     format?: 'html' | 'markdown';
     scope?: 'reply-cash' | 'generic' | string;
     filename?: string;
+    writeMemory?: boolean;
   }): Promise<{ success: boolean; data?: any; error?: string }> {
     const url = args.url || DEFAULT_PERSONAS_URL;
 
     try {
-      const response = await fetch(url, {
-        headers: {
-          'Accept': 'text/html, text/markdown, text/plain, application/json',
-          'User-Agent': 'FoxFang/1.0',
-        },
-      });
+      let content = '';
+      let sourceTitle = '';
+      let extractionMode = 'fetch_link_content';
 
-      if (!response.ok) {
-        return {
-          success: false,
-          error: `Failed to fetch personas: ${response.status} ${response.statusText}`,
-        };
-      }
-
-      const contentType = response.headers.get('content-type') || '';
-      const rawBody = await response.text();
-
-      let content: string;
-      const isHtml = args.format === 'html' || (!args.format && contentType.includes('text/html'));
-
-      if (isHtml) {
-        content = htmlToText(rawBody);
+      const fetched = await fetchLinkContent(url);
+      if (!fetched.error && fetched.content?.trim()) {
+        sourceTitle = fetched.title || '';
+        content = fetched.content;
+        extractionMode = fetched.source || extractionMode;
       } else {
-        // Markdown or plain text — use as-is
-        content = rawBody;
+        extractionMode = 'direct_fetch_fallback';
+        const response = await fetch(url, {
+          headers: {
+            'Accept': 'text/html, text/markdown, text/plain, application/json',
+            'User-Agent': 'FoxFang/1.0',
+          },
+        });
+
+        if (!response.ok) {
+          return {
+            success: false,
+            error: `Failed to fetch personas: ${response.status} ${response.statusText}${fetched.error ? ` | fetchLinkContent: ${fetched.error}` : ''}`,
+          };
+        }
+
+        const contentType = response.headers.get('content-type') || '';
+        const rawBody = await response.text();
+        const shouldParseHtml =
+          args.format === 'html' ||
+          (!args.format && (contentType.includes('text/html') || looksLikeHtml(rawBody)));
+
+        content = shouldParseHtml ? htmlToText(rawBody) : rawBody;
       }
+
+      if (args.format === 'html' && looksLikeHtml(content)) {
+        content = htmlToText(content);
+      }
+
+      content = normalizeExtractedContent(content);
 
       if (!content.trim()) {
         return { success: false, error: 'Fetched content is empty after processing.' };
+      }
+      if (isLowSignalPersonaContent(content)) {
+        return {
+          success: false,
+          error: extractionMode === 'native' || extractionMode === 'direct_fetch_fallback'
+            ? 'Extracted content looks like a client-rendered shell (very low signal). Firecrawl scrape is required for this URL.'
+            : 'Extracted personas content is too low-signal. Please verify source URL or scrape settings.',
+        };
       }
 
       const outputFile = resolveOutputFileName(args);
@@ -149,12 +234,47 @@ ${content}
       const filePath = join(workspacePath, outputFile);
       writeFileSync(filePath, personasContent, 'utf-8');
 
+      const shouldWriteMemory = args.writeMemory !== false;
+      let memoryId: number | null = null;
+      let memoryError: string | null = null;
+
+      if (shouldWriteMemory) {
+        try {
+          const memoryScope = String(args.scope || 'reply-cash').trim().toLowerCase() || 'reply-cash';
+          const memoryPayload = [
+            `personas_scope: ${memoryScope}`,
+            `source: ${url}`,
+            `saved_file: ${outputFile}`,
+            `saved_at: ${new Date().toISOString()}`,
+            '',
+            content.slice(0, 12000),
+          ].join('\n');
+
+          memoryId = storeMemory(memoryPayload, 'fact', {
+            importance: 7,
+            metadata: {
+              source: url,
+              scope: memoryScope,
+              file: outputFile,
+              extractionMode,
+            },
+          });
+        } catch (error) {
+          memoryError = error instanceof Error ? error.message : String(error);
+        }
+      }
+
       return {
         success: true,
         data: {
           source: url,
+          title: sourceTitle || undefined,
           savedTo: filePath,
           contentLength: content.length,
+          extractionMode,
+          memoryStored: shouldWriteMemory ? memoryId !== null : false,
+          memoryId: memoryId || undefined,
+          memoryError: memoryError || undefined,
           preview: content.slice(0, 500) + (content.length > 500 ? '...' : ''),
         },
       };

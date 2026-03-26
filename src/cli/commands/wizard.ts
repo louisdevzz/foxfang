@@ -9,6 +9,8 @@
 
 import { Command } from 'commander';
 import chalk from 'chalk';
+import { spawn, spawnSync } from 'child_process';
+import { readFileSync } from 'fs';
 import { intro, outro, text, select, confirm, spinner, multiselect, isCancel } from '@clack/prompts';
 import { loadConfig, saveConfig } from '../../config/index';
 import { initializeProviders } from '../../providers/index';
@@ -16,7 +18,7 @@ import { bootstrapFoxFang } from '../../wizard/bootstrap';
 import { initDatabase } from '../../database/sqlite';
 import { runMigrations } from '../../compat';
 import { saveCredential, deleteCredential, isKeychainAvailable, migrateFromConfig } from '../../credentials/index';
-import { isGitHubConnected, saveGitHubToken, startGitHubOAuthFlow } from '../../integrations/github';
+import { saveGitHubAppConnection, startGitHubOAuthFlow } from '../../integrations/github';
 import { DEFAULT_AGENT_ID, agentRegistry, hydrateAgentRegistryFromConfig, resolveDefaultAgentId } from '../../agents/registry';
 import { loginWithDeviceCode } from '../../providers/github-copilot';
 
@@ -278,6 +280,106 @@ function parseMetadata(input: string): Record<string, string | string[]> | undef
     result[key] = list.length === 1 ? list[0] : list;
   }
   return Object.keys(result).length > 0 ? result : undefined;
+}
+
+function resolveGitHubAppPrivateKey(input: string): string {
+  const value = String(input || '').trim();
+  if (!value) {
+    throw new Error('GitHub App private key is required');
+  }
+
+  if (value.includes('BEGIN') || value.includes('\\n')) {
+    return value;
+  }
+
+  try {
+    const fileContent = readFileSync(value, 'utf8');
+    if (!fileContent.trim()) {
+      throw new Error('Private key file is empty');
+    }
+    return fileContent;
+  } catch (error) {
+    throw new Error(
+      `Could not read private key file: ${error instanceof Error ? error.message : String(error)}`
+    );
+  }
+}
+
+function isAgentBrowserInstalled(): boolean {
+  try {
+    const probe = spawnSync('agent-browser', ['--help'], {
+      stdio: ['ignore', 'pipe', 'pipe'],
+      encoding: 'utf8',
+    });
+    if (probe.error) return false;
+    if (probe.status === 0) return true;
+    const combined = `${String(probe.stdout || '')}\n${String(probe.stderr || '')}`;
+    return /agent-browser/i.test(combined);
+  } catch {
+    return false;
+  }
+}
+
+async function runInstallCommand(command: string, args: string[]): Promise<void> {
+  await new Promise<void>((resolve, reject) => {
+    const child = spawn(command, args, {
+      stdio: ['ignore', 'pipe', 'pipe'],
+      shell: false,
+    });
+
+    let stderr = '';
+    let stdout = '';
+
+    child.stdout.on('data', (chunk: Buffer) => {
+      stdout += chunk.toString('utf8');
+    });
+    child.stderr.on('data', (chunk: Buffer) => {
+      stderr += chunk.toString('utf8');
+    });
+
+    child.on('error', (error) => {
+      reject(error);
+    });
+
+    child.on('close', (code) => {
+      if (code === 0) {
+        resolve();
+        return;
+      }
+      const detail = [stderr.trim(), stdout.trim()].filter(Boolean).join('\n');
+      reject(new Error(`${command} ${args.join(' ')} exited with code ${code}${detail ? `\n${detail}` : ''}`));
+    });
+  });
+}
+
+async function ensureAgentBrowserSetup(): Promise<void> {
+  console.log(chalk.dim('\n--- Agent Browser Setup ---\n'));
+  const s = spinner();
+  s.start('Checking agent-browser...');
+
+  if (isAgentBrowserInstalled()) {
+    s.stop(chalk.green('✓ agent-browser already installed'));
+    return;
+  }
+
+  s.stop(chalk.yellow('agent-browser not found'));
+
+  try {
+    s.start('Installing agent-browser globally (please wait)...');
+    await runInstallCommand('npm', ['install', '-g', 'agent-browser']);
+    s.stop(chalk.green('✓ agent-browser global install complete'));
+
+    s.start('Downloading Chrome for Testing (please wait)...');
+    await runInstallCommand('agent-browser', ['install']);
+    s.stop(chalk.green('✓ Agent Browser installed successfully'));
+  } catch (error) {
+    s.stop(chalk.yellow('⚠ Agent Browser auto-install failed'));
+    console.log(chalk.yellow('\n⚠ Could not auto-install agent-browser.'));
+    console.log(chalk.dim(`Reason: ${error instanceof Error ? error.message : String(error)}`));
+    console.log(chalk.dim('\nRun manually:'));
+    console.log(chalk.dim('  npm install -g agent-browser'));
+    console.log(chalk.dim('  agent-browser install'));
+  }
 }
 
 /**
@@ -1179,37 +1281,146 @@ async function runSetupWizard() {
   });
   
   if (!isCancel(connectGitHub) && connectGitHub === true) {
-    const s4 = spinner();
-    s4.start('Starting GitHub OAuth flow...');
-    
-    try {
-      const { authUrl, waitForCallback } = await startGitHubOAuthFlow();
-      s4.stop('OAuth server ready!');
-      
-      // Open browser
-      const openCommand = process.platform === 'darwin' ? 'open' : 
-                         process.platform === 'win32' ? 'start' : 'xdg-open';
-      require('child_process').spawn(openCommand, [authUrl], { detached: true, stdio: 'ignore' }).unref();
-      
-      console.log(chalk.blue('\nBrowser opened for GitHub authorization.'));
-      console.log(chalk.dim('If browser does not open, visit: ' + authUrl));
-      
-      const s5 = spinner();
-      s5.start('Waiting for authorization...');
-      
-      const token = await waitForCallback();
-      s5.stop(chalk.green(`✓ GitHub connected as ${token.username || 'unknown'}!`));
-      
-      // Force event loop to continue
-      await new Promise(resolve => setImmediate(resolve));
-    } catch (error) {
-      s4.stop('GitHub connection failed');
-      console.log(chalk.yellow(`⚠ Could not complete GitHub connection: ${error instanceof Error ? error.message : String(error)}`));
-      console.log(chalk.dim('You can connect later by saying \"Connect GitHub\" in chat'));
+    const method = await select({
+      message: 'GitHub connection method:',
+      options: [
+        {
+          value: 'oauth',
+          label: 'OAuth Proxy (browser login)',
+          hint: 'Quick setup for personal account',
+        },
+        {
+          value: 'app',
+          label: 'GitHub App (Private Key + Installation ID)',
+          hint: 'Server-to-server auth, no browser approval needed',
+        },
+      ],
+      initialValue: 'oauth',
+    }) as 'oauth' | 'app';
+
+    if (!isCancel(method) && method === 'app') {
+      const appIdInput = await text({
+        message: 'GitHub App ID:',
+        placeholder: 'e.g. 123456',
+        validate: (value) => {
+          const normalized = String(value || '').trim();
+          if (!normalized) return 'GitHub App ID is required';
+          if (!/^\d+$/.test(normalized)) return 'GitHub App ID must be numeric';
+          return undefined;
+        },
+      });
+      if (isCancel(appIdInput)) {
+        console.log(chalk.yellow('Skipped GitHub App setup'));
+        printSetupTips(configuredProviders.map((p: any) => p.id));
+        return;
+      }
+
+      const installationIdInput = await text({
+        message: 'GitHub Installation ID:',
+        placeholder: 'e.g. 78901234',
+        validate: (value) => {
+          const normalized = String(value || '').trim();
+          if (!normalized) return 'Installation ID is required';
+          if (!/^\d+$/.test(normalized)) return 'Installation ID must be numeric';
+          return undefined;
+        },
+      });
+      if (isCancel(installationIdInput)) {
+        console.log(chalk.yellow('Skipped GitHub App setup'));
+        printSetupTips(configuredProviders.map((p: any) => p.id));
+        return;
+      }
+
+      const privateKeyInput = await text({
+        message: 'GitHub App private key (file path or PEM with \\n):',
+        placeholder: '/path/to/github-app-private-key.pem',
+        validate: (value) => {
+          if (!String(value || '').trim()) {
+            return 'Private key is required';
+          }
+          return undefined;
+        },
+      });
+      if (isCancel(privateKeyInput)) {
+        console.log(chalk.yellow('Skipped GitHub App setup'));
+        printSetupTips(configuredProviders.map((p: any) => p.id));
+        return;
+      }
+
+      const s4 = spinner();
+      s4.start('Validating GitHub App credentials...');
+
+      try {
+        const privateKey = resolveGitHubAppPrivateKey(privateKeyInput as string);
+        const connection = await saveGitHubAppConnection({
+          appId: String(appIdInput).trim(),
+          installationId: String(installationIdInput).trim(),
+          privateKey,
+          apiBaseUrl: 'https://api.github.com',
+        });
+        s4.stop(chalk.green(`✓ GitHub App connected (${connection.username || 'installation'})`));
+
+        config.github = {
+          connected: true,
+          username: connection.username || '',
+          connectedAt: new Date().toISOString(),
+          mode: 'app',
+          appId: connection.appId,
+          installationId: connection.installationId,
+          apiBaseUrl: connection.apiBaseUrl,
+        };
+        await saveConfig(config);
+
+        await new Promise(resolve => setImmediate(resolve));
+      } catch (error) {
+        s4.stop('GitHub App connection failed');
+        console.log(chalk.yellow(`⚠ Could not complete GitHub App connection: ${error instanceof Error ? error.message : String(error)}`));
+        console.log(chalk.dim('You can connect later by saying "Connect GitHub" in chat'));
+      }
+    } else if (!isCancel(method)) {
+      const s4 = spinner();
+      s4.start('Starting GitHub OAuth flow...');
+
+      try {
+        const { authUrl, waitForCallback } = await startGitHubOAuthFlow();
+        s4.stop('OAuth server ready!');
+
+        // Open browser
+        const openCommand = process.platform === 'darwin' ? 'open' :
+                          process.platform === 'win32' ? 'start' : 'xdg-open';
+        require('child_process').spawn(openCommand, [authUrl], { detached: true, stdio: 'ignore' }).unref();
+
+        console.log(chalk.blue('\nBrowser opened for GitHub authorization.'));
+        console.log(chalk.dim('If browser does not open, visit: ' + authUrl));
+
+        const s5 = spinner();
+        s5.start('Waiting for authorization...');
+
+        const token = await waitForCallback();
+        s5.stop(chalk.green(`✓ GitHub connected as ${token.username || 'unknown'}!`));
+
+        config.github = {
+          connected: true,
+          username: token.username || '',
+          connectedAt: new Date().toISOString(),
+          mode: token.mode || 'oauth',
+          apiBaseUrl: token.apiBaseUrl || 'https://api.github.com',
+        };
+        await saveConfig(config);
+
+        // Force event loop to continue
+        await new Promise(resolve => setImmediate(resolve));
+      } catch (error) {
+        s4.stop('GitHub connection failed');
+        console.log(chalk.yellow(`⚠ Could not complete GitHub connection: ${error instanceof Error ? error.message : String(error)}`));
+        console.log(chalk.dim('You can connect later by saying \"Connect GitHub\" in chat'));
+      }
     }
   } else {
     console.log(chalk.dim('Skipped — say \"Connect GitHub\" in chat anytime to connect'));
   }
+
+  await ensureAgentBrowserSetup();
   
   // Print helpful tips after setup
   printSetupTips(configuredProviders.map((p: any) => p.id));

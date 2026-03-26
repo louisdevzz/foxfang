@@ -127,7 +127,7 @@ Examples:
           // Validate token by getting user info
           try {
             const userInfo = await getGitHubUser(args.token);
-            await saveGitHubToken(args.token, userInfo.login, ['repo', 'read:user']);
+            await saveGitHubToken(args.token, userInfo.login, ['repo', 'read:user'], 'pat');
             
             return {
               success: true,

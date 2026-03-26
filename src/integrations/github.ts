@@ -6,24 +6,54 @@
  */
 
 import { createServer, IncomingMessage, ServerResponse } from 'http';
+import { createSign } from 'crypto';
 import { saveCredential, getCredential, deleteCredential } from '../credentials';
 
 const GITHUB_API_BASE = 'https://api.github.com';
 export const GITHUB_OAUTH_PROXY = 'https://foxfang-oauth-proxy.githubz.workers.dev';
+export type GitHubAuthMode = 'oauth' | 'pat' | 'app';
 
 export interface GitHubToken {
   token: string;
   username?: string;
   scopes: string[];
   createdAt: string;
+  mode?: GitHubAuthMode;
+  appId?: string;
+  installationId?: string;
+  expiresAt?: string;
+  apiBaseUrl?: string;
+}
+
+export interface GitHubAppConnectionInput {
+  appId: string;
+  installationId: string;
+  privateKey: string;
+  apiBaseUrl?: string;
+}
+
+type GitHubAppAccessTokenResponse = {
+  token: string;
+  expires_at?: string;
+  permissions?: Record<string, string>;
+};
+
+type GitHubAppInstallationResponse = {
+  account?: {
+    login?: string;
+  };
 }
 
 /**
  * Check if GitHub is connected
  */
 export async function isGitHubConnected(): Promise<boolean> {
-  const token = await getGitHubToken();
-  return token !== null;
+  try {
+    const token = await getGitHubToken();
+    return token !== null;
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -32,26 +62,160 @@ export async function isGitHubConnected(): Promise<boolean> {
 export async function getGitHubToken(): Promise<GitHubToken | null> {
   const cred = await getCredential('github');
   if (!cred) return null;
-  
+
+  const mode = resolveGitHubAuthMode(cred.headers?.mode);
+  const storedApiBaseUrl = sanitizeGitHubApiBaseUrl(cred.headers?.apiBaseUrl);
+
+  if (mode === 'app') {
+    const appCred = await getCredential('github-app');
+    if (!appCred) return null;
+
+    const appId = String(appCred.headers?.appId || cred.headers?.appId || '').trim();
+    const installationId = String(appCred.headers?.installationId || cred.headers?.installationId || '').trim();
+    const apiBaseUrl = sanitizeGitHubApiBaseUrl(appCred.headers?.apiBaseUrl || storedApiBaseUrl);
+
+    if (!appId || !installationId) {
+      return null;
+    }
+
+    try {
+      const privateKey = normalizeGitHubPrivateKey(appCred.apiKey);
+      const appJwt = createGitHubAppJwt(appId, privateKey);
+      const installationToken = await createGitHubAppInstallationToken({
+        appJwt,
+        installationId,
+        apiBaseUrl,
+      });
+      const scopes = Object.entries(installationToken.permissions || {}).map(
+        ([scope, permission]) => `${scope}:${permission}`
+      );
+
+      return {
+        token: installationToken.token,
+        username: cred.headers?.owner || cred.apiType || `app:${appId}`,
+        scopes,
+        createdAt: appCred.createdAt || cred.createdAt,
+        mode: 'app',
+        appId,
+        installationId,
+        expiresAt: installationToken.expires_at,
+        apiBaseUrl,
+      };
+    } catch {
+      return null;
+    }
+  }
+
   return {
     token: cred.apiKey,
     username: cred.apiType, // We store username in apiType field
-    scopes: cred.headers?.scopes?.split(',') || [],
+    scopes: parseScopes(cred.headers?.scopes),
     createdAt: cred.createdAt,
+    mode,
+    apiBaseUrl: storedApiBaseUrl,
   };
 }
 
 /**
  * Save GitHub token
  */
-export async function saveGitHubToken(token: string, username?: string, scopes: string[] = []): Promise<void> {
+export async function saveGitHubToken(
+  token: string,
+  username?: string,
+  scopes: string[] = [],
+  mode: GitHubAuthMode = 'oauth'
+): Promise<void> {
+  if (mode !== 'app') {
+    await deleteCredential('github-app').catch(() => undefined);
+  }
+
   await saveCredential('github', {
     provider: 'github',
     apiKey: token,
     apiType: username, // Store username in apiType field
-    headers: { scopes: scopes.join(',') },
+    headers: {
+      scopes: scopes.join(','),
+      mode,
+      apiBaseUrl: GITHUB_API_BASE,
+    },
     createdAt: new Date().toISOString(),
   });
+}
+
+/**
+ * Save GitHub App credentials and validate by requesting installation token.
+ */
+export async function saveGitHubAppConnection(input: GitHubAppConnectionInput): Promise<GitHubToken> {
+  const appId = String(input.appId || '').trim();
+  const installationId = String(input.installationId || '').trim();
+  const privateKey = normalizeGitHubPrivateKey(input.privateKey);
+  const apiBaseUrl = sanitizeGitHubApiBaseUrl(input.apiBaseUrl);
+
+  if (!appId) {
+    throw new Error('GitHub App ID is required');
+  }
+  if (!installationId) {
+    throw new Error('GitHub Installation ID is required');
+  }
+
+  const appJwt = createGitHubAppJwt(appId, privateKey);
+  const [installationInfo, installationToken] = await Promise.all([
+    fetchGitHubAppInstallation({
+      appJwt,
+      installationId,
+      apiBaseUrl,
+    }),
+    createGitHubAppInstallationToken({
+      appJwt,
+      installationId,
+      apiBaseUrl,
+    }),
+  ]);
+
+  const owner = installationInfo.account?.login || `app:${appId}`;
+  const scopes = Object.entries(installationToken.permissions || {}).map(
+    ([scope, permission]) => `${scope}:${permission}`
+  );
+  const createdAt = new Date().toISOString();
+
+  await saveCredential('github-app', {
+    provider: 'github-app',
+    apiKey: privateKey,
+    apiType: 'app-private-key',
+    headers: {
+      appId,
+      installationId,
+      apiBaseUrl: apiBaseUrl || GITHUB_API_BASE,
+    },
+    createdAt,
+  });
+
+  await saveCredential('github', {
+    provider: 'github',
+    apiKey: 'github-app-auth',
+    apiType: owner,
+    headers: {
+      mode: 'app',
+      appId,
+      installationId,
+      owner,
+      scopes: scopes.join(','),
+      apiBaseUrl: apiBaseUrl || GITHUB_API_BASE,
+    },
+    createdAt,
+  });
+
+  return {
+    token: installationToken.token,
+    username: owner,
+    scopes,
+    createdAt,
+    mode: 'app',
+    appId,
+    installationId,
+    expiresAt: installationToken.expires_at,
+    apiBaseUrl: apiBaseUrl || GITHUB_API_BASE,
+  };
 }
 
 /**
@@ -59,6 +223,7 @@ export async function saveGitHubToken(token: string, username?: string, scopes: 
  */
 export async function disconnectGitHub(): Promise<void> {
   await deleteCredential('github');
+  await deleteCredential('github-app').catch(() => undefined);
 }
 
 /**
@@ -202,6 +367,7 @@ export async function startGitHubOAuthFlow(): Promise<{ authUrl: string; waitFor
   return { authUrl, waitForCallback };
 }
 
+
 /**
  * Close server and all connections
  */
@@ -256,9 +422,11 @@ export async function githubApiRequest(
     method?: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE';
     body?: any;
     token: string;
+    apiBaseUrl?: string;
   }
 ): Promise<any> {
-  const url = endpoint.startsWith('http') ? endpoint : `${GITHUB_API_BASE}${endpoint}`;
+  const apiBaseUrl = await resolveGitHubApiBaseUrl(options.apiBaseUrl);
+  const url = endpoint.startsWith('http') ? endpoint : `${apiBaseUrl}${endpoint}`;
   
   const response = await fetch(url, {
     method: options.method || 'GET',
@@ -298,6 +466,144 @@ export async function githubApiRequest(
  */
 export async function getGitHubUser(token: string): Promise<{ login: string; id: number }> {
   return githubApiRequest('/user', { token });
+}
+
+function parseScopes(scopesValue?: string): string[] {
+  return String(scopesValue || '')
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function resolveGitHubAuthMode(mode?: string): GitHubAuthMode {
+  if (mode === 'app' || mode === 'pat' || mode === 'oauth') {
+    return mode;
+  }
+  return 'oauth';
+}
+
+function sanitizeGitHubApiBaseUrl(apiBaseUrl?: string): string {
+  const value = String(apiBaseUrl || '').trim().replace(/\/+$/, '');
+  if (!value) return '';
+  return value;
+}
+
+async function resolveGitHubApiBaseUrl(override?: string): Promise<string> {
+  const fromOverride = sanitizeGitHubApiBaseUrl(override);
+  if (fromOverride) return fromOverride;
+
+  const cred = await getCredential('github').catch(() => null);
+  const fromCredential = sanitizeGitHubApiBaseUrl(cred?.headers?.apiBaseUrl);
+  return fromCredential || GITHUB_API_BASE;
+}
+
+function base64UrlEncode(value: Buffer | string): string {
+  const buffer = Buffer.isBuffer(value) ? value : Buffer.from(value);
+  return buffer
+    .toString('base64')
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/g, '');
+}
+
+function createGitHubAppJwt(appId: string, privateKey: string): string {
+  const nowInSeconds = Math.floor(Date.now() / 1000);
+  const header = base64UrlEncode(JSON.stringify({ alg: 'RS256', typ: 'JWT' }));
+  const payload = base64UrlEncode(JSON.stringify({
+    iat: nowInSeconds - 60,
+    exp: nowInSeconds + (9 * 60),
+    iss: appId,
+  }));
+  const body = `${header}.${payload}`;
+
+  const signer = createSign('RSA-SHA256');
+  signer.update(body);
+  signer.end();
+  const signature = signer.sign(privateKey);
+  return `${body}.${base64UrlEncode(signature)}`;
+}
+
+export function normalizeGitHubPrivateKey(privateKey: string): string {
+  const normalized = String(privateKey || '').trim().replace(/\\n/g, '\n');
+  if (!normalized) {
+    throw new Error('GitHub App private key is required');
+  }
+  if (!normalized.includes('BEGIN') || !normalized.includes('PRIVATE KEY')) {
+    throw new Error('GitHub App private key must be a PEM private key');
+  }
+  return normalized.endsWith('\n') ? normalized : `${normalized}\n`;
+}
+
+async function fetchGitHubAppInstallation(input: {
+  appJwt: string;
+  installationId: string;
+  apiBaseUrl?: string;
+}): Promise<GitHubAppInstallationResponse> {
+  const apiBaseUrl = sanitizeGitHubApiBaseUrl(input.apiBaseUrl) || GITHUB_API_BASE;
+  const response = await fetch(`${apiBaseUrl}/app/installations/${encodeURIComponent(input.installationId)}`, {
+    method: 'GET',
+    headers: {
+      Authorization: `Bearer ${input.appJwt}`,
+      Accept: 'application/vnd.github+json',
+      'User-Agent': 'FoxFang/1.0',
+      'X-GitHub-Api-Version': '2022-11-28',
+    },
+  });
+  const body = await response.text();
+  if (!response.ok) {
+    throw new Error(`GitHub App installation lookup failed: ${extractGitHubApiError(body, response.status)}`);
+  }
+  if (!body) return {};
+  try {
+    return JSON.parse(body) as GitHubAppInstallationResponse;
+  } catch {
+    return {};
+  }
+}
+
+async function createGitHubAppInstallationToken(input: {
+  appJwt: string;
+  installationId: string;
+  apiBaseUrl?: string;
+}): Promise<GitHubAppAccessTokenResponse> {
+  const apiBaseUrl = sanitizeGitHubApiBaseUrl(input.apiBaseUrl) || GITHUB_API_BASE;
+  const response = await fetch(`${apiBaseUrl}/app/installations/${encodeURIComponent(input.installationId)}/access_tokens`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${input.appJwt}`,
+      Accept: 'application/vnd.github+json',
+      'Content-Type': 'application/json',
+      'User-Agent': 'FoxFang/1.0',
+      'X-GitHub-Api-Version': '2022-11-28',
+    },
+    body: JSON.stringify({}),
+  });
+  const body = await response.text();
+  if (!response.ok) {
+    throw new Error(`GitHub App token exchange failed: ${extractGitHubApiError(body, response.status)}`);
+  }
+  let parsed: GitHubAppAccessTokenResponse;
+  try {
+    parsed = JSON.parse(body) as GitHubAppAccessTokenResponse;
+  } catch {
+    throw new Error('GitHub App token exchange failed: Invalid JSON response');
+  }
+  if (!parsed.token) {
+    throw new Error('GitHub App token exchange failed: No access token returned');
+  }
+  return parsed;
+}
+
+function extractGitHubApiError(body: string, status: number): string {
+  try {
+    const parsed = JSON.parse(body);
+    if (typeof parsed?.message === 'string' && parsed.message.trim()) {
+      return parsed.message.trim();
+    }
+  } catch {
+    // ignore parse errors
+  }
+  return `HTTP ${status}`;
 }
 
 /**

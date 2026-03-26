@@ -18,7 +18,7 @@ export interface FetchUrlResult {
 
 export class FetchUrlTool implements Tool {
   name = 'fetch_url';
-  description = 'Fetch and extract content from a website URL. CRITICAL: Call this immediately when user shares any website URL (except x.com/twitter.com). No API key needed. Returns clean article text, title, and links.';
+  description = 'Fetch and extract content from a website URL. CRITICAL: Call this immediately when user shares any website URL (except x.com/twitter.com). No API key needed. Returns clean article text, title, and links. If extracted content is low-signal on JS-rendered pages, use agent_browser as fallback.';
   category = ToolCategory.EXTERNAL;
   parameters = {
     type: 'object' as const,

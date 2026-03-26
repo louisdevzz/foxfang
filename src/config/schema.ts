@@ -182,6 +182,10 @@ export interface GitHubConfig {
   connected?: boolean;
   username?: string;
   connectedAt?: string;
+  mode?: 'oauth' | 'pat' | 'app';
+  appId?: string;
+  installationId?: string;
+  apiBaseUrl?: string;
 }
 
 // Main application configuration

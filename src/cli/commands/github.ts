@@ -34,8 +34,16 @@ export async function registerGitHubCommand(program: Command): Promise<void> {
       
       if (token) {
         console.log(chalk.green('✓ GitHub connected'));
+        console.log(chalk.dim(`  Mode: ${(token.mode || 'oauth').toUpperCase()}`));
         console.log(chalk.dim(`  User: ${token.username || 'unknown'}`));
         console.log(chalk.dim(`  Scopes: ${token.scopes.join(', ')}`));
+        if (token.mode === 'app') {
+          console.log(chalk.dim(`  App ID: ${token.appId || 'unknown'}`));
+          console.log(chalk.dim(`  Installation ID: ${token.installationId || 'unknown'}`));
+          if (token.expiresAt) {
+            console.log(chalk.dim(`  Token expires: ${new Date(token.expiresAt).toLocaleString()}`));
+          }
+        }
         console.log(chalk.dim(`  Connected: ${new Date(token.createdAt).toLocaleString()}`));
       } else {
         console.log(chalk.red('✗ GitHub not connected'));
@@ -56,7 +64,7 @@ export async function registerGitHubCommand(program: Command): Promise<void> {
         
         try {
           const user = await getGitHubUser(options.token);
-          await saveGitHubToken(options.token, user.login, ['repo', 'read:user']);
+          await saveGitHubToken(options.token, user.login, ['repo', 'read:user'], 'pat');
           
           spinner.succeed(chalk.green(`Connected as ${user.login}`));
         } catch (error) {
@@ -127,7 +135,7 @@ export async function registerGitHubCommand(program: Command): Promise<void> {
         
         try {
           const user = await getGitHubUser(token);
-          await saveGitHubToken(token, user.login, ['repo', 'read:user']);
+          await saveGitHubToken(token, user.login, ['repo', 'read:user'], 'pat');
           
           spinner.succeed(chalk.green(`Connected as ${user.login}`));
         } catch (error) {

@@ -120,7 +120,15 @@ export interface AppConfig {
   // Optional web tool API keys (now stored in credentials, config keeps only ref)
   braveSearch?: { apiKey?: string; apiKeyRef?: string };
   firecrawl?: { apiKey?: string; apiKeyRef?: string; baseUrl?: string };
-  github?: { connected?: boolean; username?: string; connectedAt?: string };
+  github?: {
+    connected?: boolean;
+    username?: string;
+    connectedAt?: string;
+    mode?: 'oauth' | 'pat' | 'app';
+    appId?: string;
+    installationId?: string;
+    apiBaseUrl?: string;
+  };
   notion?: { apiKey?: string; apiKeyRef?: string; defaultDatabaseId?: string };
   agents?: Array<{
     id: string;

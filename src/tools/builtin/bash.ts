@@ -33,6 +33,56 @@ const RISKY_COMMANDS = [
   'dd if=',
 ];
 
+const SAFE_COMMAND_PREFIXES = new Set([
+  'ls',
+  'pwd',
+  'cat',
+  'head',
+  'tail',
+  'sed',
+  'awk',
+  'grep',
+  'rg',
+  'find',
+  'echo',
+  'printf',
+  'date',
+  'wc',
+  'stat',
+  'file',
+  'du',
+  'df',
+  'ps',
+  'env',
+  'which',
+  'whereis',
+  'curl',
+  'wget',
+  'jq',
+  'cut',
+  'sort',
+  'uniq',
+  'tr',
+  'dig',
+  'nslookup',
+  'host',
+  'git',
+  'mkdir',
+]);
+
+const SAFE_GIT_SUBCOMMANDS = new Set([
+  'status',
+  'log',
+  'show',
+  'diff',
+  'rev-parse',
+  'branch',
+  'remote',
+  'tag',
+  'ls-files',
+  'grep',
+]);
+
 interface BashSession {
   id: string;
   command: string;
@@ -67,6 +117,93 @@ function isDangerousCommand(command: string): boolean {
 function isRiskyCommand(command: string): boolean {
   const normalized = command.trim().toLowerCase();
   return RISKY_COMMANDS.some(risky => normalized.includes(risky.toLowerCase()));
+}
+
+function splitShellSegments(command: string): string[] {
+  return command
+    .split(/(?:\|\||&&|[|;])/g)
+    .map((segment) => segment.trim())
+    .filter(Boolean);
+}
+
+function firstCommandToken(segment: string): string | undefined {
+  const rawTokens = segment.split(/\s+/).filter(Boolean);
+  if (rawTokens.length === 0) return undefined;
+
+  let idx = 0;
+  while (idx < rawTokens.length && /^[A-Za-z_][A-Za-z0-9_]*=.*/.test(rawTokens[idx])) {
+    idx += 1;
+  }
+
+  const token = rawTokens[idx] || '';
+  if (!token) return undefined;
+  return token.toLowerCase();
+}
+
+function isSafeReadonlyCommand(command: string): { safe: boolean; reason?: string } {
+  const normalized = command.trim();
+  if (!normalized) return { safe: false, reason: 'Empty command' };
+
+  // Block redirection/substitution in safe mode to avoid write side-effects.
+  if (/[><`]/.test(normalized) || /\$\(.+\)/.test(normalized)) {
+    return { safe: false, reason: 'Shell redirection/substitution is not allowed in safe mode' };
+  }
+
+  const segments = splitShellSegments(normalized);
+  if (segments.length === 0) return { safe: false, reason: 'No executable command segment found' };
+
+  for (const segment of segments) {
+    const cmd = firstCommandToken(segment);
+    if (!cmd) {
+      return { safe: false, reason: `Cannot parse command segment: ${segment}` };
+    }
+
+    if (!SAFE_COMMAND_PREFIXES.has(cmd)) {
+      return { safe: false, reason: `Command "${cmd}" is not allowed in safe mode` };
+    }
+
+    if (cmd === 'git') {
+      const tokens = segment.split(/\s+/).filter(Boolean);
+      const sub = (tokens[1] || '').toLowerCase();
+      if (!SAFE_GIT_SUBCOMMANDS.has(sub)) {
+        return { safe: false, reason: `git ${sub || '<missing>'} is not allowed in safe mode` };
+      }
+    }
+
+    if (cmd === 'mkdir') {
+      const mkdirSafety = validateSafeMkdirSegment(segment);
+      if (!mkdirSafety.safe) {
+        return mkdirSafety;
+      }
+    }
+  }
+
+  return { safe: true };
+}
+
+function validateSafeMkdirSegment(segment: string): { safe: boolean; reason?: string } {
+  const tokens = segment.split(/\s+/).filter(Boolean);
+  // tokens[0] is "mkdir"
+  const args = tokens.slice(1);
+  if (args.length === 0) {
+    return { safe: false, reason: 'mkdir requires at least one path' };
+  }
+
+  let hasPath = false;
+  for (const arg of args) {
+    if (arg.startsWith('-')) {
+      if (arg !== '-p' && arg !== '--parents') {
+        return { safe: false, reason: `mkdir option "${arg}" is not allowed in safe mode` };
+      }
+      continue;
+    }
+    hasPath = true;
+  }
+
+  if (!hasPath) {
+    return { safe: false, reason: 'mkdir requires at least one destination path' };
+  }
+  return { safe: true };
 }
 
 function cleanupOldSessions(): void {
@@ -250,8 +387,8 @@ async function executeCommand(
  * Execute a bash command
  */
 export class BashExecTool implements Tool {
-  name = 'bash';
-  description = 'Execute a shell command. Supports timeout, working directory, background execution, and yield windows. Use timeout_ms to limit execution time (default 60s, max 600s). Use background=true to run long commands asynchronously.';
+  name = 'bash_exec';
+  description = 'Execute a shell command. Default mode is safe allowlist (diagnostics + limited ops like mkdir -p). Use mode="full" + confirm=true for broader shell workflows.';
   category = ToolCategory.UTILITY;
   parameters = {
     type: 'object' as const,
@@ -284,6 +421,10 @@ export class BashExecTool implements Tool {
         type: 'object',
         description: 'Environment variables to set',
       },
+      mode: {
+        type: 'string',
+        description: 'Execution mode: "safe" (default, allowlist) or "full" (broader command access).',
+      },
     },
     required: ['command'],
   };
@@ -296,11 +437,13 @@ export class BashExecTool implements Tool {
     yield_ms?: number;
     confirm?: boolean;
     env?: Record<string, string>;
+    mode?: 'safe' | 'full' | string;
   }): Promise<ToolResult> {
     try {
       if (!args.command?.trim()) {
         return { success: false, error: 'No command provided' };
       }
+      const mode = String(args.mode || 'safe').toLowerCase() === 'full' ? 'full' : 'safe';
 
       // Security check
       if (isDangerousCommand(args.command)) {
@@ -310,9 +453,24 @@ export class BashExecTool implements Tool {
         };
       }
 
+      if (mode === 'safe') {
+        const safeCheck = isSafeReadonlyCommand(args.command);
+        if (!safeCheck.safe) {
+          return {
+            success: false,
+            error: `Safe-mode policy blocked command: ${safeCheck.reason}.`,
+            data: {
+              policy: 'safe',
+              command: args.command,
+              hint: 'Use safe allowlist commands (curl, rg, cat, ls, mkdir -p, etc.) or set mode="full".',
+            },
+          };
+        }
+      }
+
       // Warning for risky commands
       let warning = '';
-      if (isRiskyCommand(args.command)) {
+      if (mode === 'full' && isRiskyCommand(args.command)) {
         if (args.confirm !== true) {
           return {
             success: false,
@@ -353,6 +511,7 @@ export class BashExecTool implements Tool {
             exit_code: latest.exitCode,
             workdir: latest.workdir,
             command: latest.command,
+            mode,
             yielded: true,
             yield_ms: yieldMs,
             note: latest.status === 'running'
@@ -379,6 +538,7 @@ export class BashExecTool implements Tool {
           exit_code: session.exitCode,
           workdir: session.workdir,
           command: session.command,
+          mode,
         },
       };
     } catch (error) {
@@ -388,6 +548,14 @@ export class BashExecTool implements Tool {
       };
     }
   }
+}
+
+/**
+ * Backward-compatible alias used by older prompts/workspaces.
+ */
+export class BashLegacyTool extends BashExecTool {
+  name = 'bash';
+  description = 'Alias of bash_exec (backward compatibility).';
 }
 
 /**

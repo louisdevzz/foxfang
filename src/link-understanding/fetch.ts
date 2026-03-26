@@ -5,16 +5,15 @@
  * Tries Firecrawl first (if configured), falls back to native fetch.
  */
 
-import { readFileSync } from 'fs';
-import { join } from 'path';
-import { homedir } from 'os';
 import { isValidUrl } from './detect';
+import { loadConfigWithCredentials } from '../config';
 
 export interface LinkContent {
   url: string;
   title?: string;
   description?: string;
   content: string;
+  source?: 'firecrawl' | 'native' | 'error';
   error?: string;
 }
 
@@ -28,29 +27,40 @@ interface FirecrawlScrapeResult {
   error?: string;
 }
 
-// Lazily-cached Firecrawl config to avoid repeated synchronous I/O
-let _firecrawlConfigCache: { apiKey: string; baseUrl: string } | null = null;
+// Lazily-cached Firecrawl config to avoid repeated config reads
+let _firecrawlConfigCache: { apiKey: string; baseUrl: string; cachedAtMs: number } | null = null;
+const FIRECRAWL_CONFIG_CACHE_TTL_MS = 30_000;
 
-function getFirecrawlConfig(): { apiKey: string; baseUrl: string } {
-  if (_firecrawlConfigCache) return _firecrawlConfigCache;
+async function getFirecrawlConfig(): Promise<{ apiKey: string; baseUrl: string }> {
+  if (_firecrawlConfigCache && (Date.now() - _firecrawlConfigCache.cachedAtMs) < FIRECRAWL_CONFIG_CACHE_TTL_MS) {
+    return {
+      apiKey: _firecrawlConfigCache.apiKey,
+      baseUrl: _firecrawlConfigCache.baseUrl,
+    };
+  }
 
-  // Config file takes priority; env vars are the fallback (matching firecrawl.ts tool)
+  // Config file takes priority; env vars are fallback.
+  // loadConfigWithCredentials resolves apiKeyRef (credential:firecrawl) automatically.
   let fileApiKey = '';
   let fileBaseUrl = '';
   try {
-    const configPath = join(homedir(), '.foxfang', 'foxfang.json');
-    const config = JSON.parse(readFileSync(configPath, 'utf-8'));
+    const config = await loadConfigWithCredentials();
     fileApiKey = config.firecrawl?.apiKey || '';
     fileBaseUrl = config.firecrawl?.baseUrl || '';
   } catch {
-    // Config doesn't exist or is invalid — fall through to env vars
+    // Config unavailable — fall through to env vars.
   }
 
-  _firecrawlConfigCache = {
+  const resolved = {
     apiKey: fileApiKey || process.env.FIRECRAWL_API_KEY || '',
     baseUrl: fileBaseUrl || process.env.FIRECRAWL_BASE_URL || 'https://api.firecrawl.dev',
   };
-  return _firecrawlConfigCache;
+  _firecrawlConfigCache = {
+    ...resolved,
+    cachedAtMs: Date.now(),
+  };
+
+  return resolved;
 }
 
 /** Max response body size for native fetch (500 KB) */
@@ -59,7 +69,7 @@ const MAX_NATIVE_BODY_BYTES = 500 * 1024;
 const NATIVE_FETCH_TIMEOUT_MS = 10_000;
 
 async function scrapeFirecrawl(url: string): Promise<FirecrawlScrapeResult> {
-  const { apiKey, baseUrl } = getFirecrawlConfig();
+  const { apiKey, baseUrl } = await getFirecrawlConfig();
   
   if (!apiKey) {
     return { success: false, error: 'Firecrawl API key not configured' };
@@ -257,6 +267,7 @@ export async function fetchLinkContent(url: string): Promise<LinkContent> {
       title,
       description,
       content: firecrawlResult.markdown || '',
+      source: 'firecrawl',
     };
   }
 
@@ -269,12 +280,14 @@ export async function fetchLinkContent(url: string): Promise<LinkContent> {
       title: nativeResult.metadata?.title,
       description: nativeResult.metadata?.description,
       content: nativeResult.markdown || '',
+      source: 'native',
     };
   }
 
   // Both failed
   return {
     url,
+    source: 'error',
     error: `Firecrawl: ${firecrawlResult.error}, Native: ${nativeResult.error}`,
     content: '',
   };

@@ -12,7 +12,7 @@
  */
 
 import { execSync } from 'child_process';
-import { createHash, randomBytes, scryptSync, createCipheriv, createDecipheriv } from 'crypto';
+import { randomBytes, scryptSync, createCipheriv, createDecipheriv } from 'crypto';
 import { readFileSync, writeFileSync, existsSync, mkdirSync, chmodSync } from 'fs';
 import { homedir } from 'os';
 import { join } from 'path';

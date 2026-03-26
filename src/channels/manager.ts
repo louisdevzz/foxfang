@@ -220,27 +220,6 @@ export class ChannelManager {
     const senderId = String(msgMetadata.senderId || msgMetadata.userId || msgMetadata.authorId || msg.from || '');
     let ackReactionAdded = false;
 
-    // Add "eyes" reaction to acknowledge receipt
-    if (adapter.reactToMessage) {
-      try {
-        await adapter.reactToMessage(msg.id, '👀', chatId, senderId);
-        ackReactionAdded = true;
-      } catch {
-        // Ignore reaction errors
-      }
-    }
-
-    const cleanupAckReaction = async (): Promise<void> => {
-      if (!ackReactionAdded || !adapter.removeReaction) {
-        return;
-      }
-      try {
-        await adapter.removeReaction(msg.id, chatId, senderId);
-      } catch {
-        // Ignore removal errors
-      }
-    };
-
     // Convert to IncomingMessage format
     const metadata = msgMetadata;
     const senderName = String(metadata.senderName || msg.from || 'Unknown');
@@ -269,6 +248,43 @@ export class ChannelManager {
       },
     };
 
+    const requireMentionForChannel = this.shouldRequireMention(msg.channel);
+    const shouldReplyToMessage = this.autoReplyHandler.shouldReply(
+      incomingMessage,
+      botUsername,
+      requireMentionForChannel
+    );
+    if (!shouldReplyToMessage) {
+      const reason = requireMentionForChannel && chatType !== 'private'
+        ? 'mention-required policy (no mention detected)'
+        : 'auto-reply disabled/policy';
+      console.log(
+        `[ChannelManager] ⏭️ Skip reply channel=${msg.channel} kind=${chatKind} reason=${reason}`
+      );
+      return;
+    }
+
+    // Add "eyes" reaction to acknowledge receipt only when message will be processed.
+    if (adapter.reactToMessage) {
+      try {
+        await adapter.reactToMessage(msg.id, '👀', chatId, senderId);
+        ackReactionAdded = true;
+      } catch {
+        // Ignore reaction errors
+      }
+    }
+
+    const cleanupAckReaction = async (): Promise<void> => {
+      if (!ackReactionAdded || !adapter.removeReaction) {
+        return;
+      }
+      try {
+        await adapter.removeReaction(msg.id, chatId, senderId);
+      } catch {
+        // Ignore removal errors
+      }
+    };
+
     try {
       // Use new auto-reply handler
       const result = await this.autoReplyHandler.handleMessage(
@@ -291,7 +307,7 @@ export class ChannelManager {
         },
         // Bot username (for mention checking)
         botUsername,
-        this.shouldRequireMention(msg.channel)
+        requireMentionForChannel
       );
 
       // Log tool calls if any
