@@ -92,14 +92,6 @@ export class KimiCodingProvider implements Provider {
     };
     
     // Debug: log request and response
-    console.log(`[KimiCoding] Request:`, JSON.stringify({
-      model: request.model || 'kimi-code',
-      system: system?.substring(0, 200) + '...',
-      messagesCount: messages.length,
-      toolsCount: request.tools?.length || 0,
-      tools: request.tools?.map(t => t.name),
-    }));
-    console.log(`[KimiCoding] Response content types:`, data.content?.map(c => c.type).join(', '));
     console.log(`[KimiCoding] Tool uses found:`, data.content?.filter(c => c.type === 'tool_use').length || 0);
     
     const result: ChatResponse = {
