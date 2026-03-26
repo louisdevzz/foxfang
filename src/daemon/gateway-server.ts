@@ -2104,7 +2104,7 @@ class GatewayServer {
     this.initializeCronService();
     
     // Connect channels
-    if (this.enabledChannels.length > 0 && this.channelManager) {
+    if (this.enabledChannels.length > 0) {
       this.channelManager.setOrchestrator(this.orchestrator!);
       await this.channelManager.connectAll();
     }
