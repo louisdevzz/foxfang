@@ -202,7 +202,7 @@ export class SessionsSendTool implements Tool {
       };
     }
 
-    const agentId = String(args.agent_id || '').trim() || session.agentId || 'orchestrator';
+    const agentId = String(args.agent_id || '').trim() || session.agentId || 'main';
     const projectId = String(args.project_id || '').trim() || session.projectId || undefined;
 
     const run = await runtime.runtime.orchestrator.run({

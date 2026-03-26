@@ -238,7 +238,7 @@ class GatewayServer {
     this.channelManager = new ChannelManager(this.enabledChannels, {
       autoReply: {
         enabled: true,
-        defaultAgent: 'orchestrator',
+        defaultAgent: 'main',
         requireMention: false,
         replyToMessage: true,
       },
@@ -1407,7 +1407,7 @@ class GatewayServer {
 
   private resolveAutoReplyDefaultAgent(config: any): string {
     const value = this.sanitizeString(config?.autoReply?.defaultAgent);
-    return value || 'orchestrator';
+    return value || 'main';
   }
 
   private resolveAutoReplyDefaultSessionScope(config: any): 'from' | 'chat' | 'thread' | 'chat-thread' {
@@ -1425,7 +1425,7 @@ class GatewayServer {
       // Ignore hydration errors; continue with config-only fallback below.
     }
 
-    const ids = new Set<string>(['orchestrator']);
+    const ids = new Set<string>(['main']);
     for (const agent of agentRegistry.list()) {
       if (agent.id) ids.add(agent.id);
     }
@@ -1443,8 +1443,8 @@ class GatewayServer {
     }
 
     return Array.from(ids).sort((a, b) => {
-      if (a === 'orchestrator') return -1;
-      if (b === 'orchestrator') return 1;
+      if (a === 'main') return -1;
+      if (b === 'main') return 1;
       return a.localeCompare(b);
     });
   }
@@ -2089,7 +2089,7 @@ class GatewayServer {
 
           const result = await this.orchestrator.run({
             sessionId: job.sessionKey || `cron-${job.id}`,
-            agentId: job.agentId || 'orchestrator',
+            agentId: job.agentId || 'main',
             message,
             stream: false,
           });
@@ -2205,7 +2205,7 @@ class GatewayServer {
     // Stream response
     const result = await this.orchestrator.run({
       sessionId: message.sessionId || `gateway-${Date.now()}`,
-      agentId: message.agentId || 'orchestrator',
+      agentId: message.agentId || 'main',
       message: message.content,
       projectId: message.projectId,
       stream: true,

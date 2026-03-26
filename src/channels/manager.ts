@@ -52,7 +52,7 @@ export class ChannelManager {
     this.config = {
       autoReply: {
         enabled: true,
-        defaultAgent: 'orchestrator',
+        defaultAgent: 'main',
         defaultSessionScope: 'chat-thread',
         bindings: [],
         requireMention: false,

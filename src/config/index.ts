@@ -162,7 +162,7 @@ const defaultConfig: AppConfig = {
   autoReply: {
     requireMentionInGroups: false,
     groupActivation: 'always',
-    defaultAgent: 'orchestrator',
+    defaultAgent: 'main',
     defaultSessionScope: 'chat-thread',
     bindings: [],
   },

@@ -1,108 +1,32 @@
 /**
  * Agent Registry
- * 
- * Manages available agents and their configurations.
+ *
+ * Config-driven agent system — no hardcoded agents.
+ * All agents are defined in foxfang.json under agents.list[].
+ * A minimal "main" fallback agent is created only when no agents are configured.
  */
 
 import { loadConfig } from '../config/index';
-import { Agent, AgentRole } from './types';
+import { Agent } from './types';
+import { toolRegistry } from '../tools/index';
 
-const defaultAgents: Agent[] = [
-  {
-    id: 'orchestrator',
-    name: 'Orchestrator',
-    role: 'orchestrator',
-    description: 'Routes tasks to appropriate specialists and manages brand/project setup',
-    systemPrompt: `Handle user requests directly. Route specialized content work to other agents via MESSAGE_AGENT: <agent-id> | <task>.`,
-    tools: [
-      'create_brand', 'list_brands', 'get_brand',
-      'create_project', 'list_projects', 'get_project',
-      'memory_recall', 'memory_search', 'memory_get',
-      'skills_list', 'skills_add',
-      'sessions_spawn', 'sessions_send', 'subagents',
-      'github_connect', 'github_create_issue', 'github_create_pr', 'github_list_issues', 'github_list_prs',
-    ],
-    executionProfile: {
-      modelTier: 'medium',
-      verbosity: 'normal',
-      reasoningDepth: 'normal',
-    },
-  },
-  {
-    id: 'content-specialist',
-    name: 'Content Specialist',
-    role: 'content-specialist',
-    description: 'Creates engaging marketing content and manages content tasks',
-    systemPrompt: `You create marketing content that sounds human, not corporate.
+export const DEFAULT_AGENT_ID = 'main';
 
-Match the brand voice from BRAND.md. Write for the platform — LinkedIn is not Twitter is not email.
-Lead with a hook. End with a clear CTA. Track content tasks when needed.
-
-Skip filler phrases. Write like someone who actually cares about the reader.`,
-    tools: [
-      'web_search', 'brave_search', 'firecrawl_search', 'firecrawl_scrape',
-      'fetch_tweet', 'fetch_user_tweets', 'fetch_url',
-      'notion_search', 'notion_get_page', 'notion_query_database', 'notion_create_page', 'notion_update_page', 'notion_list_databases',
-      'personas_sync',
-      'memory_recall', 'memory_store', 'memory_search', 'memory_get',
-      'create_task', 'list_tasks', 'update_task_status',
-      'skills_list', 'skills_add',
-      'expand_cached_result', 'get_cached_snippet',
-    ],
-    executionProfile: {
-      modelTier: 'large',
-      verbosity: 'high',
-      reasoningDepth: 'deep',
-    },
-  },
-  {
-    id: 'strategy-lead',
-    name: 'Strategy Lead',
-    role: 'strategy-lead',
-    description: 'Plans campaigns, researches, and manages strategic projects',
-    systemPrompt: `You plan marketing campaigns and research strategy — always grounded in data, never in guesswork.
-
-Research the audience and competitors first. Then build the campaign structure, timeline, and messaging.
-Track strategic work through project tasks. If you don't have enough info, ask — don't assume.`,
-    tools: [
-      'web_search', 'brave_search', 'firecrawl_search', 'firecrawl_scrape',
-      'fetch_tweet', 'fetch_user_tweets', 'fetch_url',
-      'notion_search', 'notion_get_page', 'notion_query_database', 'notion_create_page', 'notion_update_page', 'notion_list_databases',
-      'personas_sync',
-      'memory_recall', 'memory_store', 'memory_search', 'memory_get',
-      'create_task', 'list_tasks', 'get_project',
-      'skills_list', 'skills_add',
-      'expand_cached_result', 'get_cached_snippet',
-    ],
-    executionProfile: {
-      modelTier: 'large',
-      verbosity: 'normal',
-      reasoningDepth: 'deep',
-    },
-  },
-  {
-    id: 'growth-analyst',
-    name: 'Growth Analyst',
-    role: 'growth-analyst',
-    description: 'Reviews content, optimizes, and tracks performance',
-    systemPrompt: `You review content and find what's working and what's not.
-
-Evaluate engagement potential, brand alignment (BRAND.md), clarity, and conversion.
-Give specific, actionable feedback — not vague "make it better" notes. Track performance through tasks.`,
-    tools: [
-      'web_search', 'fetch_url',
-      'memory_recall', 'memory_store', 'memory_search', 'memory_get',
-      'create_task', 'list_tasks', 'update_task_status',
-      'skills_list', 'skills_add',
-      'expand_cached_result', 'get_cached_snippet',
-    ],
-    executionProfile: {
-      modelTier: 'small',
-      verbosity: 'low',
-      reasoningDepth: 'normal',
-    },
-  },
-];
+/**
+ * Build the fallback "main" agent with ALL registered tools.
+ * Used only when no agents are configured in foxfang.json.
+ */
+function buildDefaultMainAgent(): Agent {
+  const allToolNames = toolRegistry.getAllSpecs().map(t => t.name);
+  return {
+    id: DEFAULT_AGENT_ID,
+    name: 'Main',
+    role: 'assistant',
+    description: 'Default FoxFang assistant with all available tools',
+    systemPrompt: '',
+    tools: allToolNames,
+  };
+}
 
 function titleCaseFromId(id: string): string {
   return id
@@ -137,11 +61,7 @@ function sanitizeExecutionProfile(value: unknown): Agent['executionProfile'] | u
   ) {
     return undefined;
   }
-  return {
-    modelTier,
-    verbosity,
-    reasoningDepth,
-  };
+  return { modelTier, verbosity, reasoningDepth };
 }
 
 function sanitizeConfigAgent(value: unknown): Agent | null {
@@ -151,14 +71,29 @@ function sanitizeConfigAgent(value: unknown): Agent | null {
   if (!id) return null;
 
   const name = sanitizeString(raw.name) || titleCaseFromId(id);
-  const role = sanitizeString(raw.role) || (id === 'orchestrator' ? 'orchestrator' : 'specialist');
-  const description = sanitizeString(raw.description) || `Dynamic agent: ${name}`;
-  const systemPrompt = sanitizeString(raw.systemPrompt)
-    || `You are ${name} (${id}). Follow user instructions and provide clear, grounded outputs.`;
-  const tools = sanitizeStringArray(raw.tools);
+  const role = sanitizeString(raw.role) || 'assistant';
+  const description = sanitizeString(raw.description) || `Agent: ${name}`;
+  const systemPrompt = sanitizeString(raw.systemPrompt) || '';
+  const isDefault = raw.default === true;
+
+  // Tools: undefined = all tools; [] = no tools; ["tool1"] = specific tools
+  let tools: string[];
+  if (raw.tools === undefined || raw.tools === null) {
+    // No tools specified = give all registered tools
+    tools = toolRegistry.getAllSpecs().map(t => t.name);
+  } else {
+    tools = sanitizeStringArray(raw.tools);
+  }
+
   const model = sanitizeString(raw.model) || undefined;
   const provider = sanitizeString(raw.provider) || undefined;
   const executionProfile = sanitizeExecutionProfile(raw.executionProfile);
+
+  // Skills filter: undefined = all; [] = none; ["skill1"] = specific
+  const skills = raw.skills !== undefined ? sanitizeStringArray(raw.skills) : undefined;
+
+  // Subagent policy
+  const subagents = raw.subagents as Record<string, unknown> | undefined;
 
   return {
     id,
@@ -167,9 +102,15 @@ function sanitizeConfigAgent(value: unknown): Agent | null {
     description,
     systemPrompt,
     tools,
+    isDefault,
+    skills,
     ...(model ? { model } : {}),
     ...(provider ? { provider } : {}),
     ...(executionProfile ? { executionProfile } : {}),
+    ...(subagents ? { subagents: {
+      allowAgents: sanitizeStringArray(subagents.allowAgents),
+      ...(subagents.model ? { model: sanitizeString(subagents.model) } : {}),
+    }} : {}),
   };
 }
 
@@ -178,18 +119,8 @@ class AgentRegistry {
   private configHydrated = false;
   private hydratePromise?: Promise<void>;
 
-  constructor() {
-    for (const agent of defaultAgents) {
-      this.agents.set(agent.id, agent);
-    }
-  }
-
   get(id: string): Agent | undefined {
     return this.agents.get(id);
-  }
-
-  getByRole(role: AgentRole): Agent | undefined {
-    return Array.from(this.agents.values()).find(a => a.role === role);
   }
 
   list(): Agent[] {
@@ -200,19 +131,38 @@ class AgentRegistry {
     this.agents.set(agent.id, agent);
   }
 
+  /**
+   * Resolve the default agent ID.
+   * Priority: agent with default=true → first agent in list → "main"
+   */
+  resolveDefaultAgentId(): string {
+    const defaultAgent = Array.from(this.agents.values()).find(a => a.isDefault);
+    if (defaultAgent) return defaultAgent.id;
+    const first = Array.from(this.agents.values())[0];
+    if (first) return first.id;
+    return DEFAULT_AGENT_ID;
+  }
+
+  /**
+   * Get or create an agent by ID.
+   * If the agent doesn't exist, creates a fallback with all tools.
+   */
   ensure(agentId: string): Agent {
     const existing = this.get(agentId);
     if (existing) return existing;
 
+    // Create a fallback agent on-the-fly with all tools
+    const allToolNames = toolRegistry.getAllSpecs().map(t => t.name);
     const fallback: Agent = {
       id: agentId,
       name: titleCaseFromId(agentId),
-      role: agentId === 'orchestrator' ? 'orchestrator' : 'specialist',
-      description: `Auto-generated fallback agent for "${agentId}"`,
-      systemPrompt: `You are ${titleCaseFromId(agentId)} (${agentId}). Follow user instructions and provide clear, grounded outputs.`,
-      tools: [],
+      role: 'assistant',
+      description: `Agent: ${titleCaseFromId(agentId)}`,
+      systemPrompt: '',
+      tools: allToolNames,
     };
     this.register(fallback);
+    console.log(`[AgentRegistry] Created fallback agent "${agentId}" with ${allToolNames.length} tools`);
     return fallback;
   }
 
@@ -226,14 +176,34 @@ class AgentRegistry {
     this.hydratePromise = (async () => {
       try {
         const config = await loadConfig();
-        const configuredAgents = Array.isArray((config as any)?.agents) ? (config as any).agents : [];
+
+        // Load agents from config.agents (array) or config.agents.list (object)
+        let configuredAgents: unknown[] = [];
+        const agentsField = (config as any)?.agents;
+        if (Array.isArray(agentsField)) {
+          configuredAgents = agentsField;
+        } else if (agentsField && Array.isArray(agentsField.list)) {
+          configuredAgents = agentsField.list;
+        }
+
         for (const candidate of configuredAgents) {
           const sanitized = sanitizeConfigAgent(candidate);
           if (!sanitized) continue;
           this.register(sanitized);
         }
+
+        // If no agents configured, register the default "main" agent
+        if (this.agents.size === 0) {
+          this.register(buildDefaultMainAgent());
+          console.log(`[AgentRegistry] No agents configured, using default "main" agent`);
+        }
+
+        console.log(`[AgentRegistry] Loaded ${this.agents.size} agent(s): ${Array.from(this.agents.keys()).join(', ')}`);
       } catch {
-        // Ignore config hydration failures to keep registry resilient.
+        // Config load failed — ensure at least the default agent exists
+        if (this.agents.size === 0) {
+          this.register(buildDefaultMainAgent());
+        }
       } finally {
         this.configHydrated = true;
       }
@@ -254,4 +224,9 @@ export async function hydrateAgentRegistryFromConfig(force = false): Promise<voi
 export async function ensureAgentRegistered(agentId: string): Promise<Agent> {
   await agentRegistry.hydrateFromConfig();
   return agentRegistry.ensure(agentId);
+}
+
+export async function resolveDefaultAgentId(): Promise<string> {
+  await agentRegistry.hydrateFromConfig();
+  return agentRegistry.resolveDefaultAgentId();
 }

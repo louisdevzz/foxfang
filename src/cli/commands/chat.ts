@@ -17,7 +17,7 @@ export async function registerChatCommand(program: Command): Promise<void> {
   program
     .command('chat')
     .description('Start an interactive chat session with an agent')
-    .option('-a, --agent <agent>', 'Agent ID to use', 'orchestrator')
+    .option('-a, --agent <agent>', 'Agent ID to use', 'main')
     .option('-p, --project <project>', 'Project ID')
     .option('-s, --session <session>', 'Session ID (creates new if not provided)')
     .option('-m, --model <model>', 'Model to use')

@@ -13,38 +13,15 @@ export function resolveTokenBudget(params: {
   const mode = params.mode || 'balanced';
   const mult = modeMultiplier(mode);
 
-  const baseByProfile: Record<'orchestrator' | 'specialist' | 'reviewer', Omit<TokenBudget, 'remainingInputTokens' | 'remainingOutputTokens'>> = {
-    orchestrator: {
-      requestMaxInputTokens: 12000,
-      requestMaxOutputTokens: 2048,
-      maxToolIterations: 5,
-      maxDelegations: 1,
-      maxReviewPasses: 0,
-    },
-    specialist: {
-      requestMaxInputTokens: 8000,
-      requestMaxOutputTokens: 2048,
-      maxToolIterations: 5,
-      maxDelegations: 0,
-      maxReviewPasses: 0,
-    },
-    reviewer: {
-      requestMaxInputTokens: 8000,
-      requestMaxOutputTokens: 2048,
-      maxToolIterations: 3,
-      maxDelegations: 0,
-      maxReviewPasses: 0,
-    },
+  // Single default profile — all agents get the same budget.
+  // Agents differentiate by model tier and tools, not token budget.
+  const base = {
+    requestMaxInputTokens: 12000,
+    requestMaxOutputTokens: 2048,
+    maxToolIterations: 5,
+    maxDelegations: 0,
+    maxReviewPasses: 0,
   };
-
-  const normalizedAgentId = (params.agentId || '').toLowerCase();
-  const profile = normalizedAgentId === 'orchestrator'
-    ? 'orchestrator'
-    : /(review|reviewer|analyst|analysis|audit|qa|quality|critic)/i.test(normalizedAgentId)
-      ? 'reviewer'
-      : 'specialist';
-
-  const base = baseByProfile[profile];
 
   const requestMaxInputTokens = Math.floor(base.requestMaxInputTokens * mult);
   const requestMaxOutputTokens = Math.floor(base.requestMaxOutputTokens * mult);

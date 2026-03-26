@@ -1,8 +1,9 @@
 /**
- * Agent Orchestrator
+ * Agent Executor
  *
- * Clean direct-execution pattern following.
- * user -> orchestrator -> agent with full system prompt (SOUL.md personality).
+ * Executes agent runs with session management, history pruning, and tracing.
+ * No orchestrator agent — routing is deterministic via config bindings.
+ * The model self-delegates to sub-agents via sessions_spawn tool.
  */
 
 import {
@@ -13,8 +14,8 @@ import {
   RunRequest,
   RunResponse,
 } from './types';
-import { agentRegistry, ensureAgentRegistered } from './registry';
-import { parseDirectives, runAgent, runAgentStream } from './runtime';
+import { agentRegistry, ensureAgentRegistered, resolveDefaultAgentId } from './registry';
+import { runAgent, runAgentStream } from './runtime';
 import { resolveTokenBudget } from './budget';
 import { pruneHistory, estimateTotalTokens } from './compaction';
 import { SessionManager } from '../sessions/manager';
@@ -24,13 +25,11 @@ import { WorkspaceManager } from '../workspace/manager';
 import { buildRollingSessionSummary } from '../sessions/summary';
 import { addAgentUsage, addToolTelemetry, createRequestTrace, flushRequestTrace } from '../observability/request-trace';
 
-function sanitizeSegment(value: string, maxLength = 60): string {
-  return value
-    .trim()
-    .replace(/[^a-zA-Z0-9._-]+/g, '_')
-    .slice(0, maxLength);
-}
-
+/**
+ * AgentOrchestrator — the execution engine for agent runs.
+ * Despite the name (kept for backward compatibility), this is NOT an orchestrator agent.
+ * It simply executes whatever agent is resolved for the request.
+ */
 export class AgentOrchestrator {
   private sessionManager: SessionManager;
   private workspaceManager?: WorkspaceManager;
@@ -44,14 +43,11 @@ export class AgentOrchestrator {
     this.workspaceManager = workspaceManager;
   }
 
-  private buildSubAgentSessionId(parentSessionId: string, agentId: string): string {
-    return `${parentSessionId}__agent__${sanitizeSegment(agentId, 40)}`;
-  }
-
   async process(request: AgentRequest): Promise<AgentResponse> {
+    const defaultAgentId = await resolveDefaultAgentId();
     const result = await this.run({
       sessionId: request.sessionId || `session-${Date.now()}`,
-      agentId: 'orchestrator',
+      agentId: defaultAgentId,
       message: request.query,
       projectId: request.projectId,
     });
@@ -92,8 +88,8 @@ export class AgentOrchestrator {
       });
     }
 
-    // Direct execution — full system prompt with SOUL.md personality
-    const directAgent = await ensureAgentRegistered(request.agentId);
+    // Resolve the agent — fully config-driven
+    const agent = await ensureAgentRegistered(request.agentId);
     const userId = request.userId || 'default_user';
 
     // Use minimal prompt mode for channel sessions to reduce token usage
@@ -113,7 +109,7 @@ export class AgentOrchestrator {
       });
       prunedMessages = pruned.messages;
       if (pruned.droppedCount > 0) {
-        console.log(`[Orchestrator] ✂️ Pruned ${pruned.droppedCount} old messages (${rawTokens} → ${pruned.keptTokens} est. tokens)`);
+        console.log(`[AgentExecutor] ✂️ Pruned ${pruned.droppedCount} old messages (${rawTokens} → ${pruned.keptTokens} est. tokens)`);
       }
     }
 
@@ -122,7 +118,7 @@ export class AgentOrchestrator {
       projectId: request.projectId,
       userId,
       messages: prunedMessages,
-      tools: directAgent.tools || [],
+      tools: agent.tools || [],
       workspace: this.workspaceManager,
       budget,
       promptMode,
@@ -140,48 +136,11 @@ export class AgentOrchestrator {
         : undefined);
       addToolTelemetry(trace, result.toolTelemetry);
 
-      // Handle MESSAGE_AGENT delegation
-      const currentDelegationDepth = request.delegationDepth ?? 0;
-      const maxDelegations = Math.max(0, agentContext.budget?.maxDelegations ?? 1);
-      const directives = parseDirectives(result.content);
-      if (directives.length > 0 && currentDelegationDepth < maxDelegations) {
-        const directive = directives[0];
-        if (directive.type === 'MESSAGE_AGENT' && directive.target) {
-          trace.numberOfDelegations += 1;
-          trace.totalLatencyMs = Date.now() - requestStartedAt;
-          flushRequestTrace(trace);
-          return this.run({
-            ...request,
-            delegationDepth: currentDelegationDepth + 1,
-            sessionId: this.buildSubAgentSessionId(request.sessionId, directive.target),
-            agentId: directive.target,
-            message: undefined,
-            messages: [
-              ...messages,
-              {
-                role: 'assistant',
-                content: `Routing to ${directive.target}: ${directive.payload}`,
-                timestamp: new Date(),
-              },
-            ],
-            stream: false,
-          });
-        }
-      }
+      const content = result.content;
 
-      let directContent = result.content;
-      if (directives.length > 0 && currentDelegationDepth >= maxDelegations) {
-        const stripped = directContent.replace(/MESSAGE_AGENT:\s*[^\n]+/gi, '').trim();
-        directContent = stripped || 'Delegation limit reached. Please clarify the exact next step to continue.';
-      }
-      const yieldDirective = directives.find((d) => d.type === 'YIELD');
-      if ((!directContent || !directContent.trim()) && yieldDirective?.payload) {
-        directContent = yieldDirective.payload;
-      }
-
-      if (directContent.length > 50) {
+      if (content.length > 50) {
         storeMemory(
-          `Agent ${request.agentId}: ${directContent.slice(0, 200)}...`,
+          `Agent ${request.agentId}: ${content.slice(0, 200)}...`,
           'pattern',
           { projectId: request.projectId, importance: 7 },
         );
@@ -189,15 +148,15 @@ export class AgentOrchestrator {
 
       await this.sessionManager.addMessage(request.sessionId, {
         role: 'assistant',
-        content: directContent,
+        content,
         timestamp: Date.now(),
       });
 
       runResponse = {
-        content: directContent,
+        content,
         messages: [
           ...messages,
-          { role: 'assistant', content: directContent, timestamp: new Date() },
+          { role: 'assistant', content, timestamp: new Date() },
         ],
         toolCalls: result.toolCalls,
       };
@@ -219,13 +178,8 @@ export class AgentOrchestrator {
 
   private async runStreaming(agentId: string, context: AgentContext): Promise<RunResponse> {
     await ensureAgentRegistered(agentId);
-
     const stream = runAgentStream(agentId, context);
-
-    return {
-      content: '',
-      stream,
-    };
+    return { content: '', stream };
   }
 
   getAvailableTools() {
