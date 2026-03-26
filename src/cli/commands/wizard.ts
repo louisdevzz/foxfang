@@ -17,7 +17,7 @@ import { initDatabase } from '../../database/sqlite';
 import { runMigrations } from '../../compat';
 import { saveCredential, deleteCredential, isKeychainAvailable, migrateFromConfig } from '../../credentials/index';
 import { isGitHubConnected, saveGitHubToken, startGitHubOAuthFlow } from '../../integrations/github';
-import { agentRegistry, hydrateAgentRegistryFromConfig } from '../../agents/registry';
+import { agentRegistry, hydrateAgentRegistryFromConfig, resolveDefaultAgentId } from '../../agents/registry';
 import { loginWithDeviceCode } from '../../providers/github-copilot';
 
 // Available providers with metadata
@@ -192,13 +192,20 @@ async function buildAgentSelectOptions(config: any): Promise<AgentSelectOption[]
     // Keep setup resilient even if agent hydration fails.
   }
 
+  // Resolve the default agent ID from the registry (or config fallback)
+  const defaultId = agentRegistry.resolveDefaultAgentId();
+
   const ids = new Set<string>();
-  ids.add('main');
+  ids.add(defaultId);
   for (const agent of agentRegistry.list()) {
     if (agent.id) ids.add(agent.id);
   }
 
-  const configuredAgents = Array.isArray(config?.agents) ? config.agents : [];
+  const configuredAgents = Array.isArray(config?.agents)
+    ? config.agents
+    : Array.isArray(config?.agents?.list)
+    ? config.agents.list
+    : [];
   for (const candidate of configuredAgents) {
     const id = String(candidate?.id || '').trim();
     if (id) ids.add(id);
@@ -221,8 +228,8 @@ async function buildAgentSelectOptions(config: any): Promise<AgentSelectOption[]
   });
 
   options.sort((a, b) => {
-    if (a.value === 'main') return -1;
-    if (b.value === 'main') return 1;
+    if (a.value === defaultId) return -1;
+    if (b.value === defaultId) return 1;
     return a.value.localeCompare(b.value);
   });
   return options;

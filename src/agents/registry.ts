@@ -2,7 +2,7 @@
  * Agent Registry
  *
  * Config-driven agent system — no hardcoded agents.
- * All agents are defined in foxfang.json under agents.list[].
+ * All agents are defined in foxfang.json under either agents[] or agents.list[].
  * A minimal "main" fallback agent is created only when no agents are configured.
  */
 
@@ -13,19 +13,20 @@ import { toolRegistry } from '../tools/index';
 export const DEFAULT_AGENT_ID = 'main';
 
 /**
- * Build the fallback "main" agent with ALL registered tools.
- * Used only when no agents are configured in foxfang.json.
+ * Build the fallback "main" agent whose tool list is resolved lazily at runtime
+ * so that tools added after this agent is registered are still available.
  */
 function buildDefaultMainAgent(): Agent {
-  const allToolNames = toolRegistry.getAllSpecs().map(t => t.name);
   return {
     id: DEFAULT_AGENT_ID,
     name: 'Main',
     role: 'assistant',
     description: 'Default FoxFang assistant with all available tools',
     systemPrompt: '',
-    tools: allToolNames,
-  };
+    get tools() {
+      return toolRegistry.getAllSpecs().map((t) => t.name);
+    },
+  } as Agent;
 }
 
 function titleCaseFromId(id: string): string {
@@ -76,13 +77,20 @@ function sanitizeConfigAgent(value: unknown): Agent | null {
   const systemPrompt = sanitizeString(raw.systemPrompt) || '';
   const isDefault = raw.default === true;
 
-  // Tools: undefined = all tools; [] = no tools; ["tool1"] = specific tools
+  // Tools:
+  //   - undefined or null  => no tools (safe default; requires explicit opt-in)
+  //   - ['*'] (or including '*') => all registered tools
+  //   - ['tool1', 'tool2'] => specific tools
   let tools: string[];
   if (raw.tools === undefined || raw.tools === null) {
-    // No tools specified = give all registered tools
-    tools = toolRegistry.getAllSpecs().map(t => t.name);
+    // No tools specified = grant no tools by default (safe)
+    tools = [];
   } else {
     tools = sanitizeStringArray(raw.tools);
+    // Explicit wildcard opt-in: '*' means all registered tools
+    if (tools.includes('*')) {
+      tools = toolRegistry.getAllSpecs().map(t => t.name);
+    }
   }
 
   const model = sanitizeString(raw.model) || undefined;
@@ -143,26 +151,45 @@ class AgentRegistry {
     return DEFAULT_AGENT_ID;
   }
 
+  private static readonly MAX_DYNAMIC_FALLBACKS = 50;
+  private dynamicFallbackCount = 0;
+
   /**
    * Get or create an agent by ID.
-   * If the agent doesn't exist, creates a fallback with all tools.
+   * Unknown agent IDs result in a safe fallback with NO tools to avoid
+   * unintentionally bypassing tool allowlists. Callers should use
+   * resolveDefaultAgentId() to obtain a known-valid agent ID before calling ensure().
    */
   ensure(agentId: string): Agent {
     const existing = this.get(agentId);
     if (existing) return existing;
 
-    // Create a fallback agent on-the-fly with all tools
-    const allToolNames = toolRegistry.getAllSpecs().map(t => t.name);
+    // Guard against memory exhaustion from many unique user-supplied agent IDs.
+    if (this.dynamicFallbackCount >= AgentRegistry.MAX_DYNAMIC_FALLBACKS) {
+      console.warn(`[AgentRegistry] Dynamic fallback limit reached; returning resolved default for unknown agent "${agentId}".`);
+      return this.get(this.resolveDefaultAgentId()) ?? this.list()[0] ?? {
+        id: DEFAULT_AGENT_ID,
+        name: 'Main',
+        role: 'assistant',
+        description: 'Default FoxFang assistant',
+        systemPrompt: '',
+        tools: [],
+      };
+    }
+
+    // Create a safe fallback agent with no tools so that user-controlled
+    // agentId inputs cannot bypass tool allowlists.
     const fallback: Agent = {
       id: agentId,
       name: titleCaseFromId(agentId),
       role: 'assistant',
       description: `Agent: ${titleCaseFromId(agentId)}`,
       systemPrompt: '',
-      tools: allToolNames,
+      tools: [],
     };
     this.register(fallback);
-    console.log(`[AgentRegistry] Created fallback agent "${agentId}" with ${allToolNames.length} tools`);
+    this.dynamicFallbackCount++;
+    console.warn(`[AgentRegistry] Unknown agent "${agentId}" — created safe fallback with no tools. Configure this agent in foxfang.json to grant capabilities.`);
     return fallback;
   }
 

@@ -37,3 +37,4 @@ tmp/
 .tmp/
 .pnpm-store/
 .claude
+package-lock.json
