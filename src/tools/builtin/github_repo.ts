@@ -278,10 +278,10 @@ Prefer this over fetch_url for GitHub repository URLs.`;
         `Description: ${repoInfo.description || 'No description'}`,
       ];
 
-      if (Array.isArray(repoInfo.topics) && repoInfo.topics.length > 0) {
-        outputLines.push(`Topics: ${repoInfo.topics.join(', ')}`);
-      }
       if (includeMetadata) {
+        if (Array.isArray(repoInfo.topics) && repoInfo.topics.length > 0) {
+          outputLines.push(`Topics: ${repoInfo.topics.join(', ')}`);
+        }
         outputLines.push(`Visibility: ${repoInfo.private ? 'private' : 'public'}`);
         outputLines.push(`Default branch: ${repoInfo.default_branch || 'unknown'}`);
         outputLines.push(`Stars: ${repoInfo.stargazers_count ?? 0}`);
@@ -299,28 +299,35 @@ Prefer this over fetch_url for GitHub repository URLs.`;
       }
       if (readmeSummarySource) {
         outputLines.push('');
-        outputLines.push('README summary source:');
+        outputLines.push('README:');
         outputLines.push(readmeSummarySource);
+      }
+
+      const overviewData: Record<string, any> = {
+        fullName: repoInfo.full_name,
+        description: repoInfo.description,
+        htmlUrl: repoInfo.html_url,
+      };
+
+      if (includeMetadata) {
+        if (Array.isArray(repoInfo.topics) && repoInfo.topics.length > 0) {
+          overviewData.topics = repoInfo.topics;
+        }
+        overviewData.private = Boolean(repoInfo.private);
+        overviewData.defaultBranch = repoInfo.default_branch;
+        overviewData.stars = repoInfo.stargazers_count;
+        overviewData.forks = repoInfo.forks_count;
+        overviewData.openIssues = repoInfo.open_issues_count;
+        overviewData.primaryLanguage = repoInfo.language;
+        overviewData.pushedAt = repoInfo.pushed_at;
       }
 
       return {
         success: true,
         output: outputLines.join('\n'),
         data: {
-          repo: {
-            fullName: repoInfo.full_name,
-            description: repoInfo.description,
-            private: Boolean(repoInfo.private),
-            defaultBranch: repoInfo.default_branch,
-            stars: repoInfo.stargazers_count,
-            forks: repoInfo.forks_count,
-            openIssues: repoInfo.open_issues_count,
-            primaryLanguage: repoInfo.language,
-            topics: repoInfo.topics || [],
-            htmlUrl: repoInfo.html_url,
-            pushedAt: repoInfo.pushed_at,
-          },
-          languages: Object.fromEntries(languages),
+          repo: overviewData,
+          languages: includeLanguages ? Object.fromEntries(languages) : undefined,
           contentsAccess: hasContentsAccess,
           readme: readmeSummarySource || undefined,
           readmeTruncated: Boolean(readmeText && readmeSummarySource && readmeSummarySource.length < readmeText.length),

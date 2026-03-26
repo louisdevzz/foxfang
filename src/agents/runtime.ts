@@ -379,6 +379,7 @@ function buildToolCallStyleSection(agent: Agent, promptMode: PromptMode): string
     lines.push('Use `github_connect` only for auth/setup checks. Do not use `github_connect` itself as a repo-reading tool.');
     lines.push('If the user says "read this repo" or asks for a repo overview, start with only the project description plus a concise README-based summary.');
     lines.push('Do not inspect files, code structure, language breakdown, or repo metadata unless the user explicitly asks for them.');
+    lines.push('When summarizing a repo overview, state the README meaning directly. Do not preface with phrases like "Based on the README".');
   }
 
   if (hasAgentBrowserTool) {
