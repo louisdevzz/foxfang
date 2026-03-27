@@ -122,6 +122,8 @@ export interface CommandContext {
   message: IncomingMessage;
   args: string[];
   sessionId: string;
+  /** Send an async reply back to the originating channel (used for deferred responses) */
+  sendReply?: (payload: ReplyPayload) => Promise<void>;
 }
 
 export type CommandHandler = (ctx: CommandContext) => Promise<ReplyPayload | null>;

@@ -266,10 +266,10 @@ function repairToolCallForContext(
     reasons.push(`inferred url from conversation (${firstUrl})`);
   }
 
-  if (toolCall.name === 'agent_browser' && !hasUrl) {
+  if (toolCall.name === 'browser' && !hasUrl) {
     args.url = firstUrl;
-    if (typeof args.mode !== 'string' || !args.mode.trim()) {
-      args.mode = 'read';
+    if (!args.action) {
+      args.action = 'open';
     }
     repaired = true;
     reasons.push(`inferred browser url from conversation (${firstUrl})`);
@@ -423,7 +423,7 @@ function buildToolCallStyleSection(agent: Agent, promptMode: PromptMode): string
   lines.push(promptMode === 'minimal' ? MINIMAL_TOOL_CALL_STYLE_GUIDANCE : TOOL_CALL_STYLE_GUIDANCE);
 
   const toolSet = new Set((agent.tools || []).map((tool) => String(tool || '').trim()));
-  const hasAgentBrowserTool = toolSet.has('agent_browser');
+  const hasBrowserTool = toolSet.has('browser');
   const hasBashTool = toolSet.has('bash_exec') || toolSet.has('bash');
   const hasGitHubRepoReadTools =
     toolSet.has('github_get_repo')
@@ -444,14 +444,13 @@ function buildToolCallStyleSection(agent: Agent, promptMode: PromptMode): string
     lines.push('Only claim GitHub access or permission problems when a GitHub tool explicitly reports a permission error. Do not infer permission problems from missing query/path or an unsuccessful search attempt.');
   }
 
-  if (hasAgentBrowserTool) {
-    lines.push('For visual/UI page tasks (footer/header/nav/button text, what is visible), prefer `agent_browser` over static crawl.');
+  if (hasBrowserTool) {
+    lines.push('For visual/UI page tasks (footer/header/nav/button text, what is visible), prefer `browser` over static crawl.');
     lines.push('If browser execution is blocked/failing repeatedly, choose fallback tools (`fetch_url`, `firecrawl_*`, or search) yourself instead of stopping.');
-    lines.push('When using `agent_browser` for multi-step navigation, use `mode: "script"` with explicit command sequences decided by the agent.');
-    lines.push('Treat `mode: "read"` as minimal baseline only (open + snapshot unless extra flags are explicitly provided).');
+    lines.push('When using `browser` for multi-step navigation, chain actions like "open" -> "snapshot" -> "act" with explicit action sequences decided by the agent.');
+    lines.push('For snapshots, use refs="aria" for stable references that work across multiple calls.');
   } else if (hasBashTool) {
-    lines.push('For visual/UI page tasks, use the `agent-browser` skill and run the `agent-browser` CLI via `bash_exec`.');
-    lines.push('Use `bash_exec` with `mode: "full"` for `agent-browser ...` commands (safe mode allowlist will block non-allowlisted binaries).');
+    lines.push('For visual/UI page tasks, use the `browser` tool if available.');
     lines.push('Avoid `fetch_url` as the primary tool for interactive/JS-rendered page inspection.');
   }
 
@@ -664,7 +663,7 @@ function normalizeMediaPathCandidate(value: unknown): string | undefined {
 }
 
 function collectMediaUrlsFromToolData(toolName: string, data: unknown): string[] {
-  if (toolName !== 'agent_browser' || !data || typeof data !== 'object') return [];
+  if (toolName !== 'browser' || !data || typeof data !== 'object') return [];
 
   const obj = data as Record<string, unknown>;
   const urls: string[] = [];
@@ -718,7 +717,7 @@ function readNestedString(value: unknown, maxChars: number): string | undefined 
   return undefined;
 }
 
-function compactAgentBrowserPayload(rawData: unknown): {
+function compactBrowserPayload(rawData: unknown): {
   compact: CompactToolResult;
   rawSize: number;
   compactSize: number;
@@ -727,32 +726,26 @@ function compactAgentBrowserPayload(rawData: unknown): {
   const rawSize = rawText.length;
   const obj = rawData && typeof rawData === 'object' ? (rawData as Record<string, unknown>) : {};
 
-  const stepsRaw = Array.isArray(obj.steps) ? obj.steps : [];
-  const steps = stepsRaw
-    .filter((item): item is Record<string, unknown> => !!item && typeof item === 'object')
-    .map((item) => ({
-      command: String(item.command || '').trim() || '(unknown)',
-      ok: item.ok === true,
-      timedOut: item.timedOut === true,
-      exitCode: typeof item.exitCode === 'number' ? item.exitCode : null,
-    }));
-
-  const failed = steps.filter((step) => !step.ok);
-  const mediaUrls = collectMediaUrlsFromToolData('agent_browser', rawData);
-  const snapshotExcerpt = readNestedString(obj.snapshot, 700);
-  const selectorExcerpt = readNestedString(obj.selectorText, 420) || readNestedString(obj.focus, 420);
+  const mediaUrls = collectMediaUrlsFromToolData('browser', rawData);
+  
+  // Handle browser tool format
+  const snapshot = (obj as Record<string, unknown>).snapshot || ((obj as Record<string, unknown>).data as Record<string, unknown>)?.snapshot;
+  const snapshotExcerpt = typeof snapshot === 'string' 
+    ? snapshot.slice(0, 700) 
+    : readNestedString((obj as Record<string, unknown>).snapshot, 700);
+  const selectorExcerpt = readNestedString((obj as Record<string, unknown>).selectorText, 420) || readNestedString((obj as Record<string, unknown>).focus, 420);
+  
+  // Extract action info for browser tool
+  const action = (obj as Record<string, unknown>).action || ((obj as Record<string, unknown>).data as Record<string, unknown>)?.action;
+  const targetId = (obj as Record<string, unknown>).targetId || ((obj as Record<string, unknown>).data as Record<string, unknown>)?.targetId;
+  const url = (obj as Record<string, unknown>).url || ((obj as Record<string, unknown>).data as Record<string, unknown>)?.url;
 
   const keyPoints: string[] = [];
-  if (steps.length > 0) {
-    keyPoints.push(`steps: ${steps.length} total (${steps.length - failed.length} ok, ${failed.length} failed)`);
+  if (action) {
+    keyPoints.push(`action: ${action}${targetId ? ` (tab: ${targetId})` : ''}`);
   }
-  if (failed.length > 0) {
-    keyPoints.push(
-      `failed steps: ${failed
-        .slice(0, 4)
-        .map((step) => `${step.command}${step.timedOut ? ' (timeout)' : ''}${step.exitCode !== null ? ` (exit=${step.exitCode})` : ''}`)
-        .join(', ')}`,
-    );
+  if (url) {
+    keyPoints.push(`url: ${url}`);
   }
   if (snapshotExcerpt) {
     keyPoints.push(`snapshot excerpt: ${snapshotExcerpt}`);
@@ -764,36 +757,29 @@ function compactAgentBrowserPayload(rawData: unknown): {
     keyPoints.push(`media: ${mediaUrls.slice(0, 3).join(', ')}`);
   }
   if (keyPoints.length === 0) {
-    keyPoints.push('Browser run completed. Use returned step list and rerun targeted commands as needed.');
+    keyPoints.push('Browser run completed. Use returned data and rerun targeted actions as needed.');
   }
 
   const summaryParts: string[] = [];
-  summaryParts.push(
-    steps.length > 0
-      ? `agent-browser steps=${steps.length} ok=${steps.length - failed.length} failed=${failed.length}`
-      : 'agent-browser completed',
-  );
-  if (failed.length > 0) {
-    summaryParts.push(`last failure=${failed[failed.length - 1]?.command || '(unknown)'}`);
-  }
+  summaryParts.push(`browser action=${action || 'completed'}`);
   if (mediaUrls.length > 0) {
     summaryParts.push(`screenshot=${mediaUrls[0]}`);
   }
 
   let rawRef: string | undefined;
   if (rawSize > TOOL_COMPRESSION_THRESHOLD_CHARS) {
-    rawRef = cacheToolResult('agent_browser', rawData).rawRef;
+    rawRef = cacheToolResult('browser', rawData).rawRef;
   }
 
   const compact: CompactToolResult = {
-    source: 'agent_browser',
-    title: 'agent-browser run',
+    source: 'browser',
+    title: 'browser action',
     summary: compactText(summaryParts.join(' | '), TOOL_SUMMARY_MAX_CHARS),
     keyPoints: keyPoints.slice(0, 6),
     relevanceToTask:
-      failed.length === 0 && (snapshotExcerpt || selectorExcerpt || mediaUrls.length > 0)
-        ? 'Use the captured snapshot, selector text, and screenshot to answer the user directly. Do not rerun the same browser read unless you need a different selector, interaction, or page state.'
-        : 'Use snapshot/selector excerpts and failed-step info to decide the next explicit browser commands.',
+      snapshotExcerpt || selectorExcerpt || mediaUrls.length > 0
+        ? 'Use the captured snapshot, selector text, and screenshot to answer the user directly. Do not rerun the same browser action unless you need a different selector, interaction, or page state.'
+        : 'Use snapshot/selector excerpts and any error info to decide the next explicit browser actions.',
     ...(rawRef ? { rawRef } : {}),
   };
 
@@ -997,8 +983,8 @@ function compactToolPayload(toolName: string, rawData: unknown): {
   rawSize: number;
   compactSize: number;
 } {
-  if (toolName === 'agent_browser') {
-    return compactAgentBrowserPayload(rawData);
+  if (toolName === 'browser') {
+    return compactBrowserPayload(rawData);
   }
   if (toolName === 'github_list_repo_files') {
     return compactGitHubListRepoFilesPayload(rawData);
@@ -1328,19 +1314,19 @@ export function adjustToolsForIntent(context: AgentContext, tools: Array<{
       ['brave_search', 9],
       ['firecrawl_scrape', 10],
       ['firecrawl_search', 11],
-      ['agent_browser', 12],
+      ['browser', 12],
       ['bash_exec', 13],
       ['bash', 13],
     ]);
     return prioritize(priority);
   }
 
-  if (!toolNames.has('agent_browser') || !looksLikeVisualBrowserIntent(context)) {
+  if (!toolNames.has('browser') || !looksLikeVisualBrowserIntent(context)) {
     return tools;
   }
 
   const visualAllowed = new Set([
-    'agent_browser',
+    'browser',
     'fetch_url',
     'bash_exec',
     'bash',
@@ -1348,7 +1334,7 @@ export function adjustToolsForIntent(context: AgentContext, tools: Array<{
   const visualScoped = tools.filter((tool) => visualAllowed.has(tool.name));
   if (visualScoped.length > 0) {
     const priority = new Map<string, number>([
-      ['agent_browser', 0],
+      ['browser', 0],
       ['fetch_url', 1],
       ['bash_exec', 2],
       ['bash', 2],
@@ -1364,7 +1350,7 @@ export function adjustToolsForIntent(context: AgentContext, tools: Array<{
   }
 
   const priority = new Map<string, number>([
-    ['agent_browser', 0],
+    ['browser', 0],
     ['bash_exec', 1],
     ['bash', 1],
     ['fetch_url', 3],
@@ -1403,7 +1389,7 @@ function selectSkillsForPrompt(params: {
   const browserSkill = params.skills.find((skill) => {
     const id = String(skill.id || '').toLowerCase();
     const name = String(skill.name || '').toLowerCase();
-    return id === 'agent-browser' || name === 'agent-browser' || name.includes('agent-browser');
+    return id === 'browser' || name === 'browser' || name.includes('browser');
   });
   const scored = params.skills
     .map((skill) => ({
@@ -2949,32 +2935,11 @@ async function executeToolCalls(toolCalls: ToolCall[]): Promise<ToolResult[]> {
       return `command="${command}" mode=${mode}${workdir}${background}`;
     }
 
-    if (toolName === 'agent_browser') {
-      const mode = String(args?.mode || 'read').trim().toLowerCase() || 'read';
-      if (mode === 'script') {
-        const commands = Array.isArray(args?.commands) ? args.commands : [];
-        const preview = commands
-          .slice(0, 4)
-          .map((item: any) => {
-            const command = String(item?.command || '').trim() || '(unknown)';
-            const cmdArgs = Array.isArray(item?.args)
-              ? item.args.slice(0, 4).map((v: unknown) => String(v))
-              : [];
-            return compactForLog([command, ...cmdArgs].join(' '), 90);
-          })
-          .join(' -> ');
-        const tail = commands.length > 4 ? ' -> ...' : '';
-        return `mode=script steps=${commands.length}${preview ? ` flow="${preview}${tail}"` : ''}`;
-      }
-
-      const url = compactForLog(args?.url || '', 180);
-      const goal = typeof args?.goal === 'string' && args.goal.trim()
-        ? ` goal="${compactForLog(args.goal, 140)}"`
-        : '';
-      const selector = typeof args?.selector === 'string' && args.selector.trim()
-        ? ` selector="${compactForLog(args.selector, 120)}"`
-        : '';
-      return `mode=read${url ? ` url="${url}"` : ''}${goal}${selector}`;
+    if (toolName === 'browser') {
+      const action = String(args?.action || '').trim() || '(unknown)';
+      const url = compactForLog(args?.targetUrl || args?.url || '', 180);
+      const targetId = args?.targetId ? ` tab=${args.targetId}` : '';
+      return `action=${action}${url ? ` url="${url}"` : ''}${targetId}`;
     }
 
     return `args=${compactForLog(args, 220)}`;

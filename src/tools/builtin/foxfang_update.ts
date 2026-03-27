@@ -40,7 +40,7 @@ export class FoxFangUpdateTool implements Tool {
     timeout?: number;
   }): Promise<ToolResult> {
     try {
-      const channel = normalizeUpdateChannel(args.channel);
+      const channel = normalizeUpdateChannel(args.channel || 'stable');
       const timeoutMs = (args.timeout || 1200) * 1000;
       const noRestart = args.no_restart || false;
       

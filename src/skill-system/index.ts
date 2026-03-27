@@ -40,7 +40,7 @@ export interface LoadSkillsOptions {
 
 const DEFAULT_MAX_CONTENT_CHARS = 12_000;
 const DEFAULT_MAX_PROMPT_SKILLS = 40;
-const AGENT_BROWSER_GUIDE_FILENAME = 'AGENT_BROWSER_COMMANDS.md';
+const BROWSER_GUIDE_FILENAME = 'BROWSER_COMMANDS.md';
 
 function isDirectory(pathname: string): boolean {
   try {
@@ -99,11 +99,11 @@ export function resolveBundledSkillsDir(): string | null {
   return null;
 }
 
-function resolveAgentBrowserGuideSourcePath(): string | null {
+function resolveBrowserGuideSourcePath(): string | null {
   const candidates = [
-    join(process.cwd(), 'docs', AGENT_BROWSER_GUIDE_FILENAME),
-    join(__dirname, '..', '..', 'docs', AGENT_BROWSER_GUIDE_FILENAME),
-    join(__dirname, '..', 'docs', AGENT_BROWSER_GUIDE_FILENAME),
+    join(process.cwd(), 'docs', BROWSER_GUIDE_FILENAME),
+    join(__dirname, '..', '..', 'docs', BROWSER_GUIDE_FILENAME),
+    join(__dirname, '..', 'docs', BROWSER_GUIDE_FILENAME),
   ];
 
   const seen = new Set<string>();
@@ -122,19 +122,19 @@ function resolveAgentBrowserGuideSourcePath(): string | null {
   return null;
 }
 
-export function syncAgentBrowserGuide(homeDir?: string): {
+export function syncBrowserGuide(homeDir?: string): {
   copied: boolean;
   targetPath?: string;
   reason?: string;
 } {
   const home = resolveFoxFangHomePath(homeDir);
-  const sourcePath = resolveAgentBrowserGuideSourcePath();
+  const sourcePath = resolveBrowserGuideSourcePath();
   if (!sourcePath) {
     return { copied: false, reason: 'source-missing' };
   }
 
-  const targetDir = join(resolveManagedSkillsDir(home), 'agent-browser');
-  const targetPath = join(targetDir, AGENT_BROWSER_GUIDE_FILENAME);
+  const targetDir = join(resolveManagedSkillsDir(home), 'browser');
+  const targetPath = join(targetDir, BROWSER_GUIDE_FILENAME);
 
   try {
     mkdirSync(targetDir, { recursive: true });

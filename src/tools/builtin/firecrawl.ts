@@ -138,7 +138,7 @@ export class FirecrawlSearchTool implements Tool {
  */
 export class FirecrawlScrapeTool implements Tool {
   name = 'firecrawl_scrape';
-  description = 'Scrape and extract content from a URL using Firecrawl (requires API key). Returns clean markdown, links, and metadata. Use for static extraction/research, not as the primary tool for footer/header/nav/button text, visible page layout, or scrolling tasks; prefer `agent_browser` first.';
+  description = 'Scrape and extract content from a URL using Firecrawl (requires API key). Returns clean markdown, links, and metadata. Use for static extraction/research, not as the primary tool for footer/header/nav/button text, visible page layout, or scrolling tasks; prefer the `browser` tool if enabled.';
   category = ToolCategory.EXTERNAL;
   parameters = {
     type: 'object' as const,

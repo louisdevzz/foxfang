@@ -13,6 +13,7 @@ import { registerConfigCommand } from './commands/config';
 import { registerWizardCommand } from './commands/wizard';
 import { registerChannelsCommand } from './commands/channels';
 import { registerGitHubCommand } from './commands/github';
+import { registerBrowserCommand } from './commands/browser';
 import { registerSessionsCommand } from './commands/sessions';
 import { registerMemoryCommand } from './commands/memory';
 import { registerStatusCommand } from './commands/status';
@@ -46,8 +47,9 @@ export async function buildProgram(): Promise<Command> {
   await registerConfigCommand(program);
   await registerWizardCommand(program);
   await registerChannelsCommand(program);
-  await registerGitHubCommand(program);
-  await registerSessionsCommand(program);
+await registerGitHubCommand(program);
+await registerBrowserCommand(program);
+await registerSessionsCommand(program);
   await registerMemoryCommand(program);
   await registerStatusCommand(program);
   await registerOutreachCommand(program);
@@ -70,6 +72,9 @@ ${chalk.cyan('Examples:')}
   ${chalk.dim('$')} foxfang channels telegram send --message "Hello"
   ${chalk.dim('$')} foxfang github login
   ${chalk.dim('$')} foxfang github issue create --repo owner/repo --title "[Feature]: Add new feature"
+  ${chalk.dim('$')} foxfang browser setup
+  ${chalk.dim('$')} foxfang browser status
+  ${chalk.dim('$')} foxfang browser start
   ${chalk.dim('$')} foxfang outreach contacts add --channel signal --identifier +1234567890
   ${chalk.dim('$')} foxfang outreach campaigns create --name "Product Launch" --type broadcast --list LIST_ID
   ${chalk.dim('$')} foxfang outreach campaigns launch CAMPAIGN_ID

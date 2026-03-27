@@ -18,7 +18,7 @@ export interface FetchUrlResult {
 
 export class FetchUrlTool implements Tool {
   name = 'fetch_url';
-  description = 'Fetch and extract static page content from a website URL (HTML text, title, links). Best for article-like/static content. Do not use this as the primary tool for footer/header/nav/button text, what-is-visible, or scroll/click tasks; prefer browser automation (`agent_browser` if enabled, otherwise agent-browser CLI via `bash_exec`).';
+  description = 'Fetch and extract static page content from a website URL (HTML text, title, links). Best for article-like/static content. Do not use this as the primary tool for footer/header/nav/button text, what-is-visible, or scroll/click tasks; prefer the `browser` tool if enabled.';
   category = ToolCategory.EXTERNAL;
   parameters = {
     type: 'object' as const,

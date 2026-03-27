@@ -1,10 +1,13 @@
 /**
  * Command Registry
- * 
+ *
  * Slash command handling for auto-reply system.
  */
 
 import { ReplyPayload, CommandRegistry, CommandContext } from './types';
+import { runUpdate } from '../infra/update-runner';
+import { writeRestartSentinel } from '../infra/restart-sentinel';
+import { scheduleRespawnAndExit } from '../infra/process-respawn';
 
 export class CommandRegistryManager {
   private commands: Map<string, CommandRegistry> = new Map();
@@ -127,6 +130,47 @@ export function registerBuiltinCommands(registry: CommandRegistryManager): void 
     handler: async (ctx) => {
       return {
         text: '✅ New session started. Previous context cleared.',
+      };
+    },
+  });
+
+  // Update command - pull latest from main and restart
+  registry.register({
+    name: 'update',
+    description: 'Update FoxFang to the latest version from main',
+    requireAuth: true,
+    handler: async (ctx) => {
+      const channel = ctx.message.channel;
+      const chatId = ctx.message.chat?.id ?? ctx.message.from.id;
+      const threadId = ctx.message.threadId;
+
+      // Run update in the background so we can reply immediately
+      setImmediate(async () => {
+        const result = await runUpdate();
+
+        if (result.status !== 'ok') {
+          const reason = result.reason ?? 'unknown';
+          await ctx.sendReply?.({
+            text: `❌ Update failed (${reason}). The agent is still running on the previous version.`,
+          });
+          return;
+        }
+
+        // Write sentinel so the restarted daemon can notify the user
+        await writeRestartSentinel({
+          channel,
+          chatId,
+          threadId,
+          message: '✅ FoxFang updated successfully. I\'m back online!',
+          triggeredAt: Date.now(),
+        });
+
+        // Exit — the service manager (launchd / systemd) restarts the daemon
+        await scheduleRespawnAndExit();
+      });
+
+      return {
+        text: '⏳ Updating FoxFang from main branch... I\'ll notify you when done (or if something fails).',
       };
     },
   });

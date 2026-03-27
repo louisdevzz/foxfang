@@ -593,138 +593,146 @@ async function runGitHubWizardInline(config: any, options?: { optionalPrompt?: b
   }
 }
 
-function isAgentBrowserInstalled(): boolean {
-  try {
-    const probe = spawnSync('agent-browser', ['--help'], {
-      stdio: ['ignore', 'pipe', 'pipe'],
-      encoding: 'utf8',
-    });
-    if (probe.error) return false;
-    if (probe.status === 0) return true;
-    const combined = `${String(probe.stdout || '')}\n${String(probe.stderr || '')}`;
-    return /agent-browser/i.test(combined);
-  } catch {
-    return false;
-  }
-}
-
-function isCommandAvailable(command: string, probeArgs: string[] = ['--help']): boolean {
-  try {
-    const probe = spawnSync(command, probeArgs, {
-      stdio: ['ignore', 'pipe', 'pipe'],
-      encoding: 'utf8',
-    });
-    if (probe.error) return false;
-    return probe.status === 0;
-  } catch {
-    return false;
-  }
-}
-
-async function runInstallCommand(command: string, args: string[]): Promise<void> {
-  await new Promise<void>((resolve, reject) => {
-    const child = spawn(command, args, {
-      stdio: ['ignore', 'pipe', 'pipe'],
-      shell: false,
-    });
-
-    let stderr = '';
-    let stdout = '';
-
-    child.stdout.on('data', (chunk: Buffer) => {
-      stdout += chunk.toString('utf8');
-    });
-    child.stderr.on('data', (chunk: Buffer) => {
-      stderr += chunk.toString('utf8');
-    });
-
-    child.on('error', (error) => {
-      reject(error);
-    });
-
-    child.on('close', (code) => {
-      if (code === 0) {
-        resolve();
-        return;
-      }
-      const detail = [stderr.trim(), stdout.trim()].filter(Boolean).join('\n');
-      reject(new Error(`${command} ${args.join(' ')} exited with code ${code}${detail ? `\n${detail}` : ''}`));
-    });
+/**
+ * Browser Setup Wizard
+ * Helps users configure browser automation capabilities
+ */
+async function runBrowserWizardInline(config: any): Promise<void> {
+  console.log(chalk.dim('\n--- Browser Setup ---\n'));
+  
+  const enableBrowser = await confirm({
+    message: 'Enable browser automation for web scraping and interaction?',
+    initialValue: false,
   });
-}
 
-async function ensureAgentBrowserSetup(): Promise<void> {
-  console.log(chalk.dim('\n--- Agent Browser Setup ---\n'));
-  const s = spinner();
-  s.start('Checking agent-browser...');
-
-  if (isAgentBrowserInstalled()) {
-    s.stop(chalk.green('✓ agent-browser already installed'));
+  if (isCancel(enableBrowser) || !enableBrowser) {
+    console.log(chalk.dim('Browser automation disabled. You can enable it later by editing ~/.foxfang/foxfang.json'));
     return;
   }
 
-  s.stop(chalk.yellow('agent-browser not found'));
-
-  const platform = process.platform;
-  const isMacOS = platform === 'darwin';
-  const isLinux = platform === 'linux';
+  const s = spinner();
+  s.start('Configuring browser...');
 
   try {
-    if (isMacOS) {
-      if (isCommandAvailable('brew', ['--version'])) {
-        s.start('Installing agent-browser via Homebrew (please wait)...');
-        await runInstallCommand('brew', ['install', 'agent-browser']);
-        s.stop(chalk.green('✓ agent-browser Homebrew install complete'));
-      } else {
-        s.start('Installing agent-browser globally with npm (please wait)...');
-        await runInstallCommand('npm', ['install', '-g', 'agent-browser']);
-        s.stop(chalk.green('✓ agent-browser global install complete'));
+    // Check if Playwright is installed
+    try {
+      const check = spawnSync('npx', ['playwright', '--version'], {
+        stdio: ['ignore', 'pipe', 'pipe'],
+        encoding: 'utf8',
+        timeout: 10000,
+      });
+      
+      if (check.status !== 0) {
+        s.stop(chalk.yellow('⚠ Playwright not found'));
+        
+        const installPlaywright = await confirm({
+          message: 'Playwright is required for browser automation. Install it now?',
+          initialValue: true,
+        });
+
+        if (installPlaywright && !isCancel(installPlaywright)) {
+          s.start('Installing Playwright...');
+          
+          await new Promise<void>((resolve, reject) => {
+            const child = spawn('npm', ['install', '-g', 'playwright'], {
+              stdio: ['ignore', 'pipe', 'pipe'],
+            });
+            
+            let stderr = '';
+            child.stderr?.on('data', (chunk) => {
+              stderr += chunk.toString();
+            });
+            
+            child.on('close', (code) => {
+              if (code === 0) {
+                resolve();
+              } else {
+                reject(new Error(`npm install failed: ${stderr}`));
+              }
+            });
+            
+            child.on('error', (err) => {
+              reject(err);
+            });
+          });
+          
+          s.stop(chalk.green('✓ Playwright installed'));
+          s.start('Installing browser binaries...');
+          
+          // Install browser binaries
+          await new Promise<void>((resolve, reject) => {
+            const child = spawn('npx', ['playwright', 'install', 'chromium'], {
+              stdio: ['ignore', 'pipe', 'pipe'],
+            });
+            
+            let stderr = '';
+            child.stderr?.on('data', (chunk) => {
+              stderr += chunk.toString();
+            });
+            
+            child.on('close', (code) => {
+              if (code === 0) {
+                resolve();
+              } else {
+                reject(new Error(`playwright install failed: ${stderr}`));
+              }
+            });
+            
+            child.on('error', (err) => {
+              reject(err);
+            });
+          });
+          
+          s.stop(chalk.green('✓ Browser binaries installed'));
+        } else {
+          console.log(chalk.yellow('⚠ Browser automation requires Playwright. Install manually:'));
+          console.log(chalk.dim('  npm install -g playwright'));
+          console.log(chalk.dim('  npx playwright install chromium'));
+          return;
+        }
       }
+    } catch (error) {
+      s.stop(chalk.yellow('⚠ Could not check Playwright installation'));
+      console.log(chalk.dim('Please ensure Playwright is installed:'));
+      console.log(chalk.dim('  npm install -g playwright'));
+      console.log(chalk.dim('  npx playwright install chromium'));
+    }
 
-      s.start('Downloading Chrome for Testing (please wait)...');
-      await runInstallCommand('agent-browser', ['install']);
-      s.stop(chalk.green('✓ Agent Browser installed successfully'));
+    // Configure browser settings
+    const headless = await confirm({
+      message: 'Run browser in headless mode (no visible window)?',
+      initialValue: true,
+    });
+
+    if (isCancel(headless)) {
+      console.log(chalk.dim('Browser setup cancelled.'));
       return;
     }
 
-    if (isLinux) {
-      s.start('Installing agent-browser globally (please wait)...');
-      await runInstallCommand('npm', ['install', '-g', 'agent-browser']);
-      s.stop(chalk.green('✓ agent-browser global install complete'));
+    // Update config
+    config.browser = {
+      enabled: true,
+      port: 9222,
+      host: 'localhost',
+      headless: headless,
+      defaultProfile: 'default',
+      autoStart: true,
+    };
 
-      s.start('Installing Linux browser dependencies + Chrome (please wait)...');
-      await runInstallCommand('agent-browser', ['install', '--with-deps']);
-      s.stop(chalk.green('✓ Agent Browser installed successfully'));
-      return;
-    }
-
-    s.start('Installing agent-browser globally (please wait)...');
-    await runInstallCommand('npm', ['install', '-g', 'agent-browser']);
-    s.stop(chalk.green('✓ agent-browser global install complete'));
-
-    s.start('Downloading Chrome for Testing (please wait)...');
-    await runInstallCommand('agent-browser', ['install']);
-    s.stop(chalk.green('✓ Agent Browser installed successfully'));
+    await saveConfig(config);
+    s.stop(chalk.green('✓ Browser configured successfully'));
+    
+    console.log(chalk.dim('\nBrowser automation is now enabled.'));
+    console.log(chalk.dim('You can manage it with:'));
+    console.log(chalk.dim('  foxfang browser start'));
+    console.log(chalk.dim('  foxfang browser stop'));
+    console.log(chalk.dim('  foxfang browser status'));
+    
   } catch (error) {
-    s.stop(chalk.yellow('⚠ Agent Browser auto-install failed'));
-    console.log(chalk.yellow('\n⚠ Could not auto-install agent-browser.'));
-    console.log(chalk.dim(`Reason: ${error instanceof Error ? error.message : String(error)}`));
-    console.log(chalk.dim('\nRun manually:'));
-
-    if (isMacOS) {
-      console.log(chalk.dim('  brew install agent-browser'));
-      console.log(chalk.dim('  agent-browser install'));
-      return;
-    }
-
-    if (isLinux) {
-      console.log(chalk.dim('  npm install -g agent-browser'));
-      console.log(chalk.dim('  agent-browser install --with-deps'));
-      return;
-    }
-
-    console.log(chalk.dim('  npm install -g agent-browser'));
-    console.log(chalk.dim('  agent-browser install'));
+    s.stop(chalk.red('✗ Browser setup failed'));
+    console.log(chalk.red(`Error: ${error instanceof Error ? error.message : String(error)}`));
+    console.log(chalk.dim('\nYou can configure browser manually later by editing:'));
+    console.log(chalk.dim('  ~/.foxfang/foxfang.json'));
   }
 }
 
@@ -1638,7 +1646,7 @@ async function runSetupWizard() {
 
   await runGitHubWizardInline(config, { optionalPrompt: true });
 
-  await ensureAgentBrowserSetup();
+  await runBrowserWizardInline(config);
   
   // Print helpful tips after setup
   printSetupTips(configuredProviders.map((p: any) => p.id));

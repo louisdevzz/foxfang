@@ -206,18 +206,6 @@ function validateSafeMkdirSegment(segment: string): { safe: boolean; reason?: st
   return { safe: true };
 }
 
-function isAgentBrowserCommand(command: string): boolean {
-  const text = command.trim().toLowerCase();
-  return (
-    /^agent-browser(?:\s|$)/.test(text) ||
-    /^(?:pnpm\s+(?:exec|dlx)|npx|bunx|yarn\s+dlx)\s+agent-browser(?:@[^\s]+)?(?:\s|$)/.test(text)
-  );
-}
-
-function hasUnsupportedAgentBrowserScriptFlag(command: string): boolean {
-  return /(^|\s)--script(\s|$)/i.test(command);
-}
-
 function cleanupOldSessions(): void {
   const now = Date.now();
   const maxAge = 60 * 60 * 1000; // 1 hour
@@ -458,22 +446,6 @@ export class BashExecTool implements Tool {
       const command = args.command.trim();
       let mode = String(args.mode || 'safe').toLowerCase() === 'full' ? 'full' : 'safe';
       let modeAutoUpgraded = false;
-
-      if (isAgentBrowserCommand(command) && mode === 'safe') {
-        mode = 'full';
-        modeAutoUpgraded = true;
-      }
-
-      if (isAgentBrowserCommand(command) && hasUnsupportedAgentBrowserScriptFlag(command)) {
-        return {
-          success: false,
-          error: 'agent-browser CLI does not support "--script" JavaScript blocks. Use command-by-command CLI calls or `agent-browser batch --json`.',
-          data: {
-            command,
-            hint: 'Example: agent-browser open <url> && agent-browser wait --load networkidle && agent-browser scroll down 1200 && agent-browser snapshot -c -d 12',
-          },
-        };
-      }
 
       // Security check
       if (isDangerousCommand(command)) {

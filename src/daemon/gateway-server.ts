@@ -26,10 +26,13 @@ import { ChannelManager } from '../channels/manager';
 import { CronService } from '../cron/service';
 import { setCronService } from '../tools/builtin/cron';
 import { initCronTables } from '../cron/store';
+import { startBrowserServer, stopBrowserServer } from '../browser/server';
+import type { BrowserConfig } from '../browser/types';
 import { createWorkspaceManager } from '../workspace/manager';
 import { initFoxFangHome } from '../workspace/manager';
 import { GITHUB_OAUTH_PROXY, disconnectGitHub, getGitHubToken, saveGitHubToken } from '../integrations/github';
 import { getCredential, saveCredential } from '../credentials/index';
+import { readAndConsumeRestartSentinel } from '../infra/restart-sentinel';
 
 const PORT = parseInt(
   process.env.FOXFANG_GATEWAY_PORT || process.env.PORT || '8787',
@@ -216,6 +219,7 @@ class GatewayServer {
   private sessionManager: SessionManager | null = null;
   private channelManager: ChannelManager;
   private cronService: CronService | null = null;
+  private browserEnabled = false;
   private startedAt = Date.now();
   private restartScheduled = false;
   private githubOAuthStates: Map<string, number> = new Map();
@@ -2112,11 +2116,36 @@ class GatewayServer {
     
     // Initialize cron service
     this.initializeCronService();
-    
+
+    // Initialize browser service
+    await this.initializeBrowserService();
+
     // Connect channels
     if (this.enabledChannels.length > 0) {
       this.channelManager.setOrchestrator(this.orchestrator!);
       await this.channelManager.connectAll();
+    }
+
+    // Deliver pending restart sentinel (post-update notification)
+    void this.deliverRestartSentinel();
+  }
+
+  private async deliverRestartSentinel(): Promise<void> {
+    const sentinel = await readAndConsumeRestartSentinel();
+    if (!sentinel) return;
+
+    // Give channels a moment to fully settle after connect
+    await new Promise(resolve => setTimeout(resolve, 3000));
+
+    const delivered = await this.channelManager.sendDirectMessage(
+      sentinel.channel,
+      sentinel.chatId,
+      sentinel.message,
+      sentinel.threadId != null ? String(sentinel.threadId) : undefined,
+    );
+
+    if (!delivered) {
+      console.warn(`[Gateway] Could not deliver restart sentinel to ${sentinel.channel}/${sentinel.chatId}`);
     }
   }
 
@@ -2169,6 +2198,47 @@ class GatewayServer {
     setCronService(this.cronService);
     
     console.log('[Gateway] Cron service initialized');
+  }
+
+  private async initializeBrowserService(): Promise<void> {
+    try {
+      const config = await loadConfig().catch(() => ({ browser: { enabled: false } }));
+      if (!config.browser?.enabled) {
+        console.log('[Gateway] Browser service disabled');
+        return;
+      }
+
+      this.browserEnabled = true;
+
+      // Start browser server with defaults
+      const browserConfig = config.browser as BrowserConfig;
+      const port = browserConfig.port || 9222;
+      const host = browserConfig.host || 'localhost';
+
+      await startBrowserServer({
+        config: browserConfig,
+        port,
+        host,
+      });
+
+      console.log(`[Gateway] Browser service initialized on http://${host}:${port}`);
+    } catch (error) {
+      console.error('[Gateway] Browser service initialization failed:', error);
+      // Don't fail gateway startup if browser service fails
+    }
+  }
+
+  private async stopBrowserService(): Promise<void> {
+    if (!this.browserEnabled) {
+      return;
+    }
+
+    try {
+      await stopBrowserServer();
+      console.log('[Gateway] Browser service stopped');
+    } catch (error) {
+      console.error('[Gateway] Error stopping browser service:', error);
+    }
   }
 
   private setupWebSocket(): void {

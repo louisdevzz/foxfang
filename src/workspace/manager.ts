@@ -4,7 +4,7 @@
 import { existsSync, readFileSync, writeFileSync, mkdirSync, statSync } from 'fs';
 import { join } from 'path';
 import { resolveFoxFangHome } from '../config/defaults';
-import { expandHomePath, seedManagedSkills, syncAgentBrowserGuide } from '../skill-system';
+import { expandHomePath, seedManagedSkills, syncBrowserGuide } from '../skill-system';
 import { WorkspaceFile, WorkspaceConfig, IdentityData, UserData, SoulData } from './types';
 import { seedWorkspacePresets } from './preset-seed';
 import {
@@ -101,9 +101,9 @@ export function initFoxFangHome(homeDir?: string): string {
   if (seeded.copied > 0) {
     console.log(`[FoxFang] Seeded ${seeded.copied} default skill(s) to: ${seeded.managedDir}`);
   }
-  const guideSync = syncAgentBrowserGuide(home);
+  const guideSync = syncBrowserGuide(home);
   if (guideSync.copied && guideSync.targetPath) {
-    console.log(`[FoxFang] Synced agent-browser guide: ${guideSync.targetPath}`);
+    console.log(`[FoxFang] Synced browser guide: ${guideSync.targetPath}`);
   }
 
   const presetSeed = seedWorkspacePresets(home);

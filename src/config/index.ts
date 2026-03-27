@@ -130,6 +130,25 @@ export interface AppConfig {
     apiBaseUrl?: string;
   };
   notion?: { apiKey?: string; apiKeyRef?: string; defaultDatabaseId?: string };
+  browser?: {
+    enabled: boolean;
+    defaultProfile?: string;
+    profiles?: Record<string, {
+      name: string;
+      executablePath?: string;
+      userDataDir?: string;
+      headless?: boolean;
+      remoteCdpUrl?: string;
+    }>;
+    executablePath?: string;
+    headless?: boolean;
+    remoteCdpUrl?: string;
+    port?: number;
+    host?: string;
+    ssrfPolicy?: 'allow' | 'block' | 'warn';
+    autoStart?: boolean;
+    attachOnly?: boolean;
+  };
   agents?: Array<{
     id: string;
     name?: string;

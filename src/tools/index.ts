@@ -9,7 +9,7 @@ const { WebSearchTool } = require('./builtin/web_search');
 const { FetchTweetTool, FetchUserTweetsTool } = require('./builtin/tweet_fetcher');
 const { FetchUrlTool } = require('./builtin/fetch_url');
 const { FirecrawlSearchTool, FirecrawlScrapeTool } = require('./builtin/firecrawl');
-const { AgentBrowserTool } = require('./builtin/agent_browser');
+const { BrowserTool } = require('./builtin/browser');
 const { BraveSearchTool } = require('./builtin/brave_search');
 const { MemoryStoreTool, MemoryRecallTool, MemorySearchTool, MemoryGetTool } = require('./builtin/memory');
 const { CreateBrandTool, ListBrandsTool, GetBrandTool } = require('./builtin/brand');
@@ -97,7 +97,7 @@ export function initializeTools(config: Record<string, any>): void {
   toolRegistry.register(new FetchUrlTool());
   toolRegistry.register(new FirecrawlSearchTool());
   toolRegistry.register(new FirecrawlScrapeTool());
-  toolRegistry.register(new AgentBrowserTool());
+  toolRegistry.register(new BrowserTool());
   toolRegistry.register(new BraveSearchTool());
 
   // Memory tools

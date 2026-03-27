@@ -153,6 +153,21 @@ export class ChannelManager {
   }
 
   /**
+   * Send a direct message to a specific channel/chatId.
+   * Used for post-restart sentinel delivery.
+   */
+  async sendDirectMessage(channel: string, chatId: string, text: string, threadId?: string): Promise<boolean> {
+    const adapter = this.adapters.get(channel);
+    if (!adapter) return false;
+    try {
+      await adapter.send(chatId, text, threadId ? { threadId } : undefined);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
    * Register a custom slash command
    */
   registerCommand(

@@ -8,7 +8,7 @@ import { writeFile, mkdir } from 'fs/promises';
 import { existsSync } from 'fs';
 import { join } from 'path';
 import { homedir } from 'os';
-import { seedManagedSkills, syncAgentBrowserGuide } from '../skill-system';
+import { seedManagedSkills, syncBrowserGuide } from '../skill-system';
 
 const TEMPLATES: Record<string, string> = {
   'SOUL.md': `# SOUL — Who You Are 🦊
@@ -500,7 +500,7 @@ export async function bootstrapFoxFang(): Promise<void> {
   }
 
   seedManagedSkills(FOXFANG_DIR);
-  syncAgentBrowserGuide(FOXFANG_DIR);
+  syncBrowserGuide(FOXFANG_DIR);
 }
 
 /**
