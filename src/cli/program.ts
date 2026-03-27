@@ -19,6 +19,7 @@ import { registerStatusCommand } from './commands/status';
 import { registerOutreachCommand } from './commands/outreach';
 import { registerDashboardCommand } from './commands/dashboard';
 import { registerCopilotCommand } from './commands/copilot';
+import { registerUpdateCommand } from './commands/update';
 import { getVersion } from './version';
 
 export async function buildProgram(): Promise<Command> {
@@ -52,6 +53,7 @@ export async function buildProgram(): Promise<Command> {
   await registerOutreachCommand(program);
   await registerDashboardCommand(program);
   await registerCopilotCommand(program);
+  await registerUpdateCommand(program);
 
   // Add help text
   program.addHelpText('after', `
@@ -59,6 +61,9 @@ ${chalk.cyan('Examples:')}
   ${chalk.dim('$')} foxfang run "Create a marketing campaign for Q4"
   ${chalk.dim('$')} foxfang chat --agent foxfang
   ${chalk.dim('$')} foxfang gateway start
+  ${chalk.dim('$')} foxfang update
+  ${chalk.dim('$')} foxfang update --channel dev
+  ${chalk.dim('$')} foxfang update status
   ${chalk.dim('$')} foxfang onboard
   ${chalk.dim('$')} foxfang wizard setup channels
   ${chalk.dim('$')} foxfang channels setup

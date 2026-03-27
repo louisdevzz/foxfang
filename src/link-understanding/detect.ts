@@ -6,9 +6,42 @@
 
 // Match bare URLs (http:// or https://)
 const BARE_LINK_RE = /https?:\/\/[^\s<>"{}|\\^`\[\]]+/gi;
+const SCHEMELESS_LINK_RE =
+  /(^|[\s(<["'`])((?:www\.)?[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+(?:\/[^\s<>"{}|\\^`\[\]]*)?)/gi;
 
 // Match markdown links [text](url)
 const MARKDOWN_LINK_RE = /\[[^\]]*\]\((https?:\/\/[^\s<>"{}|\\^`\[\]]+?)\)/gi;
+const FILE_LIKE_TLDS = new Set([
+  'avif',
+  'cjs',
+  'css',
+  'csv',
+  'gif',
+  'gz',
+  'html',
+  'jpeg',
+  'jpg',
+  'js',
+  'json',
+  'jsx',
+  'lock',
+  'md',
+  'mjs',
+  'pdf',
+  'png',
+  'scss',
+  'sql',
+  'svg',
+  'toml',
+  'ts',
+  'tsx',
+  'txt',
+  'webp',
+  'xml',
+  'yaml',
+  'yml',
+  'zip',
+]);
 
 // IPv4 address pattern
 const IPV4_RE = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/;
@@ -66,6 +99,38 @@ export function extractLinksFromMessage(message: string, opts?: { maxLinks?: num
     // Basic validation
     if (!isValidUrl(url)) continue;
     
+    seen.add(url);
+    results.push(url);
+    
+    if (results.length >= maxLinks) {
+      break;
+    }
+  }
+
+  if (results.length >= maxLinks) {
+    return results;
+  }
+
+  const schemelessSource = markdownStripped.replace(BARE_LINK_RE, ' ');
+  for (const match of schemelessSource.matchAll(SCHEMELESS_LINK_RE)) {
+    const rawCandidate = match[2]?.trim();
+    if (!rawCandidate) continue;
+
+    const normalizedCandidate = rawCandidate
+      .replace(/^[<([{'"`]+/g, '')
+      .replace(/[),.!?\]>}"'`]+$/g, '');
+    if (!normalizedCandidate || normalizedCandidate.includes('@')) continue;
+
+    const hostname = normalizedCandidate.split(/[/?#]/, 1)[0]?.toLowerCase() || '';
+    if (!hostname || hostname === 'localhost' || !hostname.includes('.')) continue;
+
+    const tld = hostname.split('.').pop() || '';
+    if (FILE_LIKE_TLDS.has(tld)) continue;
+
+    const url = `https://${normalizedCandidate}`;
+    if (seen.has(url)) continue;
+    if (!isValidUrl(url)) continue;
+
     seen.add(url);
     results.push(url);
     

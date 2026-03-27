@@ -57,3 +57,14 @@ export async function getGatewayStatus(): Promise<{ running: boolean; platform: 
   const running = await manager.isRunning();
   return { running, platform: manager.platform };
 }
+
+export async function restartGateway(): Promise<void> {
+  const manager = createServiceManager('foxfang-gateway');
+  const isRunning = await manager.isRunning();
+  
+  if (isRunning) {
+    await manager.restart();
+  } else {
+    await manager.start();
+  }
+}

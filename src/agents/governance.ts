@@ -5,6 +5,7 @@
 export const SILENT_REPLY_TOKEN = '[[silent_reply]]';
 export const HEARTBEAT_ACK_TOKEN = 'HEARTBEAT_OK';
 export const REPLY_TO_CURRENT_TAG = '[[reply_to_current]]';
+const TOOL_CALL_BLOCK_RE = /<tool_call\b[\s\S]*?(?:<\/tool_call>|$)/gi;
 
 export type ParsedReplyControls = {
   content: string;
@@ -16,6 +17,34 @@ export type ParsedReplyControls = {
 type ParseOptions = {
   currentMessageId?: string;
 };
+
+export function stripInlineToolCallMarkup(raw: string): string {
+  return String(raw || '')
+    .replace(TOOL_CALL_BLOCK_RE, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
+export function isInternalToolPlaceholderText(raw: string): boolean {
+  const text = String(raw || '').trim();
+  if (!text) return false;
+
+  const normalized = text.toLowerCase();
+  return (
+    normalized === '[tool invocation]' ||
+    normalized === '[tool results]' ||
+    normalized.startsWith('[tool results]') ||
+    /<tool_call\b/i.test(text)
+  );
+}
+
+export function sanitizeReplyTextContent(raw: string): string {
+  const stripped = stripInlineToolCallMarkup(raw);
+  if (!stripped || isInternalToolPlaceholderText(stripped)) {
+    return '';
+  }
+  return stripped;
+}
 
 function trimLeadingControlTags(raw: string): {
   content: string;

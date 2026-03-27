@@ -24,6 +24,8 @@ import { formatSkillsForPrompt, loadAvailableSkills, type SkillDefinition } from
 import { cacheToolResult } from '../tools/tool-result-cache';
 import { resolveTokenBudget, trimMessagesToBudget } from './budget';
 import { getSessionSnapshot, setSessionSnapshot } from '../workspace/manager';
+import { isInternalToolPlaceholderText } from './governance';
+import { extractLinksFromMessage } from '../link-understanding/detect';
 
 let defaultProviderId: string | undefined;
 
@@ -66,8 +68,6 @@ Use tools directly; do not ask the user to perform tool steps.
 Do not end with a progress-only message ("let me continue..."). Continue tool use until you can provide a concrete answer.
 Status/progress-only lines like "I need to scroll more" or "let me continue checking" are not final answers.
 For direct inspection requests, answer the requested question directly from the latest tool results. Do not end by asking whether the user wants a different approach.`;
-
-const URL_IN_TEXT_REGEX = /https?:\/\/[^\s<>"')\]]+/gi;
 
 export function isProgressOnlyStatusUpdate(content: string): boolean {
   const text = String(content || '').trim();
@@ -162,27 +162,23 @@ export function isProgressOnlyStatusUpdate(content: string): boolean {
   return /[:.]$/.test(text) || text.length <= 280;
 }
 
-function normalizeExtractedUrl(url: string): string {
-  return String(url || '')
-    .trim()
-    .replace(/[),.!?\]]+$/g, '');
-}
-
 function extractRecentUrlsFromContext(context: AgentContext): string[] {
   const urls: string[] = [];
   const recentUserMessages = (context.messages || [])
     .filter((item) => item.role === 'user')
     .slice(-8)
     .reverse();
+
   for (const message of recentUserMessages) {
     const content = String(message.content || '');
-    const matches = content.match(URL_IN_TEXT_REGEX) || [];
+    const matches = extractLinksFromMessage(content, { maxLinks: 5 });
     for (const match of matches) {
-      const normalized = normalizeExtractedUrl(match);
+      const normalized = String(match || '').trim();
       if (!normalized || urls.includes(normalized)) continue;
       urls.push(normalized);
     }
   }
+
   return urls;
 }
 
@@ -191,27 +187,25 @@ function looksLikeGitHubRepoUrl(url: string): boolean {
 }
 
 function extractExplicitFileTargetFromContext(context: AgentContext): string | undefined {
-  const recentUserMessages = (context.messages || [])
-    .filter((item) => item.role === 'user')
-    .slice(-6)
-    .reverse();
+  const latestUserMessage = [...(context.messages || [])]
+    .reverse()
+    .find((item) => item.role === 'user');
 
   const patterns = [
     /(?:^|\b)(?:read|show|open|view|inspect|check|display)\s+(?:the\s+)?file\s+[`'"]?([A-Za-z0-9_./-]+)[`'"]?/i,
     /(?:^|\b)file\s+[`'"]?([A-Za-z0-9_./-]+)[`'"]?/i,
+    /(?:^|\b)(?:read|show|open|view|inspect|check|display|summarize)\s+[`'"]?(README(?:\.md)?|DOCKERFILE|[A-Za-z0-9_-]+(?:_[A-Za-z0-9_-]+){1,}(?:\.[A-Za-z0-9_.-]+)?)['"`]?/i,
   ];
 
-  for (const message of recentUserMessages) {
-    const content = String(message.content || '').trim();
-    if (!content) continue;
+  const content = String(latestUserMessage?.content || '').trim();
+  if (!content) return undefined;
 
-    for (const pattern of patterns) {
-      const match = content.match(pattern);
-      const value = String(match?.[1] || '').trim().replace(/^[`'"]+|[`'"]+$/g, '');
-      if (!value) continue;
-      if (/^https?:\/\//i.test(value)) continue;
-      return value;
-    }
+  for (const pattern of patterns) {
+    const match = content.match(pattern);
+    const value = String(match?.[1] || '').trim().replace(/^[`'"]+|[`'"]+$/g, '');
+    if (!value) continue;
+    if (/^https?:\/\//i.test(value)) continue;
+    return value;
   }
 
   return undefined;
@@ -330,16 +324,26 @@ function looksLikeVisualBrowserIntent(context: AgentContext): boolean {
 }
 
 function looksLikeGitHubRepoIntent(context: AgentContext): boolean {
-  const intent = collectRecentUserIntent(context, 8).toLowerCase();
-  if (!intent) return false;
+  const latestIntent = collectLatestUserIntent(context).toLowerCase();
+  if (!latestIntent) return false;
 
-  if (/https?:\/\/github\.com\/[a-z0-9_.-]+\/[a-z0-9_.-]+/i.test(intent)) {
+  if (/https?:\/\/github\.com\/[a-z0-9_.-]+\/[a-z0-9_.-]+/i.test(latestIntent)) {
     return true;
   }
 
-  const hasRepoReference = /\b[a-z0-9_.-]+\/[a-z0-9_.-]+\b/i.test(intent);
-  const hasGitHubCue = /\bgithub\b|\brepo\b|\brepository\b|\bcodebase\b|\bsource\b|\bfile\b|\bfiles\b|\bread this repo\b/i.test(intent);
-  return hasRepoReference && hasGitHubCue;
+  const hasCurrentGitHubCue =
+    /\bgithub\b|\brepo\b|\brepository\b|\bcodebase\b|\bsource\b|\bfile\b|\bfiles\b|\bread this repo\b|\breadme(?:\.md)?\b|\bdockerfile\b|\bbranch\b|\bcommit\b|\bpr\b|\bpull request\b|\bissue\b/i.test(latestIntent);
+  if (!hasCurrentGitHubCue) {
+    return false;
+  }
+
+  const recentIntent = collectRecentUserIntent(context, 8).toLowerCase();
+  const hasCurrentRepoReference = /\b[a-z0-9_.-]+\/[a-z0-9_.-]+\b/i.test(latestIntent);
+  const hasRecentRepoReference =
+    /https?:\/\/github\.com\/[a-z0-9_.-]+\/[a-z0-9_.-]+/i.test(recentIntent)
+    || /\b[a-z0-9_.-]+\/[a-z0-9_.-]+\b/i.test(recentIntent);
+
+  return hasCurrentRepoReference || hasRecentRepoReference;
 }
 
 function looksLikeGitHubRepoOverviewIntent(context: AgentContext): boolean {
@@ -787,7 +791,9 @@ function compactAgentBrowserPayload(rawData: unknown): {
     summary: compactText(summaryParts.join(' | '), TOOL_SUMMARY_MAX_CHARS),
     keyPoints: keyPoints.slice(0, 6),
     relevanceToTask:
-      'Use snapshot/selector excerpts and failed-step info to decide the next explicit browser commands.',
+      failed.length === 0 && (snapshotExcerpt || selectorExcerpt || mediaUrls.length > 0)
+        ? 'Use the captured snapshot, selector text, and screenshot to answer the user directly. Do not rerun the same browser read unless you need a different selector, interaction, or page state.'
+        : 'Use snapshot/selector excerpts and failed-step info to decide the next explicit browser commands.',
     ...(rawRef ? { rawRef } : {}),
   };
 
@@ -1152,6 +1158,22 @@ function collectRecentUserIntent(context: AgentContext, maxMessages = 6): string
     .join('\n');
 }
 
+function collectLatestUserIntent(context: AgentContext): string {
+  const latestUserMessage = [...(context.messages || [])]
+    .reverse()
+    .find((message) => message.role === 'user');
+  return String(latestUserMessage?.content || '');
+}
+
+function buildToolCallLoopSignature(toolCalls: ToolCall[]): string {
+  return JSON.stringify(
+    toolCalls.map((toolCall) => ({
+      name: String(toolCall.name || '').trim(),
+      arguments: toolCall.arguments ?? {},
+    })),
+  );
+}
+
 function scoreSkillForIntent(skill: SkillDefinition, intentTokens: Set<string>): number {
   if (intentTokens.size === 0) return 0;
   const haystack = `${skill.name} ${skill.description}`.toLowerCase();
@@ -1315,6 +1337,30 @@ export function adjustToolsForIntent(context: AgentContext, tools: Array<{
 
   if (!toolNames.has('agent_browser') || !looksLikeVisualBrowserIntent(context)) {
     return tools;
+  }
+
+  const visualAllowed = new Set([
+    'agent_browser',
+    'fetch_url',
+    'bash_exec',
+    'bash',
+  ]);
+  const visualScoped = tools.filter((tool) => visualAllowed.has(tool.name));
+  if (visualScoped.length > 0) {
+    const priority = new Map<string, number>([
+      ['agent_browser', 0],
+      ['fetch_url', 1],
+      ['bash_exec', 2],
+      ['bash', 2],
+    ]);
+    return [...visualScoped].sort((a, b) => {
+      const aPriority = priority.get(a.name) ?? 9;
+      const bPriority = priority.get(b.name) ?? 9;
+      if (aPriority !== bPriority) {
+        return aPriority - bPriority;
+      }
+      return a.name.localeCompare(b.name);
+    });
   }
 
   const priority = new Map<string, number>([
@@ -1958,9 +2004,12 @@ export async function runAgent(
       tier: agent.executionProfile?.modelTier,
     });
   const recentUrls = extractRecentUrlsFromContext(context);
+  const allowGitHubContextRepair = looksLikeGitHubRepoIntent(context);
   const toolContextHints = {
     urls: recentUrls,
-    githubRepoUrl: recentUrls.find((url) => looksLikeGitHubRepoUrl(url)),
+    githubRepoUrl: allowGitHubContextRepair
+      ? recentUrls.find((url) => looksLikeGitHubRepoUrl(url))
+      : undefined,
     explicitFileTarget: extractExplicitFileTargetFromContext(context),
   };
 
@@ -1969,6 +2018,8 @@ export async function runAgent(
   const maxIterations = budget.maxToolIterations;
   let toolErrorStreak = 0;
   let repetitiveNoToolStreak = 0;
+  let repeatedToolCallStreak = 0;
+  let lastToolCallSignature = '';
   const maxRepetitiveNoToolStreak = 2;
   let postToolCompletionPassUsed = false;
   let progressOnlyRepromptCount = 0;
@@ -1984,13 +2035,7 @@ export async function runAgent(
     );
   };
   const isInternalToolPlaceholder = (content: string): boolean => {
-    const text = String(content || '').trim().toLowerCase();
-    if (!text) return false;
-    return (
-      text === '[tool invocation]' ||
-      text === '[tool results]' ||
-      text.startsWith('[tool results]')
-    );
+    return isInternalToolPlaceholderText(content);
   };
   const isLikelyRepetitiveLoopText = (content: string): boolean => {
     const text = String(content || '').trim();
@@ -2256,6 +2301,34 @@ export async function runAgent(
     });
     allToolCalls.push(...toolCallsWithIds);
 
+    const toolCallSignature = buildToolCallLoopSignature(toolCallsWithIds);
+    if (toolCallSignature && toolCallSignature === lastToolCallSignature && (mediaUrls.size > 0 || toolTelemetry.length > 0)) {
+      repeatedToolCallStreak += 1;
+    } else {
+      repeatedToolCallStreak = 0;
+    }
+    lastToolCallSignature = toolCallSignature;
+
+    if (repeatedToolCallStreak >= 2) {
+      try {
+        const finalized = await finalizeWithoutTools(
+          'The same tool call was already executed multiple times successfully. Answer from the existing tool results now and do not call the same tool again.',
+        );
+        const finalizedContent = String(finalized.content || '').trim();
+        if (finalizedContent && !isInternalToolPlaceholder(finalizedContent)) {
+          return {
+            content: finalizedContent,
+            toolCalls: allToolCalls,
+            mediaUrls: mediaUrls.size > 0 ? Array.from(mediaUrls) : undefined,
+            usage: finalized.usage || response.usage,
+            toolTelemetry: toolTelemetry.length > 0 ? toolTelemetry : undefined,
+          };
+        }
+      } catch (error) {
+        debugWarn(`[AgentRuntime] Identical-tool-loop finalization failed: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
+
     const results = await executeToolCalls(toolCallsWithIds);
 
     debugLog(`[AgentRuntime] Tool execution results:`, results.map(r => ({
@@ -2434,9 +2507,12 @@ export async function* runAgentStream(
       tier: agent.executionProfile?.modelTier,
     });
   const recentUrls = extractRecentUrlsFromContext(context);
+  const allowGitHubContextRepair = looksLikeGitHubRepoIntent(context);
   const toolContextHints = {
     urls: recentUrls,
-    githubRepoUrl: recentUrls.find((url) => looksLikeGitHubRepoUrl(url)),
+    githubRepoUrl: allowGitHubContextRepair
+      ? recentUrls.find((url) => looksLikeGitHubRepoUrl(url))
+      : undefined,
     explicitFileTarget: extractExplicitFileTargetFromContext(context),
   };
 
@@ -2444,6 +2520,8 @@ export async function* runAgentStream(
   const maxIterations = budget.maxToolIterations;
   let toolErrorStreak = 0;
   let repetitiveNoToolStreak = 0;
+  let repeatedToolCallStreak = 0;
+  let lastToolCallSignature = '';
   const maxRepetitiveNoToolStreak = 2;
   let postToolCompletionPassUsed = false;
   let progressOnlyRepromptCount = 0;
@@ -2461,13 +2539,7 @@ export async function* runAgentStream(
     );
   };
   const isInternalToolPlaceholderLocal = (content: string): boolean => {
-    const text = String(content || '').trim().toLowerCase();
-    if (!text) return false;
-    return (
-      text === '[tool invocation]' ||
-      text === '[tool results]' ||
-      text.startsWith('[tool results]')
-    );
+    return isInternalToolPlaceholderText(content);
   };
   const isLikelyRepetitiveLoopTextLocal = (content: string): boolean => {
     const text = String(content || '').trim();
@@ -2734,6 +2806,29 @@ export async function* runAgentStream(
       }
 
       debugLog(`[AgentRuntime] Executing ${pendingToolCalls.length} tool calls`);
+      const toolCallSignature = buildToolCallLoopSignature(pendingToolCalls);
+      if (toolCallSignature && toolCallSignature === lastToolCallSignature && (mediaUrls.size > 0 || toolTelemetry.length > 0)) {
+        repeatedToolCallStreak += 1;
+      } else {
+        repeatedToolCallStreak = 0;
+      }
+      lastToolCallSignature = toolCallSignature;
+
+      if (repeatedToolCallStreak >= 2) {
+        try {
+          const finalized = await finalizeWithoutTools(
+            'The same tool call was already executed multiple times successfully. Answer from the existing tool results now and do not call the same tool again.',
+          );
+          const finalizedContent = String(finalized.content || '').trim();
+          if (finalizedContent && !isInternalToolPlaceholderLocal(finalizedContent)) {
+            yield buildDoneChunk(finalizedContent, finalized.usage);
+            return;
+          }
+        } catch (error) {
+          debugWarn(`[AgentRuntime] Stream identical-tool-loop finalization failed: ${error instanceof Error ? error.message : String(error)}`);
+        }
+      }
+
       const results = await executeToolCalls(pendingToolCalls);
 
       const allErrors = results.length > 0 && results.every(r => r.error);

@@ -1,4 +1,8 @@
-import { parseReplyControls } from '../agents/governance';
+import {
+  isInternalToolPlaceholderText,
+  parseReplyControls,
+  sanitizeReplyTextContent,
+} from '../agents/governance';
 import type { StreamChunk, ToolCall } from '../agents/types';
 import { isProgressOnlyStatusUpdate } from '../agents/runtime';
 import type { ReplyDispatcher } from './dispatcher';
@@ -35,17 +39,12 @@ function normalizeComparableText(value: string): string {
 }
 
 function isInternalPlaceholderReply(value: string): boolean {
-  const normalized = String(value || '').trim().toLowerCase();
-  return (
-    normalized === '[tool invocation]' ||
-    normalized === '[tool results]' ||
-    normalized.startsWith('[tool results]')
-  );
+  return isInternalToolPlaceholderText(value);
 }
 
 function sanitizeVisibleText(raw: string, currentMessageId: string): string {
   const parsed = parseReplyControls(raw, { currentMessageId });
-  const visible = String(parsed.content || '').trim();
+  const visible = sanitizeReplyTextContent(String(parsed.content || '').trim());
   if (!visible) return '';
   if (isInternalPlaceholderReply(visible)) return '';
   return visible;
@@ -203,17 +202,16 @@ export function createReplyProjector(options: ReplyProjectorOptions): ReplyProje
       currentMessageId: options.currentMessageId,
     });
     const parsedContentRaw = String(parsedReply.content || '').trim();
-    const sanitizedParsedContent = isInternalPlaceholderReply(parsedContentRaw)
-      ? ''
-      : parsedContentRaw;
+    const sanitizedParsedContent = sanitizeReplyTextContent(parsedContentRaw);
+    const sanitizedRawFinalContent = sanitizeReplyTextContent(rawFinalContent);
     const rawIsInternalPlaceholder = isInternalPlaceholderReply(rawFinalContent);
     const mediaUrl = selectUnsentMediaUrl();
     const fallbackTextFromRaw =
       !sanitizedParsedContent &&
       mediaUrl &&
-      rawFinalContent &&
+      sanitizedRawFinalContent &&
       !rawIsInternalPlaceholder
-        ? rawFinalContent
+        ? sanitizedRawFinalContent
         : '';
     const mediaOnlyFallbackText =
       !sanitizedParsedContent && !fallbackTextFromRaw && mediaUrl

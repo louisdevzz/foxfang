@@ -22,6 +22,7 @@ const { ExpandCachedResultTool, GetCachedSnippetTool } = require('./builtin/cach
 const { SessionsSpawnTool, SessionsSendTool, SubagentsTool } = require('./builtin/subagents');
 const { NotionSearchTool, NotionGetPageTool, NotionQueryDatabaseTool, NotionCreatePageTool, NotionUpdatePageTool, NotionListDatabasesTool } = require('./builtin/notion');
 const { PersonasSyncTool } = require('./builtin/personas');
+const { FoxFangUpdateTool, FoxFangUpdateStatusTool } = require('./builtin/foxfang_update');
 
 export interface ToolInfo {
   name: string;
@@ -154,6 +155,10 @@ export function initializeTools(config: Record<string, any>): void {
 
   // Personas tool
   toolRegistry.register(new PersonasSyncTool());
+
+  // FoxFang update tools
+  toolRegistry.register(new FoxFangUpdateTool());
+  toolRegistry.register(new FoxFangUpdateStatusTool());
 
   console.log(`Initialized ${toolRegistry.list().length} tools`);
 }
