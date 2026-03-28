@@ -14,8 +14,7 @@
     "url": "git+https://github.com/potlock/foxfang.git"
   },
   "bin": {
-    "foxfang": "foxfang.mjs",
-    "openclaw": "foxfang.mjs"
+    "foxfang": "foxfang.mjs"
   },
   "directories": {
     "doc": "docs",
@@ -24,7 +23,6 @@
   "files": [
     "CHANGELOG.md",
     "LICENSE",
-    "foxfang.mjs",
     "foxfang.mjs",
     "README.md",
     "assets/",
