@@ -15,7 +15,7 @@ Runtime: **Node 18+**.
 
 ```bash
 # Clone the repository
-git clone https://github.com/potlock/foxfang.git
+git clone https://github.com/PotLock/foxfang.git
 cd foxfang
 
 # Install dependencies
@@ -185,7 +185,7 @@ No `.env` files needed — the wizard handles all configuration.
 ## Development (from source)
 
 ```bash
-git clone https://github.com/potlock/foxfang.git
+git clone https://github.com/PotLock/foxfang.git
 cd foxfang
 
 pnpm install

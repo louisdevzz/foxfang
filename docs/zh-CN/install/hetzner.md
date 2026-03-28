@@ -106,7 +106,7 @@ docker compose version
 ## 3) 克隆 FoxFang 仓库
 
 ```bash
-git clone https://github.com/foxfang/foxfang.git
+git clone https://github.com/PotLock/foxfang.git
 cd foxfang
 ```
 

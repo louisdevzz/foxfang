@@ -9,10 +9,10 @@ title: "Ansible"
 
 # Ansible Installation
 
-Deploy FoxFang to production servers with **[foxfang-ansible](https://github.com/foxfang/foxfang-ansible)** -- an automated installer with security-first architecture.
+Deploy FoxFang to production servers with **[foxfang-ansible](https://github.com/PotLock/foxfang-ansible)** -- an automated installer with security-first architecture.
 
 <Info>
-The [foxfang-ansible](https://github.com/foxfang/foxfang-ansible) repo is the source of truth for Ansible deployment. This page is a quick overview.
+The [foxfang-ansible](https://github.com/PotLock/foxfang-ansible) repo is the source of truth for Ansible deployment. This page is a quick overview.
 </Info>
 
 ## Prerequisites
@@ -132,7 +132,7 @@ If you prefer manual control over the automation:
   </Step>
   <Step title="Clone the repository">
     ```bash
-    git clone https://github.com/foxfang/foxfang-ansible.git
+    git clone https://github.com/PotLock/foxfang-ansible.git
     cd foxfang-ansible
     ```
   </Step>
@@ -218,13 +218,13 @@ This is idempotent and safe to run multiple times.
 
 For detailed security architecture and troubleshooting, see the foxfang-ansible repo:
 
-- [Security Architecture](https://github.com/foxfang/foxfang-ansible/blob/main/docs/security.md)
-- [Technical Details](https://github.com/foxfang/foxfang-ansible/blob/main/docs/architecture.md)
-- [Troubleshooting Guide](https://github.com/foxfang/foxfang-ansible/blob/main/docs/troubleshooting.md)
+- [Security Architecture](https://github.com/PotLock/foxfang-ansible/blob/main/docs/security.md)
+- [Technical Details](https://github.com/PotLock/foxfang-ansible/blob/main/docs/architecture.md)
+- [Troubleshooting Guide](https://github.com/PotLock/foxfang-ansible/blob/main/docs/troubleshooting.md)
 
 ## Related
 
-- [foxfang-ansible](https://github.com/foxfang/foxfang-ansible) -- full deployment guide
+- [foxfang-ansible](https://github.com/PotLock/foxfang-ansible) -- full deployment guide
 - [Docker](/install/docker) -- containerized gateway setup
 - [Sandboxing](/gateway/sandboxing) -- agent sandbox configuration
 - [Multi-Agent Sandbox and Tools](/tools/multi-agent-sandbox-tools) -- per-agent isolation

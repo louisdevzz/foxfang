@@ -9,10 +9,10 @@ title: "Nix"
 
 # Nix Installation
 
-Install FoxFang declaratively with **[nix-foxfang](https://github.com/foxfang/nix-foxfang)** -- a batteries-included Home Manager module.
+Install FoxFang declaratively with **[nix-foxfang](https://github.com/PotLock/nix-foxfang)** -- a batteries-included Home Manager module.
 
 <Info>
-The [nix-foxfang](https://github.com/foxfang/nix-foxfang) repo is the source of truth for Nix installation. This page is a quick overview.
+The [nix-foxfang](https://github.com/PotLock/nix-foxfang) repo is the source of truth for Nix installation. This page is a quick overview.
 </Info>
 
 ## What You Get
@@ -48,7 +48,7 @@ The [nix-foxfang](https://github.com/foxfang/nix-foxfang) repo is the source of 
   </Step>
 </Steps>
 
-See the [nix-foxfang README](https://github.com/foxfang/nix-foxfang) for full module options and examples.
+See the [nix-foxfang README](https://github.com/PotLock/nix-foxfang) for full module options and examples.
 
 ## Nix Mode Runtime Behavior
 
@@ -84,6 +84,6 @@ FoxFang reads JSON5 config from `FOXFANG_CONFIG_PATH` and stores mutable data in
 
 ## Related
 
-- [nix-foxfang](https://github.com/foxfang/nix-foxfang) -- full setup guide
+- [nix-foxfang](https://github.com/PotLock/nix-foxfang) -- full setup guide
 - [Wizard](/start/wizard) -- non-Nix CLI setup
 - [Docker](/install/docker) -- containerized setup

@@ -34,7 +34,7 @@ You will be prompted to select an endpoint:
 - **Global** - International users (`api.minimax.io`)
 - **CN** - Users in China (`api.minimaxi.com`)
 
-See [MiniMax plugin README](https://github.com/foxfang/foxfang/tree/main/extensions/minimax) for details.
+See [MiniMax plugin README](https://github.com/PotLock/foxfang/tree/main/extensions/minimax) for details.
 
 ### MiniMax M2.7 (API key)
 

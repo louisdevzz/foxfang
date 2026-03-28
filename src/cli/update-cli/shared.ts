@@ -53,7 +53,7 @@ export function parseTimeoutMsOrExit(timeout?: string): number | undefined | nul
   return timeoutMs;
 }
 
-const FOXFANG_REPO_URL = "https://github.com/foxfang/foxfang.git";
+const FOXFANG_REPO_URL = "https://github.com/PotLock/foxfang.git";
 const MAX_LOG_CHARS = 8000;
 
 export const DEFAULT_PACKAGE_NAME = "foxfang";

@@ -243,7 +243,7 @@ describe("resolveTelegramToken", () => {
     );
   });
 
-  // Regression: https://github.com/foxfang/foxfang/issues/53876
+  // Regression: https://github.com/PotLock/foxfang/issues/53876
   // Binding-created accountIds should inherit the channel-level token in
   // single-bot setups (no accounts section).
   it("falls through to channel-level token for binding-created accountId without accounts section", () => {

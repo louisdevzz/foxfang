@@ -62,11 +62,11 @@ FoxFang has three public release lanes:
 
 ## Public references
 
-- [`.github/workflows/foxfang-npm-release.yml`](https://github.com/foxfang/foxfang/blob/main/.github/workflows/foxfang-npm-release.yml)
-- [`scripts/foxfang-npm-release-check.ts`](https://github.com/foxfang/foxfang/blob/main/scripts/foxfang-npm-release-check.ts)
-- [`scripts/package-mac-dist.sh`](https://github.com/foxfang/foxfang/blob/main/scripts/package-mac-dist.sh)
-- [`scripts/make_appcast.sh`](https://github.com/foxfang/foxfang/blob/main/scripts/make_appcast.sh)
+- [`.github/workflows/foxfang-npm-release.yml`](https://github.com/PotLock/foxfang/blob/main/.github/workflows/foxfang-npm-release.yml)
+- [`scripts/foxfang-npm-release-check.ts`](https://github.com/PotLock/foxfang/blob/main/scripts/foxfang-npm-release-check.ts)
+- [`scripts/package-mac-dist.sh`](https://github.com/PotLock/foxfang/blob/main/scripts/package-mac-dist.sh)
+- [`scripts/make_appcast.sh`](https://github.com/PotLock/foxfang/blob/main/scripts/make_appcast.sh)
 
 Maintainers use the private release docs in
-[`foxfang/maintainers/release/README.md`](https://github.com/foxfang/maintainers/blob/main/release/README.md)
+[`foxfang/maintainers/release/README.md`](https://github.com/PotLock/maintainers/blob/main/release/README.md)
 for the actual runbook.

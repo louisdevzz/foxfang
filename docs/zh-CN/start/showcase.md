@@ -356,7 +356,7 @@ FoxFang 连接到 Jira，然后即时生成一个新的 skill（在它出现在 
   通过自然语言控制和自动化 Home Assistant 设备。
 </Card>
 
-<Card title="Nix 打包" icon="snowflake" href="https://github.com/foxfang/nix-foxfang">
+<Card title="Nix 打包" icon="snowflake" href="https://github.com/PotLock/nix-foxfang">
   **@foxfang** • `nix` `packaging` `deployment`
   
   开箱即用的 nixified FoxFang 配置，用于可复现的部署。

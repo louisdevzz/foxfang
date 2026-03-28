@@ -102,8 +102,8 @@ Quick answers plus deeper troubleshooting for real-world setups (local dev, VPS,
     necessary commands. That keeps changes small and easier to audit.
 
     If you discover a real bug or fix, please file a GitHub issue or send a PR:
-    [https://github.com/foxfang/foxfang/issues](https://github.com/foxfang/foxfang/issues)
-    [https://github.com/foxfang/foxfang/pulls](https://github.com/foxfang/foxfang/pulls)
+    [https://github.com/PotLock/foxfang/issues](https://github.com/PotLock/foxfang/issues)
+    [https://github.com/PotLock/foxfang/pulls](https://github.com/PotLock/foxfang/pulls)
 
     Start with these commands (share outputs when asking for help):
 
@@ -140,7 +140,7 @@ Quick answers plus deeper troubleshooting for real-world setups (local dev, VPS,
     From source (contributors/dev):
 
     ```bash
-    git clone https://github.com/foxfang/foxfang.git
+    git clone https://github.com/PotLock/foxfang.git
     cd foxfang
     pnpm install
     pnpm build
@@ -256,7 +256,7 @@ Quick answers plus deeper troubleshooting for real-world setups (local dev, VPS,
 
   <Accordion title="Where do I see what is new in the latest version?">
     Check the GitHub changelog:
-    [https://github.com/foxfang/foxfang/blob/main/CHANGELOG.md](https://github.com/foxfang/foxfang/blob/main/CHANGELOG.md)
+    [https://github.com/PotLock/foxfang/blob/main/CHANGELOG.md](https://github.com/PotLock/foxfang/blob/main/CHANGELOG.md)
 
     Newest entries are at the top. If the top section is marked **Unreleased**, the next dated
     section is the latest shipped version. Entries are grouped by **Highlights**, **Changes**, and
@@ -271,7 +271,7 @@ Quick answers plus deeper troubleshooting for real-world setups (local dev, VPS,
     Please help us unblock it by reporting here: [https://spa.xfinity.com/check_url_status](https://spa.xfinity.com/check_url_status).
 
     If you still can't reach the site, the docs are mirrored on GitHub:
-    [https://github.com/foxfang/foxfang/tree/main/docs](https://github.com/foxfang/foxfang/tree/main/docs)
+    [https://github.com/PotLock/foxfang/tree/main/docs](https://github.com/PotLock/foxfang/tree/main/docs)
 
   </Accordion>
 
@@ -286,7 +286,7 @@ Quick answers plus deeper troubleshooting for real-world setups (local dev, VPS,
     **same version**.
 
     See what changed:
-    [https://github.com/foxfang/foxfang/blob/main/CHANGELOG.md](https://github.com/foxfang/foxfang/blob/main/CHANGELOG.md)
+    [https://github.com/PotLock/foxfang/blob/main/CHANGELOG.md](https://github.com/PotLock/foxfang/blob/main/CHANGELOG.md)
 
   </Accordion>
 
@@ -333,7 +333,7 @@ Quick answers plus deeper troubleshooting for real-world setups (local dev, VPS,
     If you prefer a clean clone manually, use:
 
     ```bash
-    git clone https://github.com/foxfang/foxfang.git
+    git clone https://github.com/PotLock/foxfang.git
     cd foxfang
     pnpm install
     pnpm build
@@ -437,7 +437,7 @@ Quick answers plus deeper troubleshooting for real-world setups (local dev, VPS,
 
     If you still reproduce this on latest FoxFang, track/report it in:
 
-    - [Issue #30640](https://github.com/foxfang/foxfang/issues/30640)
+    - [Issue #30640](https://github.com/PotLock/foxfang/issues/30640)
 
   </Accordion>
 
@@ -751,7 +751,7 @@ Quick answers plus deeper troubleshooting for real-world setups (local dev, VPS,
     From npm to git:
 
     ```bash
-    git clone https://github.com/foxfang/foxfang.git
+    git clone https://github.com/PotLock/foxfang.git
     cd foxfang
     pnpm install
     pnpm build
@@ -2997,4 +2997,4 @@ Related: [/concepts/oauth](/concepts/oauth) (OAuth flows, token storage, multi-a
 
 ---
 
-Still stuck? Ask in [Discord](https://discord.com/invite/clawd) or open a [GitHub discussion](https://github.com/foxfang/foxfang/discussions).
+Still stuck? Ask in [Discord](https://discord.com/invite/clawd) or open a [GitHub discussion](https://github.com/PotLock/foxfang/discussions).

@@ -43,7 +43,7 @@ Docker is **optional**. Use it only if you want a containerized gateway or to va
     ```
 
     Pre-built images are published at the
-    [GitHub Container Registry](https://github.com/foxfang/foxfang/pkgs/container/foxfang).
+    [GitHub Container Registry](https://github.com/PotLock/foxfang/pkgs/container/foxfang).
     Common tags: `main`, `latest`, `<version>` (e.g. `2026.2.26`).
 
   </Step>
@@ -193,7 +193,7 @@ echo 'source ~/.clawdock/clawdock-helpers.sh' >> ~/.zshrc && source ~/.zshrc
 
 Then use `clawdock-start`, `clawdock-stop`, `clawdock-dashboard`, etc. Run
 `clawdock-help` for all commands.
-See the [`ClawDock` Helper README](https://github.com/foxfang/foxfang/blob/main/scripts/shell-helpers/README.md).
+See the [`ClawDock` Helper README](https://github.com/PotLock/foxfang/blob/main/scripts/shell-helpers/README.md).
 
 <AccordionGroup>
   <Accordion title="Enable agent sandbox for Docker gateway">
@@ -348,7 +348,7 @@ scripts/sandbox-setup.sh
 <AccordionGroup>
   <Accordion title="Image missing or sandbox container not starting">
     Build the sandbox image with
-    [`scripts/sandbox-setup.sh`](https://github.com/foxfang/foxfang/blob/main/scripts/sandbox-setup.sh)
+    [`scripts/sandbox-setup.sh`](https://github.com/PotLock/foxfang/blob/main/scripts/sandbox-setup.sh)
     or set `agents.defaults.sandbox.docker.image` to your custom image.
     Containers are auto-created per session on demand.
   </Accordion>

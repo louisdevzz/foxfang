@@ -126,10 +126,10 @@ x-i18n:
 
     <Steps>
       <Step title="克隆并构建">
-        克隆 [FoxFang 仓库](https://github.com/foxfang/foxfang) 并构建：
+        克隆 [FoxFang 仓库](https://github.com/PotLock/foxfang) 并构建：
 
         ```bash
-        git clone https://github.com/foxfang/foxfang.git
+        git clone https://github.com/PotLock/foxfang.git
         cd foxfang
         pnpm install
         pnpm ui:build

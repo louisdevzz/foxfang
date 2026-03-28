@@ -466,7 +466,7 @@ export async function dispatchCronDelivery(
           // Keep all attempts out of the write-ahead delivery queue so a
           // late-successful first send cannot leave behind a failed queue
           // entry that replays on the next restart.
-          // See: https://github.com/foxfang/foxfang/issues/40545
+          // See: https://github.com/PotLock/foxfang/issues/40545
           skipQueue: true,
         });
       const deliveryResults = options?.retryTransient

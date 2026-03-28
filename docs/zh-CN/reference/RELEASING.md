@@ -40,9 +40,9 @@ FoxFang 有三个公开发布渠道：
 
 ## 公开参考
 
-- [`.github/workflows/foxfang-npm-release.yml`](https://github.com/foxfang/foxfang/blob/main/.github/workflows/foxfang-npm-release.yml)
-- [`scripts/foxfang-npm-release-check.ts`](https://github.com/foxfang/foxfang/blob/main/scripts/foxfang-npm-release-check.ts)
+- [`.github/workflows/foxfang-npm-release.yml`](https://github.com/PotLock/foxfang/blob/main/.github/workflows/foxfang-npm-release.yml)
+- [`scripts/foxfang-npm-release-check.ts`](https://github.com/PotLock/foxfang/blob/main/scripts/foxfang-npm-release-check.ts)
 
 维护者使用
-[`foxfang/maintainers/release/README.md`](https://github.com/foxfang/maintainers/blob/main/release/README.md)
+[`foxfang/maintainers/release/README.md`](https://github.com/PotLock/maintainers/blob/main/release/README.md)
 中的私有发布文档作为实际操作手册。

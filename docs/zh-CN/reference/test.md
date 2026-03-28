@@ -23,7 +23,7 @@ x-i18n:
 
 ## 模型延迟基准测试（本地密钥）
 
-脚本：[`scripts/bench-model.ts`](https://github.com/foxfang/foxfang/blob/main/scripts/bench-model.ts)
+脚本：[`scripts/bench-model.ts`](https://github.com/PotLock/foxfang/blob/main/scripts/bench-model.ts)
 
 用法：
 

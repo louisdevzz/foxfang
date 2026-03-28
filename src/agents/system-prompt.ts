@@ -164,7 +164,7 @@ function buildDocsSection(params: { docsPath?: string; isMinimal: boolean; readT
     "## Documentation",
     `FoxFang docs: ${docsPath}`,
     "Mirror: https://docs.foxfang.ai",
-    "Source: https://github.com/foxfang/foxfang",
+    "Source: https://github.com/PotLock/foxfang",
     "Community: https://discord.com/invite/clawd",
     "Find new skills: https://clawhub.ai",
     "For FoxFang behavior, commands, config, or architecture: consult local docs first.",

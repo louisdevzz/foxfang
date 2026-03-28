@@ -58,7 +58,7 @@ foxfang onboard --auth-choice minimax-portal
 - **Global** - 国际用户（`api.minimax.io`）
 - **CN** - 中国用户（`api.minimaxi.com`）
 
-详情请参阅 [MiniMax plugin README](https://github.com/foxfang/foxfang/tree/main/extensions/minimax)。
+详情请参阅 [MiniMax plugin README](https://github.com/PotLock/foxfang/tree/main/extensions/minimax)。
 
 ### MiniMax M2.5（API key）
 

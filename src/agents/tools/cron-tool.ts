@@ -307,7 +307,7 @@ Use jobId as the canonical identifier; id is accepted for compatibility. Use con
           // job properties to the top level alongside `action` instead of nesting
           // them inside `job`. When `params.job` is missing or empty, reconstruct
           // a synthetic job object from any recognised top-level job fields.
-          // See: https://github.com/foxfang/foxfang/issues/11310
+          // See: https://github.com/PotLock/foxfang/issues/11310
           if (
             !params.job ||
             (typeof params.job === "object" &&

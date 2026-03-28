@@ -105,7 +105,7 @@ For the generic Docker flow, see [Docker](/install/docker).
 
   <Step title="Clone the FoxFang repository">
     ```bash
-    git clone https://github.com/foxfang/foxfang.git
+    git clone https://github.com/PotLock/foxfang.git
     cd foxfang
     ```
 

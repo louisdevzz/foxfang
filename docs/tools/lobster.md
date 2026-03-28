@@ -153,7 +153,7 @@ Notes:
 
 ## Install Lobster
 
-Install the Lobster CLI on the **same host** that runs the FoxFang Gateway (see the [Lobster repo](https://github.com/foxfang/lobster)), and ensure `lobster` is on `PATH`.
+Install the Lobster CLI on the **same host** that runs the FoxFang Gateway (see the [Lobster repo](https://github.com/PotLock/lobster)), and ensure `lobster` is on `PATH`.
 
 ## Enable the tool
 

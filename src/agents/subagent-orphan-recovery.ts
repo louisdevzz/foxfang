@@ -6,7 +6,7 @@
  * that are still tracked as active in the subagent registry) and sends a
  * synthetic resume message to restart their work.
  *
- * @see https://github.com/foxfang/foxfang/issues/47711
+ * @see https://github.com/PotLock/foxfang/issues/47711
  */
 
 import crypto from "node:crypto";

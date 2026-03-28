@@ -225,7 +225,7 @@ systemctl --user status
 Follow the Linux Getting Started flow inside WSL:
 
 ```bash
-git clone https://github.com/foxfang/foxfang.git
+git clone https://github.com/PotLock/foxfang.git
 cd foxfang
 pnpm install
 pnpm ui:build # auto-installs UI deps on first run

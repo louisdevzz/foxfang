@@ -16,7 +16,7 @@ x-i18n:
 
 # Nix 安装
 
-使用 Nix 运行 FoxFang 的推荐方式是通过 **[nix-foxfang](https://github.com/foxfang/nix-foxfang)** — 一个开箱即用的 Home Manager 模块。
+使用 Nix 运行 FoxFang 的推荐方式是通过 **[nix-foxfang](https://github.com/PotLock/nix-foxfang)** — 一个开箱即用的 Home Manager 模块。
 
 ## 快速开始
 
@@ -37,7 +37,7 @@ What I need you to do:
 Reference the nix-foxfang README for module options.
 ```
 
-> **📦 完整指南：[github.com/foxfang/nix-foxfang](https://github.com/foxfang/nix-foxfang)**
+> **📦 完整指南：[github.com/PotLock/nix-foxfang](https://github.com/PotLock/nix-foxfang)**
 >
 > nix-foxfang 仓库是 Nix 安装的权威来源。本页只是一个快速概述。
 
@@ -90,10 +90,10 @@ macOS 打包流程期望在以下位置有一个稳定的 Info.plist 模板：
 apps/macos/Sources/FoxFang/Resources/Info.plist
 ```
 
-[`scripts/package-mac-app.sh`](https://github.com/foxfang/foxfang/blob/main/scripts/package-mac-app.sh) 将此模板复制到应用包中并修补动态字段（bundle ID、版本/构建号、Git SHA、Sparkle 密钥）。这使 plist 对于 SwiftPM 打包和 Nix 构建保持确定性（它们不依赖完整的 Xcode 工具链）。
+[`scripts/package-mac-app.sh`](https://github.com/PotLock/foxfang/blob/main/scripts/package-mac-app.sh) 将此模板复制到应用包中并修补动态字段（bundle ID、版本/构建号、Git SHA、Sparkle 密钥）。这使 plist 对于 SwiftPM 打包和 Nix 构建保持确定性（它们不依赖完整的 Xcode 工具链）。
 
 ## 相关内容
 
-- [nix-foxfang](https://github.com/foxfang/nix-foxfang) — 完整设置指南
+- [nix-foxfang](https://github.com/PotLock/nix-foxfang) — 完整设置指南
 - [向导](/start/wizard) — 非 Nix CLI 设置
 - [Docker](/install/docker) — 容器化设置

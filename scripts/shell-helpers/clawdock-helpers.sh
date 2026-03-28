@@ -113,7 +113,7 @@ _clawdock_ensure_dir() {
     echo ""
     echo "Clone it first:"
     echo ""
-    echo "  git clone https://github.com/foxfang/foxfang.git ~/foxfang"
+    echo "  git clone https://github.com/PotLock/foxfang.git ~/foxfang"
     echo "  cd ~/foxfang && ./scripts/docker/setup.sh"
     echo ""
     echo "Or set CLAWDOCK_DIR if it's elsewhere:"

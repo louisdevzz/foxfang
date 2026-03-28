@@ -138,7 +138,7 @@ FOXFANG_NAMESPACE=my-namespace ./scripts/k8s/deploy.sh
 Edit the `image` field in `scripts/k8s/manifests/deployment.yaml`:
 
 ```yaml
-image: ghcr.io/foxfang/foxfang:latest # or pin to a specific version from https://github.com/foxfang/foxfang/releases
+image: ghcr.io/foxfang/foxfang:latest # or pin to a specific version from https://github.com/PotLock/foxfang/releases
 ```
 
 ### Expose beyond port-forward

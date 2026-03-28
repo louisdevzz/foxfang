@@ -3,15 +3,15 @@
   "version": "2026.3.27",
   "description": "Personal AI marketing assistant with extensible multi-channel integrations",
   "keywords": [],
-  "homepage": "https://github.com/potlock/foxfang#readme",
+  "homepage": "https://github.com/PotLock/foxfang#readme",
   "bugs": {
-    "url": "https://github.com/potlock/foxfang/issues"
+    "url": "https://github.com/PotLock/foxfang/issues"
   },
   "license": "MIT",
   "author": "",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/potlock/foxfang.git"
+    "url": "git+https://github.com/PotLock/foxfang.git"
   },
   "bin": {
     "foxfang": "foxfang.mjs"

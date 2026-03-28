@@ -7,8 +7,8 @@
  * Converts common inline HTML to lightweight-markup equivalents used by
  * WhatsApp/Signal/Telegram and strips any remaining tags.
  *
- * @see https://github.com/foxfang/foxfang/issues/31884
- * @see https://github.com/foxfang/foxfang/issues/18558
+ * @see https://github.com/PotLock/foxfang/issues/31884
+ * @see https://github.com/PotLock/foxfang/issues/18558
  */
 
 /** Channels where HTML tags should be converted/stripped. */

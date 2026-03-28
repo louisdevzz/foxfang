@@ -1884,7 +1884,7 @@ resolve_foxfang_bin() {
 
 install_foxfang_from_git() {
     local repo_dir="$1"
-    local repo_url="https://github.com/foxfang/foxfang.git"
+    local repo_url="https://github.com/PotLock/foxfang.git"
 
     if [[ -d "$repo_dir/.git" ]]; then
         ui_info "Installing FoxFang from git checkout: ${repo_dir}"

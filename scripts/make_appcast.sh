@@ -60,7 +60,7 @@ else
 fi
 cp -f "$NOTES_HTML" "$TMP_DIR/${ZIP_BASE}.html"
 
-DOWNLOAD_URL_PREFIX=${SPARKLE_DOWNLOAD_URL_PREFIX:-"https://github.com/foxfang/foxfang/releases/download/v${VERSION}/"}
+DOWNLOAD_URL_PREFIX=${SPARKLE_DOWNLOAD_URL_PREFIX:-"https://github.com/PotLock/foxfang/releases/download/v${VERSION}/"}
 
 GENERATE_APPCAST="$(find_generate_appcast)"
 if [[ -z "$GENERATE_APPCAST" ]]; then

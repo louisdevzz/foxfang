@@ -118,7 +118,7 @@ curl -fsSL https://foxfang.ai/install.sh | bash
 ### Option B: Hackable Install (For tinkering)
 
 ```bash
-git clone https://github.com/foxfang/foxfang.git
+git clone https://github.com/PotLock/foxfang.git
 cd foxfang
 npm install
 npm run build
