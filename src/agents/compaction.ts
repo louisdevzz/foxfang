@@ -1,173 +1,528 @@
-/**
- * History Compaction
- *
- * Two-level strategy pattern:
- * Level 1 — Pruning: drop oldest message chunks when history > budget
- * Level 2 — Summarization: LLM-assisted compaction for long conversations
- *
- * Repairs orphaned tool_use/tool_result pairs after pruning.
- */
+import type { AgentMessage } from "@mariozechner/pi-agent-core";
+import type { ExtensionContext } from "@mariozechner/pi-coding-agent";
+import {
+  estimateTokens,
+  generateSummary as piGenerateSummary,
+} from "@mariozechner/pi-coding-agent";
+import type { AgentCompactionIdentifierPolicy } from "../config/types.agent-defaults.js";
+import { retryAsync } from "../infra/retry.js";
+import { createSubsystemLogger } from "../logging/subsystem.js";
+import { DEFAULT_CONTEXT_TOKENS } from "./defaults.js";
+import { repairToolUseResultPairing, stripToolResultDetails } from "./session-transcript-repair.js";
 
-import { AgentMessage } from './types';
+const log = createSubsystemLogger("compaction");
 
-const SAFETY_MARGIN = 1.2;
-const MAX_HISTORY_SHARE = 0.5; // history should use at most 50% of context window
-const DEFAULT_CONTEXT_TOKENS = 128_000;
-const MIN_SINGLE_HISTORY_MESSAGE_CHARS = 1_600;
-const MAX_SINGLE_HISTORY_MESSAGE_CHARS = 2_400;
-const MIN_TOOL_RESULTS_HISTORY_CHARS = 1_024;
-const MAX_TOOL_RESULTS_HISTORY_CHARS = 2_400;
+export const BASE_CHUNK_RATIO = 0.4;
+export const MIN_CHUNK_RATIO = 0.15;
+export const SAFETY_MARGIN = 1.2; // 20% buffer for estimateTokens() inaccuracy
+const DEFAULT_SUMMARY_FALLBACK = "No prior history.";
+const DEFAULT_PARTS = 2;
+const MERGE_SUMMARIES_INSTRUCTIONS = [
+  "Merge these partial summaries into a single cohesive summary.",
+  "",
+  "MUST PRESERVE:",
+  "- Active tasks and their current status (in-progress, blocked, pending)",
+  "- Batch operation progress (e.g., '5/17 items completed')",
+  "- The last thing the user requested and what was being done about it",
+  "- Decisions made and their rationale",
+  "- TODOs, open questions, and constraints",
+  "- Any commitments or follow-ups promised",
+  "",
+  "PRIORITIZE recent context over older history. The agent needs to know",
+  "what it was doing, not just what was discussed.",
+].join("\n");
+const IDENTIFIER_PRESERVATION_INSTRUCTIONS =
+  "Preserve all opaque identifiers exactly as written (no shortening or reconstruction), " +
+  "including UUIDs, hashes, IDs, tokens, API keys, hostnames, IPs, ports, URLs, and file names.";
 
-function estimateTokens(text: string): number {
-  return Math.ceil(text.length / 4);
+export type CompactionSummarizationInstructions = {
+  identifierPolicy?: AgentCompactionIdentifierPolicy;
+  identifierInstructions?: string;
+};
+
+type GenerateSummaryCompat = {
+  (
+    currentMessages: AgentMessage[],
+    model: NonNullable<ExtensionContext["model"]>,
+    reserveTokens: number,
+    apiKey: string,
+    signal?: AbortSignal,
+    customInstructions?: string,
+    previousSummary?: string,
+  ): Promise<string>;
+  (
+    currentMessages: AgentMessage[],
+    model: NonNullable<ExtensionContext["model"]>,
+    reserveTokens: number,
+    apiKey: string,
+    headers: Record<string, string> | undefined,
+    signal?: AbortSignal,
+    customInstructions?: string,
+    previousSummary?: string,
+  ): Promise<string>;
+};
+
+const generateSummaryCompat = piGenerateSummary as unknown as GenerateSummaryCompat;
+
+function resolveIdentifierPreservationInstructions(
+  instructions?: CompactionSummarizationInstructions,
+): string | undefined {
+  const policy = instructions?.identifierPolicy ?? "strict";
+  if (policy === "off") {
+    return undefined;
+  }
+  if (policy === "custom") {
+    const custom = instructions?.identifierInstructions?.trim();
+    return custom && custom.length > 0 ? custom : IDENTIFIER_PRESERVATION_INSTRUCTIONS;
+  }
+  return IDENTIFIER_PRESERVATION_INSTRUCTIONS;
 }
 
-function estimateMessageTokens(msg: AgentMessage): number {
-  return estimateTokens(msg.content);
+export function buildCompactionSummarizationInstructions(
+  customInstructions?: string,
+  instructions?: CompactionSummarizationInstructions,
+): string | undefined {
+  const custom = customInstructions?.trim();
+  const identifierPreservation = resolveIdentifierPreservationInstructions(instructions);
+  if (!identifierPreservation && !custom) {
+    return undefined;
+  }
+  if (!custom) {
+    return identifierPreservation;
+  }
+  if (!identifierPreservation) {
+    return `Additional focus:\n${custom}`;
+  }
+  return `${identifierPreservation}\n\nAdditional focus:\n${custom}`;
 }
 
-function compactHistoryMessage(msg: AgentMessage, limits: {
-  maxMessageChars: number;
-  maxToolResultChars: number;
-}): AgentMessage {
-  const text = String(msg.content || '');
-  if (!text) return msg;
+export function estimateMessagesTokens(messages: AgentMessage[]): number {
+  // SECURITY: toolResult.details can contain untrusted/verbose payloads; never include in LLM-facing compaction.
+  const safe = stripToolResultDetails(messages);
+  return safe.reduce((sum, message) => sum + estimateTokens(message), 0);
+}
 
-  const trimTo = (value: string, maxChars: number, reason: string): string => {
-    if (value.length <= maxChars) return value;
-    return `${value.slice(0, maxChars)}\n[...${reason}; ${value.length - maxChars} chars omitted...]`;
-  };
+function estimateCompactionMessageTokens(message: AgentMessage): number {
+  return estimateMessagesTokens([message]);
+}
 
-  let nextContent = text;
-  if (text.startsWith('[Tool Results]')) {
-    nextContent = trimTo(text, limits.maxToolResultChars, 'tool results compacted');
-  } else {
-    nextContent = trimTo(text, limits.maxMessageChars, 'message compacted');
+function normalizeParts(parts: number, messageCount: number): number {
+  if (!Number.isFinite(parts) || parts <= 1) {
+    return 1;
+  }
+  return Math.min(Math.max(1, Math.floor(parts)), Math.max(1, messageCount));
+}
+
+export function splitMessagesByTokenShare(
+  messages: AgentMessage[],
+  parts = DEFAULT_PARTS,
+): AgentMessage[][] {
+  if (messages.length === 0) {
+    return [];
+  }
+  const normalizedParts = normalizeParts(parts, messages.length);
+  if (normalizedParts <= 1) {
+    return [messages];
   }
 
-  if (nextContent === text) return msg;
-  return {
-    ...msg,
-    content: nextContent,
-  };
+  const totalTokens = estimateMessagesTokens(messages);
+  const targetTokens = totalTokens / normalizedParts;
+  const chunks: AgentMessage[][] = [];
+  let current: AgentMessage[] = [];
+  let currentTokens = 0;
+
+  for (const message of messages) {
+    const messageTokens = estimateCompactionMessageTokens(message);
+    if (
+      chunks.length < normalizedParts - 1 &&
+      current.length > 0 &&
+      currentTokens + messageTokens > targetTokens
+    ) {
+      chunks.push(current);
+      current = [];
+      currentTokens = 0;
+    }
+
+    current.push(message);
+    currentTokens += messageTokens;
+  }
+
+  if (current.length > 0) {
+    chunks.push(current);
+  }
+
+  return chunks;
+}
+
+// Overhead reserved for summarization prompt, system prompt, previous summary,
+// and serialization wrappers (<conversation> tags, instructions, etc.).
+// generateSummary uses reasoning: "high" which also consumes context budget.
+export const SUMMARIZATION_OVERHEAD_TOKENS = 4096;
+
+export function chunkMessagesByMaxTokens(
+  messages: AgentMessage[],
+  maxTokens: number,
+): AgentMessage[][] {
+  if (messages.length === 0) {
+    return [];
+  }
+
+  // Apply safety margin to compensate for estimateTokens() underestimation
+  // (chars/4 heuristic misses multi-byte chars, special tokens, code tokens, etc.)
+  const effectiveMax = Math.max(1, Math.floor(maxTokens / SAFETY_MARGIN));
+
+  const chunks: AgentMessage[][] = [];
+  let currentChunk: AgentMessage[] = [];
+  let currentTokens = 0;
+
+  for (const message of messages) {
+    const messageTokens = estimateCompactionMessageTokens(message);
+    if (currentChunk.length > 0 && currentTokens + messageTokens > effectiveMax) {
+      chunks.push(currentChunk);
+      currentChunk = [];
+      currentTokens = 0;
+    }
+
+    currentChunk.push(message);
+    currentTokens += messageTokens;
+
+    if (messageTokens > effectiveMax) {
+      // Split oversized messages to avoid unbounded chunk growth.
+      chunks.push(currentChunk);
+      currentChunk = [];
+      currentTokens = 0;
+    }
+  }
+
+  if (currentChunk.length > 0) {
+    chunks.push(currentChunk);
+  }
+
+  return chunks;
 }
 
 /**
- * Prune conversation history to fit within token budget.
- * Keeps the most recent messages, drops oldest first.
- * Repairs orphaned tool results (tool result without preceding tool call).
+ * Compute adaptive chunk ratio based on average message size.
+ * When messages are large, we use smaller chunks to avoid exceeding model limits.
  */
-export function pruneHistory(params: {
+export function computeAdaptiveChunkRatio(messages: AgentMessage[], contextWindow: number): number {
+  if (messages.length === 0) {
+    return BASE_CHUNK_RATIO;
+  }
+
+  const totalTokens = estimateMessagesTokens(messages);
+  const avgTokens = totalTokens / messages.length;
+
+  // Apply safety margin to account for estimation inaccuracy
+  const safeAvgTokens = avgTokens * SAFETY_MARGIN;
+  const avgRatio = safeAvgTokens / contextWindow;
+
+  // If average message is > 10% of context, reduce chunk ratio
+  if (avgRatio > 0.1) {
+    const reduction = Math.min(avgRatio * 2, BASE_CHUNK_RATIO - MIN_CHUNK_RATIO);
+    return Math.max(MIN_CHUNK_RATIO, BASE_CHUNK_RATIO - reduction);
+  }
+
+  return BASE_CHUNK_RATIO;
+}
+
+/**
+ * Check if a single message is too large to summarize.
+ * If single message > 50% of context, it can't be summarized safely.
+ */
+export function isOversizedForSummary(msg: AgentMessage, contextWindow: number): boolean {
+  const tokens = estimateCompactionMessageTokens(msg) * SAFETY_MARGIN;
+  return tokens > contextWindow * 0.5;
+}
+
+async function summarizeChunks(params: {
   messages: AgentMessage[];
-  maxContextTokens?: number;
-  maxHistoryShare?: number;
-}): {
+  model: NonNullable<ExtensionContext["model"]>;
+  apiKey: string;
+  headers?: Record<string, string>;
+  signal: AbortSignal;
+  reserveTokens: number;
+  maxChunkTokens: number;
+  customInstructions?: string;
+  summarizationInstructions?: CompactionSummarizationInstructions;
+  previousSummary?: string;
+}): Promise<string> {
+  if (params.messages.length === 0) {
+    return params.previousSummary ?? DEFAULT_SUMMARY_FALLBACK;
+  }
+
+  // SECURITY: never feed toolResult.details into summarization prompts.
+  const safeMessages = stripToolResultDetails(params.messages);
+  const chunks = chunkMessagesByMaxTokens(safeMessages, params.maxChunkTokens);
+  let summary = params.previousSummary;
+  const effectiveInstructions = buildCompactionSummarizationInstructions(
+    params.customInstructions,
+    params.summarizationInstructions,
+  );
+  for (const chunk of chunks) {
+    summary = await retryAsync(
+      () =>
+        generateSummary(
+          chunk,
+          params.model,
+          params.reserveTokens,
+          params.apiKey,
+          params.headers,
+          params.signal,
+          effectiveInstructions,
+          summary,
+        ),
+      {
+        attempts: 3,
+        minDelayMs: 500,
+        maxDelayMs: 5000,
+        jitter: 0.2,
+        label: "compaction/generateSummary",
+        shouldRetry: (err) => !(err instanceof Error && err.name === "AbortError"),
+      },
+    );
+  }
+
+  return summary ?? DEFAULT_SUMMARY_FALLBACK;
+}
+
+function generateSummary(
+  currentMessages: AgentMessage[],
+  model: NonNullable<ExtensionContext["model"]>,
+  reserveTokens: number,
+  apiKey: string,
+  headers: Record<string, string> | undefined,
+  signal: AbortSignal,
+  customInstructions?: string,
+  previousSummary?: string,
+): Promise<string> {
+  if (piGenerateSummary.length >= 8) {
+    return generateSummaryCompat(
+      currentMessages,
+      model,
+      reserveTokens,
+      apiKey,
+      headers,
+      signal,
+      customInstructions,
+      previousSummary,
+    );
+  }
+  return generateSummaryCompat(
+    currentMessages,
+    model,
+    reserveTokens,
+    apiKey,
+    signal,
+    customInstructions,
+    previousSummary,
+  );
+}
+
+/**
+ * Summarize with progressive fallback for handling oversized messages.
+ * If full summarization fails, tries partial summarization excluding oversized messages.
+ */
+export async function summarizeWithFallback(params: {
   messages: AgentMessage[];
-  droppedCount: number;
-  keptTokens: number;
-} {
-  const {
-    messages,
-    maxContextTokens = DEFAULT_CONTEXT_TOKENS,
-    maxHistoryShare = MAX_HISTORY_SHARE,
-  } = params;
+  model: NonNullable<ExtensionContext["model"]>;
+  apiKey: string;
+  headers?: Record<string, string>;
+  signal: AbortSignal;
+  reserveTokens: number;
+  maxChunkTokens: number;
+  contextWindow: number;
+  customInstructions?: string;
+  summarizationInstructions?: CompactionSummarizationInstructions;
+  previousSummary?: string;
+}): Promise<string> {
+  const { messages, contextWindow } = params;
 
   if (messages.length === 0) {
-    return { messages: [], droppedCount: 0, keptTokens: 0 };
+    return params.previousSummary ?? DEFAULT_SUMMARY_FALLBACK;
   }
 
-  const budgetTokens = Math.floor((maxContextTokens * maxHistoryShare) / SAFETY_MARGIN);
-  const maxMessageChars = Math.min(
-    MAX_SINGLE_HISTORY_MESSAGE_CHARS,
-    Math.max(MIN_SINGLE_HISTORY_MESSAGE_CHARS, Math.floor(maxContextTokens * 4 * 0.12)),
+  // Try full summarization first
+  try {
+    return await summarizeChunks(params);
+  } catch (fullError) {
+    log.warn(
+      `Full summarization failed, trying partial: ${
+        fullError instanceof Error ? fullError.message : String(fullError)
+      }`,
+    );
+  }
+
+  // Fallback 1: Summarize only small messages, note oversized ones
+  const smallMessages: AgentMessage[] = [];
+  const oversizedNotes: string[] = [];
+
+  for (const msg of messages) {
+    if (isOversizedForSummary(msg, contextWindow)) {
+      const role = (msg as { role?: string }).role ?? "message";
+      const tokens = estimateCompactionMessageTokens(msg);
+      oversizedNotes.push(
+        `[Large ${role} (~${Math.round(tokens / 1000)}K tokens) omitted from summary]`,
+      );
+    } else {
+      smallMessages.push(msg);
+    }
+  }
+
+  if (smallMessages.length > 0) {
+    try {
+      const partialSummary = await summarizeChunks({
+        ...params,
+        messages: smallMessages,
+      });
+      const notes = oversizedNotes.length > 0 ? `\n\n${oversizedNotes.join("\n")}` : "";
+      return partialSummary + notes;
+    } catch (partialError) {
+      log.warn(
+        `Partial summarization also failed: ${
+          partialError instanceof Error ? partialError.message : String(partialError)
+        }`,
+      );
+    }
+  }
+
+  // Final fallback: Just note what was there
+  return (
+    `Context contained ${messages.length} messages (${oversizedNotes.length} oversized). ` +
+    `Summary unavailable due to size limits.`
   );
-  const maxToolResultChars = Math.min(
-    MAX_TOOL_RESULTS_HISTORY_CHARS,
-    Math.max(MIN_TOOL_RESULTS_HISTORY_CHARS, Math.floor(maxContextTokens * 4 * 0.08)),
-  );
-  const compactedMessages = messages.map((msg) => compactHistoryMessage(msg, {
-    maxMessageChars,
-    maxToolResultChars,
+}
+
+export async function summarizeInStages(params: {
+  messages: AgentMessage[];
+  model: NonNullable<ExtensionContext["model"]>;
+  apiKey: string;
+  headers?: Record<string, string>;
+  signal: AbortSignal;
+  reserveTokens: number;
+  maxChunkTokens: number;
+  contextWindow: number;
+  customInstructions?: string;
+  summarizationInstructions?: CompactionSummarizationInstructions;
+  previousSummary?: string;
+  parts?: number;
+  minMessagesForSplit?: number;
+}): Promise<string> {
+  const { messages } = params;
+  if (messages.length === 0) {
+    return params.previousSummary ?? DEFAULT_SUMMARY_FALLBACK;
+  }
+
+  const minMessagesForSplit = Math.max(2, params.minMessagesForSplit ?? 4);
+  const parts = normalizeParts(params.parts ?? DEFAULT_PARTS, messages.length);
+  const totalTokens = estimateMessagesTokens(messages);
+
+  if (parts <= 1 || messages.length < minMessagesForSplit || totalTokens <= params.maxChunkTokens) {
+    return summarizeWithFallback(params);
+  }
+
+  const splits = splitMessagesByTokenShare(messages, parts).filter((chunk) => chunk.length > 0);
+  if (splits.length <= 1) {
+    return summarizeWithFallback(params);
+  }
+
+  const partialSummaries: string[] = [];
+  for (const chunk of splits) {
+    partialSummaries.push(
+      await summarizeWithFallback({
+        ...params,
+        messages: chunk,
+        previousSummary: undefined,
+      }),
+    );
+  }
+
+  if (partialSummaries.length === 1) {
+    return partialSummaries[0];
+  }
+
+  const summaryMessages: AgentMessage[] = partialSummaries.map((summary) => ({
+    role: "user",
+    content: summary,
+    timestamp: Date.now(),
   }));
 
-  // Fill from most recent messages
-  const kept: AgentMessage[] = [];
-  let usedTokens = 0;
+  const custom = params.customInstructions?.trim();
+  const mergeInstructions = custom
+    ? `${MERGE_SUMMARIES_INSTRUCTIONS}\n\n${custom}`
+    : MERGE_SUMMARIES_INSTRUCTIONS;
 
-  for (let i = compactedMessages.length - 1; i >= 0; i--) {
-    const msg = compactedMessages[i];
-    const tokens = estimateMessageTokens(msg);
-    if (usedTokens + tokens > budgetTokens && kept.length > 0) {
-      break; // budget exhausted, stop adding older messages
+  return summarizeWithFallback({
+    ...params,
+    messages: summaryMessages,
+    customInstructions: mergeInstructions,
+  });
+}
+
+export function pruneHistoryForContextShare(params: {
+  messages: AgentMessage[];
+  maxContextTokens: number;
+  maxHistoryShare?: number;
+  parts?: number;
+}): {
+  messages: AgentMessage[];
+  droppedMessagesList: AgentMessage[];
+  droppedChunks: number;
+  droppedMessages: number;
+  droppedTokens: number;
+  keptTokens: number;
+  budgetTokens: number;
+} {
+  const maxHistoryShare = params.maxHistoryShare ?? 0.5;
+  const budgetTokens = Math.max(1, Math.floor(params.maxContextTokens * maxHistoryShare));
+  let keptMessages = params.messages;
+  const allDroppedMessages: AgentMessage[] = [];
+  let droppedChunks = 0;
+  let droppedMessages = 0;
+  let droppedTokens = 0;
+
+  const parts = normalizeParts(params.parts ?? DEFAULT_PARTS, keptMessages.length);
+
+  while (keptMessages.length > 0 && estimateMessagesTokens(keptMessages) > budgetTokens) {
+    const chunks = splitMessagesByTokenShare(keptMessages, parts);
+    if (chunks.length <= 1) {
+      break;
     }
-    usedTokens += tokens;
-    kept.unshift(msg);
-  }
+    const [dropped, ...rest] = chunks;
+    const flatRest = rest.flat();
 
-  const droppedCount = compactedMessages.length - kept.length;
+    // After dropping a chunk, repair tool_use/tool_result pairing to handle
+    // orphaned tool_results (whose tool_use was in the dropped chunk).
+    // repairToolUseResultPairing drops orphaned tool_results, preventing
+    // "unexpected tool_use_id" errors from Anthropic's API.
+    const repairReport = repairToolUseResultPairing(flatRest);
+    const repairedKept = repairReport.messages;
 
-  // Repair: if first kept message is a tool result, drop it (orphaned)
-  while (kept.length > 0 && kept[0].role === 'tool') {
-    kept.shift();
-  }
+    // Track orphaned tool_results as dropped (they were in kept but their tool_use was dropped)
+    const orphanedCount = repairReport.droppedOrphanCount;
 
-  // Add a summary marker if messages were dropped
-  if (droppedCount > 0 && kept.length > 0) {
-    const marker: AgentMessage = {
-      role: 'system',
-      content: `[${droppedCount} earlier messages pruned to save context. Focus on the recent conversation.]`,
-      timestamp: new Date(),
-    };
-    kept.unshift(marker);
+    droppedChunks += 1;
+    droppedMessages += dropped.length + orphanedCount;
+    droppedTokens += estimateMessagesTokens(dropped);
+    // Note: We don't have the actual orphaned messages to add to droppedMessagesList
+    // since repairToolUseResultPairing doesn't return them. This is acceptable since
+    // the dropped messages are used for summarization, and orphaned tool_results
+    // without their tool_use context aren't useful for summarization anyway.
+    allDroppedMessages.push(...dropped);
+    keptMessages = repairedKept;
   }
 
   return {
-    messages: kept,
-    droppedCount,
-    keptTokens: usedTokens,
+    messages: keptMessages,
+    droppedMessagesList: allDroppedMessages,
+    droppedChunks,
+    droppedMessages,
+    droppedTokens,
+    keptTokens: estimateMessagesTokens(keptMessages),
+    budgetTokens,
   };
 }
 
-/**
- * Build a compact summary of conversation history for injection as context.
- * This is a simpler alternative to LLM-based summarization.
- * Extracts key information: user requests, decisions, active tasks.
- */
-export function buildCompactHistorySummary(messages: AgentMessage[]): string {
-  if (messages.length === 0) return '';
-
-  const userMessages = messages
-    .filter(m => m.role === 'user')
-    .slice(-5); // last 5 user messages
-
-  const assistantMessages = messages
-    .filter(m => m.role === 'assistant')
-    .slice(-3); // last 3 assistant responses
-
-  const lines: string[] = ['[Conversation Summary]'];
-
-  if (userMessages.length > 0) {
-    lines.push('Recent user requests:');
-    for (const msg of userMessages) {
-      const brief = msg.content.slice(0, 100).replace(/\n/g, ' ');
-      lines.push(`- ${brief}${msg.content.length > 100 ? '...' : ''}`);
-    }
-  }
-
-  if (assistantMessages.length > 0) {
-    lines.push('Recent responses:');
-    for (const msg of assistantMessages) {
-      const brief = msg.content.slice(0, 80).replace(/\n/g, ' ');
-      lines.push(`- ${brief}${msg.content.length > 80 ? '...' : ''}`);
-    }
-  }
-
-  return lines.join('\n');
-}
-
-/**
- * Estimate total tokens for a list of messages.
- */
-export function estimateTotalTokens(messages: AgentMessage[]): number {
-  return messages.reduce((sum, msg) => sum + estimateMessageTokens(msg), 0);
+export function resolveContextWindowTokens(model?: ExtensionContext["model"]): number {
+  return Math.max(1, Math.floor(model?.contextWindow ?? DEFAULT_CONTEXT_TOKENS));
 }

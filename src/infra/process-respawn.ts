@@ -1,87 +1,86 @@
+import { spawn } from "node:child_process";
+import { scheduleDetachedLaunchdRestartHandoff } from "../daemon/launchd-restart-handoff.js";
+import { triggerOpenClawRestart } from "./restart.js";
+import { detectRespawnSupervisor } from "./supervisor-markers.js";
+
+type RespawnMode = "spawned" | "supervised" | "disabled" | "failed";
+
+export type GatewayRespawnResult = {
+  mode: RespawnMode;
+  pid?: number;
+  detail?: string;
+};
+
+function isTruthy(value: string | undefined): boolean {
+  if (!value) {
+    return false;
+  }
+  const normalized = value.trim().toLowerCase();
+  return normalized === "1" || normalized === "true" || normalized === "yes" || normalized === "on";
+}
+
 /**
- * Process respawn — platform-specific graceful daemon restart.
- *
- * Writes a tiny shell/bat script to /tmp, spawns it detached, then exits.
- * The script sleeps briefly (to let the current process release file locks),
- * invokes the system service manager, and self-deletes.
+ * Attempt to restart this process with a fresh PID.
+ * - supervised environments (launchd/systemd/schtasks): caller should exit and let supervisor restart
+ * - OPENCLAW_NO_RESPAWN=1: caller should keep in-process restart behavior (tests/dev)
+ * - otherwise: spawn detached child with current argv/execArgv, then caller exits
  */
+export function restartGatewayProcessWithFreshPid(): GatewayRespawnResult {
+  if (isTruthy(process.env.OPENCLAW_NO_RESPAWN)) {
+    return { mode: "disabled" };
+  }
+  const supervisor = detectRespawnSupervisor(process.env);
+  if (supervisor) {
+    // Hand off launchd restarts to a detached helper before exiting so config
+    // reloads and SIGUSR1-driven restarts do not depend on exit/respawn timing.
+    if (supervisor === "launchd") {
+      const handoff = scheduleDetachedLaunchdRestartHandoff({
+        env: process.env,
+        mode: "start-after-exit",
+        waitForPid: process.pid,
+      });
+      if (!handoff.ok) {
+        return {
+          mode: "supervised",
+          detail: `launchd exit fallback (${handoff.detail ?? "restart handoff failed"})`,
+        };
+      }
+      return {
+        mode: "supervised",
+        detail: `launchd restart handoff pid ${handoff.pid ?? "unknown"}`,
+      };
+    }
+    if (supervisor === "schtasks") {
+      const restart = triggerOpenClawRestart();
+      if (!restart.ok) {
+        return {
+          mode: "failed",
+          detail: restart.detail ?? `${restart.method} restart failed`,
+        };
+      }
+    }
+    return { mode: "supervised" };
+  }
+  if (process.platform === "win32") {
+    // Detached respawn is unsafe on Windows without an identified Scheduled Task:
+    // the child becomes orphaned if the original process exits.
+    return {
+      mode: "disabled",
+      detail: "win32: detached respawn unsupported without Scheduled Task markers",
+    };
+  }
 
-import { spawn, execSync } from 'child_process';
-import { writeFile } from 'fs/promises';
-import { tmpdir } from 'os';
-
-const LAUNCHD_LABEL = 'com.foxfang.gateway';
-const SYSTEMD_SERVICE = 'foxfang-gateway';
-
-function getUid(): string {
   try {
-    return execSync('id -u', { encoding: 'utf-8' }).trim();
-  } catch {
-    return '501';
+    const args = [...process.execArgv, ...process.argv.slice(1)];
+    const child = spawn(process.execPath, args, {
+      env: process.env,
+      detached: true,
+      stdio: "inherit",
+    });
+    child.unref();
+    return { mode: "spawned", pid: child.pid ?? undefined };
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err);
+    return { mode: "failed", detail };
   }
-}
-
-function buildMacScript(scriptPath: string): string {
-  const uid = getUid();
-  return [
-    '#!/bin/sh',
-    'sleep 1',
-    `launchctl kickstart -k "gui/${uid}/${LAUNCHD_LABEL}" 2>/dev/null || launchctl start "${LAUNCHD_LABEL}"`,
-    `rm -- "${scriptPath}"`,
-  ].join('\n');
-}
-
-function buildLinuxScript(scriptPath: string): string {
-  return [
-    '#!/bin/sh',
-    'sleep 1',
-    `systemctl --user restart ${SYSTEMD_SERVICE} 2>/dev/null || systemctl restart ${SYSTEMD_SERVICE} 2>/dev/null || true`,
-    `rm -- "${scriptPath}"`,
-  ].join('\n');
-}
-
-function buildFallbackScript(scriptPath: string): string {
-  const execPath = process.execPath;
-  const args = [...process.execArgv, ...process.argv.slice(1)].map(a => `"${a}"`).join(' ');
-  const cwd = process.cwd();
-  return [
-    '#!/bin/sh',
-    'sleep 2',
-    `cd "${cwd}"`,
-    `${execPath} ${args} &`,
-    'disown',
-    `rm -- "${scriptPath}"`,
-  ].join('\n');
-}
-
-/**
- * Schedule a daemon respawn and exit the current process.
- *
- * Call this AFTER writing the restart sentinel and only when the update
- * completed successfully. This function does not return.
- */
-export async function scheduleRespawnAndExit(): Promise<never> {
-  const scriptPath = `${tmpdir()}/foxfang-respawn-${Date.now()}.sh`;
-
-  const platform = process.platform;
-  let script: string;
-
-  if (platform === 'darwin') {
-    script = buildMacScript(scriptPath);
-  } else if (platform === 'linux') {
-    script = buildLinuxScript(scriptPath);
-  } else {
-    script = buildFallbackScript(scriptPath);
-  }
-
-  await writeFile(scriptPath, script, { mode: 0o755, encoding: 'utf-8' });
-
-  spawn('/bin/sh', [scriptPath], {
-    detached: true,
-    stdio: 'ignore',
-  }).unref();
-
-  // Give the spawn a moment to fork before we exit
-  await new Promise(resolve => setTimeout(resolve, 200));
-  process.exit(0);
 }

@@ -1,47 +1,146 @@
-/**
- * Restart sentinel — persists cross-restart delivery context.
- *
- * Written just before the daemon exits for an update.
- * Read and consumed on the next daemon boot to notify the user.
- */
+import fs from "node:fs/promises";
+import path from "node:path";
+import { formatCliCommand } from "../cli/command-format.js";
+import { resolveStateDir } from "../config/paths.js";
 
-import { readFile, writeFile, unlink } from 'fs/promises';
-import { existsSync } from 'fs';
-import { join } from 'path';
-import { homedir } from 'os';
-
-const SENTINEL_PATH = join(homedir(), '.foxfang', 'restart-sentinel.json');
-
-export type RestartSentinel = {
-  /** Channel that triggered the update (e.g. 'telegram', 'signal', 'discord') */
-  channel: string;
-  /** Chat / user ID to reply to after restart */
-  chatId: string;
-  /** Optional thread / topic ID (e.g. Telegram message thread) */
-  threadId?: number | string;
-  /** Message to deliver after successful restart */
-  message: string;
-  /** Unix timestamp (ms) when the update was triggered */
-  triggeredAt: number;
+export type RestartSentinelLog = {
+  stdoutTail?: string | null;
+  stderrTail?: string | null;
+  exitCode?: number | null;
 };
 
-export async function writeRestartSentinel(sentinel: RestartSentinel): Promise<void> {
-  await writeFile(SENTINEL_PATH, JSON.stringify(sentinel, null, 2), 'utf-8');
+export type RestartSentinelStep = {
+  name: string;
+  command: string;
+  cwd?: string | null;
+  durationMs?: number | null;
+  log?: RestartSentinelLog | null;
+};
+
+export type RestartSentinelStats = {
+  mode?: string;
+  root?: string;
+  before?: Record<string, unknown> | null;
+  after?: Record<string, unknown> | null;
+  steps?: RestartSentinelStep[];
+  reason?: string | null;
+  durationMs?: number | null;
+};
+
+export type RestartSentinelPayload = {
+  kind: "config-apply" | "config-patch" | "update" | "restart";
+  status: "ok" | "error" | "skipped";
+  ts: number;
+  sessionKey?: string;
+  /** Delivery context captured at restart time to ensure channel routing survives restart. */
+  deliveryContext?: {
+    channel?: string;
+    to?: string;
+    accountId?: string;
+  };
+  /** Thread ID for reply threading (e.g., Slack thread_ts). */
+  threadId?: string;
+  message?: string | null;
+  doctorHint?: string | null;
+  stats?: RestartSentinelStats | null;
+};
+
+export type RestartSentinel = {
+  version: 1;
+  payload: RestartSentinelPayload;
+};
+
+const SENTINEL_FILENAME = "restart-sentinel.json";
+
+export function formatDoctorNonInteractiveHint(
+  env: Record<string, string | undefined> = process.env as Record<string, string | undefined>,
+): string {
+  return `Run: ${formatCliCommand("openclaw doctor --non-interactive", env)}`;
 }
 
-/**
- * Read the sentinel and immediately delete it so it is delivered only once.
- * Returns null if no sentinel exists.
- */
-export async function readAndConsumeRestartSentinel(): Promise<RestartSentinel | null> {
-  if (!existsSync(SENTINEL_PATH)) return null;
+export function resolveRestartSentinelPath(env: NodeJS.ProcessEnv = process.env): string {
+  return path.join(resolveStateDir(env), SENTINEL_FILENAME);
+}
+
+export async function writeRestartSentinel(
+  payload: RestartSentinelPayload,
+  env: NodeJS.ProcessEnv = process.env,
+) {
+  const filePath = resolveRestartSentinelPath(env);
+  await fs.mkdir(path.dirname(filePath), { recursive: true });
+  const data: RestartSentinel = { version: 1, payload };
+  await fs.writeFile(filePath, `${JSON.stringify(data, null, 2)}\n`, "utf-8");
+  return filePath;
+}
+
+export async function readRestartSentinel(
+  env: NodeJS.ProcessEnv = process.env,
+): Promise<RestartSentinel | null> {
+  const filePath = resolveRestartSentinelPath(env);
   try {
-    const raw = await readFile(SENTINEL_PATH, 'utf-8');
-    const sentinel = JSON.parse(raw) as RestartSentinel;
-    await unlink(SENTINEL_PATH).catch(() => {});
-    return sentinel;
+    const raw = await fs.readFile(filePath, "utf-8");
+    let parsed: RestartSentinel | undefined;
+    try {
+      parsed = JSON.parse(raw) as RestartSentinel | undefined;
+    } catch {
+      await fs.unlink(filePath).catch(() => {});
+      return null;
+    }
+    if (!parsed || parsed.version !== 1 || !parsed.payload) {
+      await fs.unlink(filePath).catch(() => {});
+      return null;
+    }
+    return parsed;
   } catch {
-    await unlink(SENTINEL_PATH).catch(() => {});
     return null;
   }
+}
+
+export async function consumeRestartSentinel(
+  env: NodeJS.ProcessEnv = process.env,
+): Promise<RestartSentinel | null> {
+  const filePath = resolveRestartSentinelPath(env);
+  const parsed = await readRestartSentinel(env);
+  if (!parsed) {
+    return null;
+  }
+  await fs.unlink(filePath).catch(() => {});
+  return parsed;
+}
+
+export function formatRestartSentinelMessage(payload: RestartSentinelPayload): string {
+  const message = payload.message?.trim();
+  if (message && !payload.stats) {
+    return message;
+  }
+  const lines: string[] = [summarizeRestartSentinel(payload)];
+  if (message) {
+    lines.push(message);
+  }
+  const reason = payload.stats?.reason?.trim();
+  if (reason && reason !== message) {
+    lines.push(`Reason: ${reason}`);
+  }
+  if (payload.doctorHint?.trim()) {
+    lines.push(payload.doctorHint.trim());
+  }
+  return lines.join("\n");
+}
+
+export function summarizeRestartSentinel(payload: RestartSentinelPayload): string {
+  const kind = payload.kind;
+  const status = payload.status;
+  const mode = payload.stats?.mode ? ` (${payload.stats.mode})` : "";
+  return `Gateway restart ${kind} ${status}${mode}`.trim();
+}
+
+export function trimLogTail(input?: string | null, maxChars = 8000) {
+  if (!input) {
+    return null;
+  }
+  const text = input.trimEnd();
+  if (text.length <= maxChars) {
+    return text;
+  }
+  return `…${text.slice(text.length - maxChars)}`;
 }

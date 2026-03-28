@@ -1,44 +1,21 @@
-/**
- * CLI Prompt utilities
- */
+import { stdin as input, stdout as output } from "node:process";
+import readline from "node:readline/promises";
+import { isVerbose, isYes } from "../globals.js";
 
-import { text, confirm as clackConfirm, select } from '@clack/prompts';
-
-export async function prompt(message: string, options: { default?: string } = {}): Promise<string> {
-  const result = await text({
-    message,
-    defaultValue: options.default,
-  });
-  
-  if (typeof result !== 'string') {
-    throw new Error('Prompt cancelled');
+export async function promptYesNo(question: string, defaultYes = false): Promise<boolean> {
+  // Simple Y/N prompt honoring global --yes and verbosity flags.
+  if (isVerbose() && isYes()) {
+    return true;
+  } // redundant guard when both flags set
+  if (isYes()) {
+    return true;
   }
-  
-  return result;
-}
-
-export async function confirm(message: string): Promise<boolean> {
-  const result = await clackConfirm({
-    message,
-  });
-  
-  if (typeof result !== 'boolean') {
-    throw new Error('Prompt cancelled');
+  const rl = readline.createInterface({ input, output });
+  const suffix = defaultYes ? " [Y/n] " : " [y/N] ";
+  const answer = (await rl.question(`${question}${suffix}`)).trim().toLowerCase();
+  rl.close();
+  if (!answer) {
+    return defaultYes;
   }
-  
-  return result;
-}
-
-export async function selectOption<T extends string>(message: string, options: { value: T; label: string }[]): Promise<T> {
-  const mappedOptions = options.map(o => ({ value: o.value, label: o.label }));
-  const result = await select({
-    message,
-    options: mappedOptions as any,
-  });
-  
-  if (result === undefined) {
-    throw new Error('Prompt cancelled');
-  }
-  
-  return result as T;
+  return answer.startsWith("y");
 }
