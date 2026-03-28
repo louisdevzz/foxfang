@@ -86,6 +86,9 @@ docs/.local/
 tmp/
 IDENTITY.md
 USER.md
+# Allow workspace template versions of these files
+!docs/reference/templates/IDENTITY.md
+!docs/reference/templates/USER.md
 .tgz
 .idea
 
