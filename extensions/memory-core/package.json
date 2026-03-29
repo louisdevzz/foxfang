@@ -1,0 +1,23 @@
+{
+  "name": "@foxfang/memory-core",
+  "version": "2026.3.27",
+  "private": true,
+  "description": "FoxFang core memory search plugin",
+  "type": "module",
+  "devDependencies": {
+    "foxfang": "workspace:*"
+  },
+  "peerDependencies": {
+    "foxfang": ">=2026.3.27"
+  },
+  "peerDependenciesMeta": {
+    "foxfang": {
+      "optional": true
+    }
+  },
+  "foxfang": {
+    "extensions": [
+      "./index.ts"
+    ]
+  }
+}

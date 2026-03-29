@@ -1,0 +1,12 @@
+{
+  "name": "@foxfang/cloudflare-ai-gateway-provider",
+  "version": "2026.3.27",
+  "private": true,
+  "description": "FoxFang Cloudflare AI Gateway provider plugin",
+  "type": "module",
+  "foxfang": {
+    "extensions": [
+      "./index.ts"
+    ]
+  }
+}

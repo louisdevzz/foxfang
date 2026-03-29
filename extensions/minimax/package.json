@@ -1,0 +1,12 @@
+{
+  "name": "@foxfang/minimax-provider",
+  "version": "2026.3.27",
+  "private": true,
+  "description": "FoxFang MiniMax provider and OAuth plugin",
+  "type": "module",
+  "foxfang": {
+    "extensions": [
+      "./index.ts"
+    ]
+  }
+}

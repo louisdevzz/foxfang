@@ -1,0 +1,12 @@
+{
+  "name": "@foxfang/chutes-provider",
+  "version": "2026.3.27",
+  "private": true,
+  "description": "FoxFang Chutes.ai provider plugin",
+  "type": "module",
+  "foxfang": {
+    "extensions": [
+      "./index.ts"
+    ]
+  }
+}

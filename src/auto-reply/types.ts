@@ -1,137 +1,100 @@
-/**
- * Auto-Reply Types
- * 
- * Type definitions for the auto-reply system.
- */
+import type { ImageContent } from "@mariozechner/pi-ai";
+import type { InteractiveReply } from "../interactive/payload.js";
+import type { TypingController } from "./reply/typing.js";
 
-export interface ReplyPayload {
-  /** Text content */
+export type BlockReplyContext = {
+  abortSignal?: AbortSignal;
+  timeoutMs?: number;
+};
+
+/** Context passed to onModelSelected callback with actual model used. */
+export type ModelSelectedContext = {
+  provider: string;
+  model: string;
+  thinkLevel: string | undefined;
+};
+
+export type TypingPolicy =
+  | "auto"
+  | "user_message"
+  | "system_event"
+  | "internal_webchat"
+  | "heartbeat";
+
+export type GetReplyOptions = {
+  /** Override run id for agent events (defaults to random UUID). */
+  runId?: string;
+  /** Abort signal for the underlying agent run. */
+  abortSignal?: AbortSignal;
+  /** Optional inbound images (used for webchat attachments). */
+  images?: ImageContent[];
+  /** Notifies when an agent run actually starts (useful for webchat command handling). */
+  onAgentRunStart?: (runId: string) => void;
+  onReplyStart?: () => Promise<void> | void;
+  /** Called when the typing controller cleans up (e.g., run ended with NO_REPLY). */
+  onTypingCleanup?: () => void;
+  onTypingController?: (typing: TypingController) => void;
+  isHeartbeat?: boolean;
+  /** Policy-level typing control for run classes (user/system/internal/heartbeat). */
+  typingPolicy?: TypingPolicy;
+  /** Force-disable typing indicators for this run (system/internal/cross-channel routes). */
+  suppressTyping?: boolean;
+  /** Resolved heartbeat model override (provider/model string from merged per-agent config). */
+  heartbeatModelOverride?: string;
+  /** Controls bootstrap workspace context injection (default: full). */
+  bootstrapContextMode?: "full" | "lightweight";
+  /** If true, suppress tool error warning payloads for this run. */
+  suppressToolErrorWarnings?: boolean;
+  onPartialReply?: (payload: ReplyPayload) => Promise<void> | void;
+  onReasoningStream?: (payload: ReplyPayload) => Promise<void> | void;
+  /** Called when a thinking/reasoning block ends. */
+  onReasoningEnd?: () => Promise<void> | void;
+  /** Called when a new assistant message starts (e.g., after tool call or thinking block). */
+  onAssistantMessageStart?: () => Promise<void> | void;
+  onBlockReply?: (payload: ReplyPayload, context?: BlockReplyContext) => Promise<void> | void;
+  onToolResult?: (payload: ReplyPayload) => Promise<void> | void;
+  /** Called when a tool phase starts/updates, before summary payloads are emitted. */
+  onToolStart?: (payload: { name?: string; phase?: string }) => Promise<void> | void;
+  /** Called when context auto-compaction starts (allows UX feedback during the pause). */
+  onCompactionStart?: () => Promise<void> | void;
+  /** Called when context auto-compaction completes. */
+  onCompactionEnd?: () => Promise<void> | void;
+  /** Called when the actual model is selected (including after fallback).
+   * Use this to get model/provider/thinkLevel for responsePrefix template interpolation. */
+  onModelSelected?: (ctx: ModelSelectedContext) => void;
+  disableBlockStreaming?: boolean;
+  /** Timeout for block reply delivery (ms). */
+  blockReplyTimeoutMs?: number;
+  /** If provided, only load these skills for this session (empty = no skills). */
+  skillFilter?: string[];
+  /** Mutable ref to track if a reply was sent (for Slack "first" threading mode). */
+  hasRepliedRef?: { value: boolean };
+  /** Override agent timeout in seconds (0 = no timeout). Threads through to resolveAgentTimeoutMs. */
+  timeoutOverrideSeconds?: number;
+};
+
+export type ReplyPayload = {
   text?: string;
-  /** Media URL (image, video) */
   mediaUrl?: string;
-  /** Audio URL (voice message) */
-  audioUrl?: string;
-  /** Send as voice message (if audio) */
+  mediaUrls?: string[];
+  interactive?: InteractiveReply;
+  btw?: {
+    question: string;
+  };
+  replyToId?: string;
+  replyToTag?: boolean;
+  /** True when [[reply_to_current]] was present but not yet mapped to a message id. */
+  replyToCurrent?: boolean;
+  /** Send audio as voice message (bubble) instead of audio file. Defaults to false. */
   audioAsVoice?: boolean;
-  /** Reply to message ID */
-  replyToMessageId?: string;
-  /** Thread ID for threaded channels */
-  threadId?: string;
-  /** Channel-specific data */
+  isError?: boolean;
+  /** Marks this payload as a reasoning/thinking block. Channels that do not
+   *  have a dedicated reasoning lane (e.g. WhatsApp, web) should suppress it. */
+  isReasoning?: boolean;
+  /** Marks this payload as a compaction status notice (start/end).
+   *  Should be excluded from TTS transcript accumulation so compaction
+   *  status lines are not synthesised into the spoken assistant reply. */
+  isCompactionNotice?: boolean;
+  /** Channel-specific payload data (per-channel envelope). */
   channelData?: Record<string, unknown>;
-}
-
-export interface IncomingMessage {
-  id: string;
-  channel: string; // 'telegram', 'discord', 'slack', 'signal'
-  from: {
-    id: string;
-    username?: string;
-    name?: string;
-  };
-  chat?: {
-    id: string;
-    type: 'private' | 'group' | 'channel';
-    title?: string;
-  };
-  text?: string;
-  /** Media attachments */
-  media?: Array<{
-    type: 'photo' | 'video' | 'audio' | 'document' | 'voice';
-    url?: string;
-    fileId?: string;
-    caption?: string;
-    filename?: string;
-    mimeType?: string;
-    size?: number;
-    localPath?: string;
-    extractedText?: string;
-    extractionMethod?: string;
-    extractionError?: string;
-  }>;
-  /** For replies/threads */
-  replyToMessageId?: string;
-  threadId?: string;
-  timestamp: Date;
-  /** Whether bot was mentioned (for group chats) */
-  wasMentioned?: boolean;
-  /** Whether mention detection is available for this channel message */
-  canDetectMention?: boolean;
-  /** Command prefix if present (/command) */
-  command?: string;
-  /** Raw channel metadata for routing/bindings */
-  metadata?: Record<string, unknown>;
-}
-
-export type AutoReplySessionScope = 'from' | 'chat' | 'thread' | 'chat-thread';
-
-export interface AutoReplyBinding {
-  /** Optional stable ID for observability/debugging */
-  id?: string;
-  /** Disable a binding without removing it */
-  enabled?: boolean;
-  /** Higher number = higher precedence (default 0) */
-  priority?: number;
-  /** Match specific channel */
-  channel?: 'telegram' | 'discord' | 'slack' | 'signal' | string;
-  /** Match chat kind */
-  chatType?: 'private' | 'group' | 'channel';
-  /** Match chat IDs (single or list) */
-  chatId?: string | string[];
-  /** Match thread IDs (single or list) */
-  threadId?: string | string[];
-  /** Match sender IDs (single or list) */
-  fromId?: string | string[];
-  /** Match connected account/bot identity (single or list) */
-  accountId?: string | string[];
-  /** Match raw metadata keys by exact value */
-  metadata?: Record<string, string | string[]>;
-  /** Agent selected when this binding matches */
-  agentId: string;
-  /** Session grouping mode for this binding */
-  sessionScope?: AutoReplySessionScope;
-}
-
-export interface AutoReplyConfig {
-  enabled: boolean;
-  defaultAgent: string;
-  allowedChannels: string[];
-  bindings?: AutoReplyBinding[];
-  defaultSessionScope?: AutoReplySessionScope;
-  /** Require mention in group chats */
-  requireMention?: boolean;
-  /** Typing indicator interval (seconds) */
-  typingIntervalSeconds?: number;
-  /** Human-like delay between message blocks (ms) */
-  humanDelayMs?: number;
-  /** Reply to message (quote) by default */
-  replyToMessage?: boolean;
-}
-
-export interface TypingController {
-  onReplyStart: () => Promise<void>;
-  startTypingLoop: () => Promise<void>;
-  refreshTypingTtl: () => void;
-  isActive: () => boolean;
-  markRunComplete: () => void;
-  markDispatchIdle: () => void;
-  cleanup: () => void;
-}
-
-export interface CommandContext {
-  message: IncomingMessage;
-  args: string[];
-  sessionId: string;
-  /** Send an async reply back to the originating channel (used for deferred responses) */
-  sendReply?: (payload: ReplyPayload) => Promise<void>;
-}
-
-export type CommandHandler = (ctx: CommandContext) => Promise<ReplyPayload | null>;
-
-export interface CommandRegistry {
-  name: string;
-  description: string;
-  handler: CommandHandler;
-  /** Whether command requires auth/ownership */
-  requireAuth?: boolean;
-}
+};

@@ -1,127 +1,566 @@
-// src/config/defaults.ts
-// Default configuration values
+import { DEFAULT_CONTEXT_TOKENS } from "../agents/defaults.js";
+import { normalizeProviderId, parseModelRef } from "../agents/model-selection.js";
+import { DEFAULT_AGENT_MAX_CONCURRENT, DEFAULT_SUBAGENT_MAX_CONCURRENT } from "./agent-limits.js";
+import { resolveAgentModelPrimaryValue } from "./model-input.js";
+import {
+  LEGACY_TALK_PROVIDER_ID,
+  normalizeTalkConfig,
+  resolveActiveTalkProviderConfig,
+  resolveTalkApiKey,
+} from "./talk.js";
+import type { FoxFangConfig } from "./types.js";
+import type { ModelDefinitionConfig } from "./types.models.js";
+import { hasConfiguredSecretInput } from "./types.secrets.js";
 
-import { homedir } from 'os';
-import { join } from 'path';
-import { AppConfig } from './schema';
+type WarnState = { warned: boolean };
 
-// Resolve the default FoxFang home directory (~/.foxfang)
-export function resolveFoxFangHome(): string {
-  return process.env.FOXFANG_HOME || join(homedir(), '.foxfang');
+let defaultWarnState: WarnState = { warned: false };
+
+type AnthropicAuthDefaultsMode = "api_key" | "oauth";
+
+const DEFAULT_MODEL_ALIASES: Readonly<Record<string, string>> = {
+  // Anthropic (pi-ai catalog uses "latest" ids without date suffix)
+  opus: "anthropic/claude-opus-4-6",
+  sonnet: "anthropic/claude-sonnet-4-6",
+
+  // OpenAI
+  gpt: "openai/gpt-5.4",
+  "gpt-mini": "openai/gpt-5-mini",
+
+  // Google Gemini (3.x are preview ids in the catalog)
+  gemini: "google/gemini-3.1-pro-preview",
+  "gemini-flash": "google/gemini-3-flash-preview",
+  "gemini-flash-lite": "google/gemini-3.1-flash-lite-preview",
+};
+
+const DEFAULT_MODEL_COST: ModelDefinitionConfig["cost"] = {
+  input: 0,
+  output: 0,
+  cacheRead: 0,
+  cacheWrite: 0,
+};
+const DEFAULT_MODEL_INPUT: ModelDefinitionConfig["input"] = ["text"];
+const DEFAULT_MODEL_MAX_TOKENS = 8192;
+const MISTRAL_SAFE_MAX_TOKENS_BY_MODEL = {
+  "devstral-medium-latest": 32_768,
+  "magistral-small": 40_000,
+  "mistral-large-latest": 16_384,
+  "mistral-medium-2508": 8_192,
+  "mistral-small-latest": 16_384,
+  "pixtral-large-latest": 32_768,
+} as const;
+
+type ModelDefinitionLike = Partial<ModelDefinitionConfig> &
+  Pick<ModelDefinitionConfig, "id" | "name">;
+
+function resolveDefaultProviderApi(
+  providerId: string,
+  providerApi: ModelDefinitionConfig["api"] | undefined,
+): ModelDefinitionConfig["api"] | undefined {
+  if (providerApi) {
+    return providerApi;
+  }
+  return normalizeProviderId(providerId) === "anthropic" ? "anthropic-messages" : undefined;
 }
 
-export const defaultConfig: AppConfig = {
-  gateway: {
-    port: 8787,
-    host: '0.0.0.0',
-    enableCors: true,
-    maxRequestSize: '10mb',
-    rateLimit: {
-      enabled: true,
-      windowMs: 60000, // 1 minute
-      maxRequests: 100
+function isPositiveNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value) && value > 0;
+}
+
+function resolveModelCost(
+  raw?: Partial<ModelDefinitionConfig["cost"]>,
+): ModelDefinitionConfig["cost"] {
+  return {
+    input: typeof raw?.input === "number" ? raw.input : DEFAULT_MODEL_COST.input,
+    output: typeof raw?.output === "number" ? raw.output : DEFAULT_MODEL_COST.output,
+    cacheRead: typeof raw?.cacheRead === "number" ? raw.cacheRead : DEFAULT_MODEL_COST.cacheRead,
+    cacheWrite:
+      typeof raw?.cacheWrite === "number" ? raw.cacheWrite : DEFAULT_MODEL_COST.cacheWrite,
+  };
+}
+
+export function resolveNormalizedProviderModelMaxTokens(params: {
+  providerId: string;
+  modelId: string;
+  contextWindow: number;
+  rawMaxTokens: number;
+}): number {
+  const clamped = Math.min(params.rawMaxTokens, params.contextWindow);
+  if (normalizeProviderId(params.providerId) !== "mistral" || clamped < params.contextWindow) {
+    return clamped;
+  }
+
+  const safeMaxTokens =
+    MISTRAL_SAFE_MAX_TOKENS_BY_MODEL[
+      params.modelId as keyof typeof MISTRAL_SAFE_MAX_TOKENS_BY_MODEL
+    ] ?? DEFAULT_MODEL_MAX_TOKENS;
+  return Math.min(safeMaxTokens, params.contextWindow);
+}
+
+function resolveAnthropicDefaultAuthMode(cfg: FoxFangConfig): AnthropicAuthDefaultsMode | null {
+  const profiles = cfg.auth?.profiles ?? {};
+  const anthropicProfiles = Object.entries(profiles).filter(
+    ([, profile]) => profile?.provider === "anthropic",
+  );
+
+  const order = cfg.auth?.order?.anthropic ?? [];
+  for (const profileId of order) {
+    const entry = profiles[profileId];
+    if (!entry || entry.provider !== "anthropic") {
+      continue;
     }
-  },
+    if (entry.mode === "api_key") {
+      return "api_key";
+    }
+    if (entry.mode === "oauth" || entry.mode === "token") {
+      return "oauth";
+    }
+  }
 
-  providers: [],
-  defaultProvider: 'openai',
-  defaultModel: 'gpt-4o-mini',
+  const hasApiKey = anthropicProfiles.some(([, profile]) => profile?.mode === "api_key");
+  const hasOauth = anthropicProfiles.some(
+    ([, profile]) => profile?.mode === "oauth" || profile?.mode === "token",
+  );
+  if (hasApiKey && !hasOauth) {
+    return "api_key";
+  }
+  if (hasOauth && !hasApiKey) {
+    return "oauth";
+  }
 
-  tools: {
-    tools: {}
-  },
+  if (process.env.ANTHROPIC_OAUTH_TOKEN?.trim()) {
+    return "oauth";
+  }
+  if (process.env.ANTHROPIC_API_KEY?.trim()) {
+    return "api_key";
+  }
+  return null;
+}
 
-  memory: {
-    enabled: true,
-    
-    maxMessages: 50,
-    ttl: 86400, // 24 hours
-  },
+function resolvePrimaryModelRef(raw?: string): string | null {
+  if (!raw || typeof raw !== "string") {
+    return null;
+  }
+  const trimmed = raw.trim();
+  if (!trimmed) {
+    return null;
+  }
+  const aliasKey = trimmed.toLowerCase();
+  return DEFAULT_MODEL_ALIASES[aliasKey] ?? trimmed;
+}
 
-  sessions: {
-    maxSessions: 1000,
-    defaultTtl: 3600, // 1 hour
-    cleanupInterval: 3600, // 1 hour
-    persistToDisk: true
-  },
+export type SessionDefaultsOptions = {
+  warn?: (message: string) => void;
+  warnState?: WarnState;
+};
 
-  plugins: [],
+export function applyMessageDefaults(cfg: FoxFangConfig): FoxFangConfig {
+  const messages = cfg.messages;
+  const hasAckScope = messages?.ackReactionScope !== undefined;
+  if (hasAckScope) {
+    return cfg;
+  }
 
-  security: {
-    enableSandbox: false,
-    maxToolExecutionTime: 30000, // 30 seconds
-    maxTokensPerRequest: 4000,
-    allowedOrigins: ['http://localhost:3000', 'http://127.0.0.1:3000'],
-    requireAuthentication: false
-  },
+  const nextMessages = messages ? { ...messages } : {};
+  nextMessages.ackReactionScope = "group-mentions";
+  return {
+    ...cfg,
+    messages: nextMessages,
+  };
+}
 
-  logging: {
-    level: 'info',
-    format: 'pretty',
-    destinations: ['console']
-  },
+export function applySessionDefaults(
+  cfg: FoxFangConfig,
+  options: SessionDefaultsOptions = {},
+): FoxFangConfig {
+  const session = cfg.session;
+  if (!session || session.mainKey === undefined) {
+    return cfg;
+  }
 
-  workspaceDir: resolveFoxFangHome(),
-  cron: {
-    enabled: true,
-    pollIntervalMs: 30000
-  },
-  heartbeat: {
-    enabled: true,
-    intervalMs: 15000
-  },
-  observability: {
-    enabled: true
-  },
-  autoReply: {
-    requireMentionInGroups: false,
-    groupActivation: 'always',
-    defaultSessionScope: 'chat-thread',
-    bindings: [],
-  },
-  agentRuntime: {
-    defaultReasoningMode: 'balanced',
-    maxRecentMessages: 4,
-    maxRelevantMemories: 5,
-    maxSourceSnippets: 3,
-    maxSnippetTokens: 300,
-    maxDelegations: 1,
-    maxReviewPasses: 1,
-    maxRewritePasses: 1,
-    maxToolIterations: 5,
-    toolCompressionThresholdChars: 1500,
-    toolCacheTtlMs: 24 * 60 * 60 * 1000,
-    routing: {
-      rules: [],
-      outputModeHints: {
-        short: ['short', 'brief', 'summary'],
-        deep: ['deep', 'detailed', 'in-depth'],
-      },
-      toolTriggers: ['search', 'research', 'source', 'read link', 'check url'],
-      reviewTriggers: ['review', 'optimize', 'improve', 'analyze', 'audit'],
-      highStakesTriggers: ['launch', 'critical', 'important', 'brand-sensitive', 'public'],
+  const trimmed = session.mainKey.trim();
+  const warn = options.warn ?? console.warn;
+  const warnState = options.warnState ?? defaultWarnState;
+
+  const next: FoxFangConfig = {
+    ...cfg,
+    session: { ...session, mainKey: "main" },
+  };
+
+  if (trimmed && trimmed !== "main" && !warnState.warned) {
+    warnState.warned = true;
+    warn('session.mainKey is ignored; main session is always "main".');
+  }
+
+  return next;
+}
+
+export function applyTalkApiKey(config: FoxFangConfig): FoxFangConfig {
+  const normalized = normalizeTalkConfig(config);
+  const resolved = resolveTalkApiKey();
+  if (!resolved) {
+    return normalized;
+  }
+
+  const talk = normalized.talk;
+  const active = resolveActiveTalkProviderConfig(talk);
+  if (!active || active.provider !== LEGACY_TALK_PROVIDER_ID) {
+    return normalized;
+  }
+
+  const existingProviderApiKeyConfigured = hasConfiguredSecretInput(active?.config?.apiKey);
+  const existingLegacyApiKeyConfigured = hasConfiguredSecretInput(talk?.apiKey);
+  if (existingProviderApiKeyConfigured || existingLegacyApiKeyConfigured) {
+    return normalized;
+  }
+
+  const providerId = active.provider;
+  const providers = { ...talk?.providers };
+  const providerConfig = { ...providers[providerId], apiKey: resolved };
+  providers[providerId] = providerConfig;
+
+  const nextTalk = {
+    ...talk,
+    apiKey: resolved,
+    providers,
+  };
+
+  return {
+    ...normalized,
+    talk: nextTalk,
+  };
+}
+
+export function applyTalkConfigNormalization(config: FoxFangConfig): FoxFangConfig {
+  return normalizeTalkConfig(config);
+}
+
+export function applyModelDefaults(cfg: FoxFangConfig): FoxFangConfig {
+  let mutated = false;
+  let nextCfg = cfg;
+
+  const providerConfig = nextCfg.models?.providers;
+  if (providerConfig) {
+    const nextProviders = { ...providerConfig };
+    for (const [providerId, provider] of Object.entries(providerConfig)) {
+      const models = provider.models;
+      if (!Array.isArray(models) || models.length === 0) {
+        continue;
+      }
+      const providerApi = resolveDefaultProviderApi(providerId, provider.api);
+      let nextProvider = provider;
+      if (providerApi && provider.api !== providerApi) {
+        mutated = true;
+        nextProvider = { ...nextProvider, api: providerApi };
+      }
+      let providerMutated = false;
+      const nextModels = models.map((model) => {
+        const raw = model as ModelDefinitionLike;
+        let modelMutated = false;
+
+        const reasoning = typeof raw.reasoning === "boolean" ? raw.reasoning : false;
+        if (raw.reasoning !== reasoning) {
+          modelMutated = true;
+        }
+
+        const input = raw.input ?? [...DEFAULT_MODEL_INPUT];
+        if (raw.input === undefined) {
+          modelMutated = true;
+        }
+
+        const cost = resolveModelCost(raw.cost);
+        const costMutated =
+          !raw.cost ||
+          raw.cost.input !== cost.input ||
+          raw.cost.output !== cost.output ||
+          raw.cost.cacheRead !== cost.cacheRead ||
+          raw.cost.cacheWrite !== cost.cacheWrite;
+        if (costMutated) {
+          modelMutated = true;
+        }
+
+        const contextWindow = isPositiveNumber(raw.contextWindow)
+          ? raw.contextWindow
+          : DEFAULT_CONTEXT_TOKENS;
+        if (raw.contextWindow !== contextWindow) {
+          modelMutated = true;
+        }
+
+        const defaultMaxTokens = Math.min(DEFAULT_MODEL_MAX_TOKENS, contextWindow);
+        const rawMaxTokens = isPositiveNumber(raw.maxTokens) ? raw.maxTokens : defaultMaxTokens;
+        const maxTokens = resolveNormalizedProviderModelMaxTokens({
+          providerId,
+          modelId: raw.id,
+          contextWindow,
+          rawMaxTokens,
+        });
+        if (raw.maxTokens !== maxTokens) {
+          modelMutated = true;
+        }
+        const api = raw.api ?? providerApi;
+        if (raw.api !== api) {
+          modelMutated = true;
+        }
+
+        if (!modelMutated) {
+          return model;
+        }
+        providerMutated = true;
+        return {
+          ...raw,
+          reasoning,
+          input,
+          cost,
+          contextWindow,
+          maxTokens,
+          api,
+        } as ModelDefinitionConfig;
+      });
+
+      if (!providerMutated) {
+        if (nextProvider !== provider) {
+          nextProviders[providerId] = nextProvider;
+        }
+        continue;
+      }
+      nextProviders[providerId] = { ...nextProvider, models: nextModels };
+      mutated = true;
+    }
+
+    if (mutated) {
+      nextCfg = {
+        ...nextCfg,
+        models: {
+          ...nextCfg.models,
+          providers: nextProviders,
+        },
+      };
+    }
+  }
+
+  const existingAgent = nextCfg.agents?.defaults;
+  if (!existingAgent) {
+    return mutated ? nextCfg : cfg;
+  }
+  const existingModels = existingAgent.models ?? {};
+  if (Object.keys(existingModels).length === 0) {
+    return mutated ? nextCfg : cfg;
+  }
+
+  const nextModels: Record<string, { alias?: string }> = {
+    ...existingModels,
+  };
+
+  for (const [alias, target] of Object.entries(DEFAULT_MODEL_ALIASES)) {
+    const entry = nextModels[target];
+    if (!entry) {
+      continue;
+    }
+    if (entry.alias !== undefined) {
+      continue;
+    }
+    nextModels[target] = { ...entry, alias };
+    mutated = true;
+  }
+
+  if (!mutated) {
+    return cfg;
+  }
+
+  return {
+    ...nextCfg,
+    agents: {
+      ...nextCfg.agents,
+      defaults: { ...existingAgent, models: nextModels },
     },
-  },
-  defaultSystemPrompt: `You are a helpful AI assistant for FoxFang.
+  };
+}
 
-You can help with:
-- Marketing strategy and planning
-- Content creation and optimization  
-- Campaign analysis and insights
-- Social media management
-- Brand guidelines enforcement
+export function applyAgentDefaults(cfg: FoxFangConfig): FoxFangConfig {
+  const agents = cfg.agents;
+  const defaults = agents?.defaults;
+  const hasMax =
+    typeof defaults?.maxConcurrent === "number" && Number.isFinite(defaults.maxConcurrent);
+  const hasSubMax =
+    typeof defaults?.subagents?.maxConcurrent === "number" &&
+    Number.isFinite(defaults.subagents.maxConcurrent);
+  if (hasMax && hasSubMax) {
+    return cfg;
+  }
 
-Be professional, concise, and helpful. Use available tools when appropriate.`,
-  defaultTemperature: 0.7,
-  defaultMaxTokens: 2000
-};
+  let mutated = false;
+  const nextDefaults = defaults ? { ...defaults } : {};
+  if (!hasMax) {
+    nextDefaults.maxConcurrent = DEFAULT_AGENT_MAX_CONCURRENT;
+    mutated = true;
+  }
 
-// Built-in tool defaults
-export const builtinToolDefaults: Record<string, { enabled: boolean; timeout: number; requireApproval: boolean }> = {
-  search_web: { enabled: true, timeout: 10000, requireApproval: false },
-  memory_recall: { enabled: true, timeout: 5000, requireApproval: false },
-  memory_store: { enabled: true, timeout: 5000, requireApproval: false },
-  shell: { enabled: false, timeout: 30000, requireApproval: true },
-  file_read: { enabled: true, timeout: 5000, requireApproval: false },
-  file_write: { enabled: false, timeout: 5000, requireApproval: true },
-};
+  const nextSubagents = defaults?.subagents ? { ...defaults.subagents } : {};
+  if (!hasSubMax) {
+    nextSubagents.maxConcurrent = DEFAULT_SUBAGENT_MAX_CONCURRENT;
+    mutated = true;
+  }
+
+  if (!mutated) {
+    return cfg;
+  }
+
+  return {
+    ...cfg,
+    agents: {
+      ...agents,
+      defaults: {
+        ...nextDefaults,
+        subagents: nextSubagents,
+      },
+    },
+  };
+}
+
+export function applyLoggingDefaults(cfg: FoxFangConfig): FoxFangConfig {
+  const logging = cfg.logging;
+  if (!logging) {
+    return cfg;
+  }
+  if (logging.redactSensitive) {
+    return cfg;
+  }
+  return {
+    ...cfg,
+    logging: {
+      ...logging,
+      redactSensitive: "tools",
+    },
+  };
+}
+
+export function applyContextPruningDefaults(cfg: FoxFangConfig): FoxFangConfig {
+  const defaults = cfg.agents?.defaults;
+  if (!defaults) {
+    return cfg;
+  }
+
+  const authMode = resolveAnthropicDefaultAuthMode(cfg);
+  if (!authMode) {
+    return cfg;
+  }
+
+  let mutated = false;
+  const nextDefaults = { ...defaults };
+  const contextPruning = defaults.contextPruning ?? {};
+  const heartbeat = defaults.heartbeat ?? {};
+
+  if (defaults.contextPruning?.mode === undefined) {
+    nextDefaults.contextPruning = {
+      ...contextPruning,
+      mode: "cache-ttl",
+      ttl: defaults.contextPruning?.ttl ?? "1h",
+    };
+    mutated = true;
+  }
+
+  if (defaults.heartbeat?.every === undefined) {
+    nextDefaults.heartbeat = {
+      ...heartbeat,
+      every: authMode === "oauth" ? "1h" : "30m",
+    };
+    mutated = true;
+  }
+
+  if (authMode === "api_key") {
+    const nextModels = defaults.models ? { ...defaults.models } : {};
+    let modelsMutated = false;
+    const isAnthropicCacheRetentionTarget = (
+      parsed: { provider: string; model: string } | null | undefined,
+    ): parsed is { provider: string; model: string } =>
+      Boolean(
+        parsed &&
+        (parsed.provider === "anthropic" ||
+          (parsed.provider === "amazon-bedrock" &&
+            parsed.model.toLowerCase().includes("anthropic.claude"))),
+      );
+
+    for (const [key, entry] of Object.entries(nextModels)) {
+      const parsed = parseModelRef(key, "anthropic");
+      if (!isAnthropicCacheRetentionTarget(parsed)) {
+        continue;
+      }
+      const current = entry ?? {};
+      const params = (current as { params?: Record<string, unknown> }).params ?? {};
+      if (typeof params.cacheRetention === "string") {
+        continue;
+      }
+      nextModels[key] = {
+        ...(current as Record<string, unknown>),
+        params: { ...params, cacheRetention: "short" },
+      };
+      modelsMutated = true;
+    }
+
+    const primary = resolvePrimaryModelRef(
+      resolveAgentModelPrimaryValue(defaults.model) ?? undefined,
+    );
+    if (primary) {
+      const parsedPrimary = parseModelRef(primary, "anthropic");
+      if (isAnthropicCacheRetentionTarget(parsedPrimary)) {
+        const key = `${parsedPrimary.provider}/${parsedPrimary.model}`;
+        const entry = nextModels[key];
+        const current = entry ?? {};
+        const params = (current as { params?: Record<string, unknown> }).params ?? {};
+        if (typeof params.cacheRetention !== "string") {
+          nextModels[key] = {
+            ...(current as Record<string, unknown>),
+            params: { ...params, cacheRetention: "short" },
+          };
+          modelsMutated = true;
+        }
+      }
+    }
+
+    if (modelsMutated) {
+      nextDefaults.models = nextModels;
+      mutated = true;
+    }
+  }
+
+  if (!mutated) {
+    return cfg;
+  }
+
+  return {
+    ...cfg,
+    agents: {
+      ...cfg.agents,
+      defaults: nextDefaults,
+    },
+  };
+}
+
+export function applyCompactionDefaults(cfg: FoxFangConfig): FoxFangConfig {
+  const defaults = cfg.agents?.defaults;
+  if (!defaults) {
+    return cfg;
+  }
+  const compaction = defaults?.compaction;
+  if (compaction?.mode) {
+    return cfg;
+  }
+
+  return {
+    ...cfg,
+    agents: {
+      ...cfg.agents,
+      defaults: {
+        ...defaults,
+        compaction: {
+          ...compaction,
+          mode: "safeguard",
+        },
+      },
+    },
+  };
+}
+
+export function resetSessionDefaultsWarningForTests() {
+  defaultWarnState = { warned: false };
+}

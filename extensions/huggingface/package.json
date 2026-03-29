@@ -1,0 +1,12 @@
+{
+  "name": "@foxfang/huggingface-provider",
+  "version": "2026.3.27",
+  "private": true,
+  "description": "FoxFang Hugging Face provider plugin",
+  "type": "module",
+  "foxfang": {
+    "extensions": [
+      "./index.ts"
+    ]
+  }
+}

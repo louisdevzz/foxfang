@@ -1,0 +1,42 @@
+{
+  "name": "@foxfang/mattermost",
+  "version": "2026.3.27",
+  "description": "FoxFang Mattermost channel plugin",
+  "type": "module",
+  "dependencies": {
+    "@sinclair/typebox": "0.34.48",
+    "ws": "^8.20.0"
+  },
+  "devDependencies": {
+    "foxfang": "workspace:*"
+  },
+  "peerDependencies": {
+    "foxfang": ">=2026.3.27"
+  },
+  "peerDependenciesMeta": {
+    "foxfang": {
+      "optional": true
+    }
+  },
+  "foxfang": {
+    "extensions": [
+      "./index.ts"
+    ],
+    "setupEntry": "./setup-entry.ts",
+    "channel": {
+      "id": "mattermost",
+      "label": "Mattermost",
+      "selectionLabel": "Mattermost (plugin)",
+      "docsPath": "/channels/mattermost",
+      "docsLabel": "mattermost",
+      "blurb": "self-hosted Slack-style chat; install the plugin to enable.",
+      "order": 65
+    },
+    "install": {
+      "npmSpec": "@foxfang/mattermost",
+      "localPath": "extensions/mattermost",
+      "defaultChoice": "npm",
+      "minHostVersion": ">=2026.3.27"
+    }
+  }
+}

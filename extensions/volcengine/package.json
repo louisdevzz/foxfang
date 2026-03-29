@@ -1,0 +1,12 @@
+{
+  "name": "@foxfang/volcengine-provider",
+  "version": "2026.3.27",
+  "private": true,
+  "description": "FoxFang Volcengine provider plugin",
+  "type": "module",
+  "foxfang": {
+    "extensions": [
+      "./index.ts"
+    ]
+  }
+}

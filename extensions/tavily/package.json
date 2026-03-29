@@ -1,0 +1,12 @@
+{
+  "name": "@foxfang/tavily-plugin",
+  "version": "2026.3.27",
+  "private": true,
+  "description": "FoxFang Tavily plugin",
+  "type": "module",
+  "foxfang": {
+    "extensions": [
+      "./index.ts"
+    ]
+  }
+}

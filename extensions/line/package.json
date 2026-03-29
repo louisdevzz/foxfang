@@ -1,0 +1,40 @@
+{
+  "name": "@foxfang/line",
+  "version": "2026.3.27",
+  "private": true,
+  "description": "FoxFang LINE channel plugin",
+  "type": "module",
+  "devDependencies": {
+    "foxfang": "workspace:*"
+  },
+  "peerDependencies": {
+    "foxfang": ">=2026.3.27"
+  },
+  "peerDependenciesMeta": {
+    "foxfang": {
+      "optional": true
+    }
+  },
+  "foxfang": {
+    "extensions": [
+      "./index.ts"
+    ],
+    "setupEntry": "./setup-entry.ts",
+    "channel": {
+      "id": "line",
+      "label": "LINE",
+      "selectionLabel": "LINE (Messaging API)",
+      "docsPath": "/channels/line",
+      "docsLabel": "line",
+      "blurb": "LINE Messaging API bot for Japan/Taiwan/Thailand markets.",
+      "order": 75,
+      "quickstartAllowFrom": true
+    },
+    "install": {
+      "npmSpec": "@foxfang/line",
+      "localPath": "extensions/line",
+      "defaultChoice": "npm",
+      "minHostVersion": ">=2026.3.27"
+    }
+  }
+}

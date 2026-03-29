@@ -1,0 +1,12 @@
+{
+  "name": "@foxfang/mistral-provider",
+  "version": "2026.3.27",
+  "private": true,
+  "description": "FoxFang Mistral provider plugin",
+  "type": "module",
+  "foxfang": {
+    "extensions": [
+      "./index.ts"
+    ]
+  }
+}

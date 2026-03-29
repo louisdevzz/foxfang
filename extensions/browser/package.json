@@ -1,0 +1,12 @@
+{
+  "name": "@foxfang/browser-plugin",
+  "version": "2026.3.27",
+  "private": true,
+  "description": "FoxFang browser tool plugin",
+  "type": "module",
+  "foxfang": {
+    "extensions": [
+      "./index.ts"
+    ]
+  }
+}

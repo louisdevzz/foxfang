@@ -1,25 +1,29 @@
 {
   "compilerOptions": {
-    "target": "ES2022",
-    "module": "CommonJS",
-    "moduleResolution": "node",
-    "outDir": "./dist",
-    "rootDir": "./src",
-    "strict": true,
-    "esModuleInterop": true,
-    "skipLibCheck": true,
-    "forceConsistentCasingInFileNames": true,
-    "resolveJsonModule": true,
+    "allowImportingTsExtensions": true,
+    "allowSyntheticDefaultImports": true,
     "declaration": true,
-    "declarationMap": true,
-    "sourceMap": true,
-    "lib": ["ES2022", "DOM"],
-    "types": ["node"],
-    "jsx": "react",
-    "jsxFactory": "React.createElement",
-    "jsxFragmentFactory": "React.Fragment",
-    "allowSyntheticDefaultImports": true
+    "esModuleInterop": true,
+    "experimentalDecorators": true,
+    "forceConsistentCasingInFileNames": true,
+    "lib": ["DOM", "DOM.Iterable", "ES2023", "ScriptHost"],
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "noEmit": true,
+    "noEmitOnError": true,
+    "outDir": "dist",
+    "resolveJsonModule": true,
+    "skipLibCheck": true,
+    "strict": true,
+    "target": "es2023",
+    "useDefineForClassFields": false,
+    "paths": {
+      "foxfang/extension-api": ["./src/extensionAPI.ts"],
+      "foxfang/plugin-sdk": ["./src/plugin-sdk/index.ts"],
+      "foxfang/plugin-sdk/*": ["./src/plugin-sdk/*.ts"],
+      "foxfang/plugin-sdk/account-id": ["./src/plugin-sdk/account-id.ts"]
+    }
   },
-  "include": ["src/**/*", "src/types/*.d.ts"],
-  "exclude": ["node_modules", "dist", "ui", ".temp"]
+  "include": ["src/**/*", "ui/**/*", "extensions/**/*", "packages/**/*"],
+  "exclude": ["node_modules", "dist"]
 }

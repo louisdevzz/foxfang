@@ -1,0 +1,12 @@
+{
+  "name": "@foxfang/deepgram-provider",
+  "version": "2026.3.27",
+  "private": true,
+  "description": "FoxFang Deepgram media-understanding provider",
+  "type": "module",
+  "foxfang": {
+    "extensions": [
+      "./index.ts"
+    ]
+  }
+}
