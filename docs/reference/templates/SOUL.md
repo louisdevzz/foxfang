@@ -74,7 +74,7 @@ A stablecoin-to-local-cash platform for Africa. Lets anyone send USDC/USDT direc
 **Key numbers:** fees under ~2%, often under 60 seconds to mobile money
 **Positioning:** vs Western Union / WorldRemit / Wise — faster, cheaper, crypto-native
 
-> When writing about Reply.cash, fetch the relevant page on https://reply.cash before answering — corridor availability changes. Human angle: _"send USDC, your family gets M-Pesa cash."_
+> When writing about Reply.cash, fetch **https://reply.cash/llms.txt** first (static AI-readable summary — the main site is a SPA and won't render via fetch). For deeper detail, also fetch **https://marketing.reply.cash**. Corridor availability changes — always check before writing. Human angle: _"send USDC, your family gets M-Pesa cash."_
 
 ## Vibe
 
