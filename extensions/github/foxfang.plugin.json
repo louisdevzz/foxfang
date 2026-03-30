@@ -1,0 +1,66 @@
+{
+  "id": "github",
+  "providerAuthEnvVars": {
+    "github": [
+      "GITHUB_APP_ID",
+      "GITHUB_APP_PRIVATE_KEY",
+      "GITHUB_APP_INSTALLATION_ID"
+    ]
+  },
+  "uiHints": {
+    "appId": {
+      "label": "GitHub App ID",
+      "help": "Numeric App ID from your GitHub App settings page. Fallback: GITHUB_APP_ID env var.",
+      "placeholder": "123456"
+    },
+    "privateKey": {
+      "label": "GitHub App Private Key (PEM)",
+      "help": "RSA private key generated in your GitHub App settings. Paste the full PEM contents. Fallback: GITHUB_APP_PRIVATE_KEY env var.",
+      "sensitive": true,
+      "placeholder": "-----BEGIN RSA PRIVATE KEY-----\n..."
+    },
+    "installationId": {
+      "label": "Installation ID",
+      "help": "Installation ID for the org/user where the app is installed. Find it in the GitHub App installation URL or via API. Fallback: GITHUB_APP_INSTALLATION_ID env var.",
+      "placeholder": "12345678"
+    },
+    "defaultOwner": {
+      "label": "Default Owner",
+      "help": "Default GitHub org or username for issue creation (e.g. PotLock).",
+      "placeholder": "PotLock"
+    },
+    "defaultRepo": {
+      "label": "Default Repository",
+      "help": "Default repo name (without owner) for issue creation (e.g. reply-marketing).",
+      "placeholder": "reply-marketing"
+    }
+  },
+  "contracts": {
+    "tools": [
+      "github_create_issue",
+      "github_list_issues",
+      "github_add_comment"
+    ]
+  },
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "appId": {
+        "type": "string"
+      },
+      "privateKey": {
+        "type": ["string", "object"]
+      },
+      "installationId": {
+        "type": "string"
+      },
+      "defaultOwner": {
+        "type": "string"
+      },
+      "defaultRepo": {
+        "type": "string"
+      }
+    }
+  }
+}

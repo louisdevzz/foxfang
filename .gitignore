@@ -139,3 +139,4 @@ docs/superpowers
 # Deprecated changelog fragment workflow
 changelog/fragments/
 .temp
+plan.md
