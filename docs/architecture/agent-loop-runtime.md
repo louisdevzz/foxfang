@@ -1,119 +1,182 @@
 # Agent Loop Runtime Logic (FoxFang)
 
-Tài liệu này mô tả chi tiết vòng lặp agent runtime:
-- session/model preparation,
-- fallback orchestration,
-- tool streaming/events,
-- delivery/persistence/update session usage.
+Tài liệu này là bản deep-dive của vòng lặp agent runtime theo code hiện tại, tập trung vào:
+- active-run queue policy,
+- preflight compaction + memory flush,
+- fallback loop (CLI/embedded),
+- tool/event streaming và delivery semantics,
+- post-run accounting + recovery paths.
 
-## 1) Thành phần chính
+## 1) Thành phần chính (code-backed)
 
-- Agent command entrypoint và preparation: `src/agents/agent-command.ts`
-- Reply agent main loop: `src/auto-reply/reply/agent-runner.ts`
-- Model fallback + embedded/CLI run execution: `src/auto-reply/reply/agent-runner-execution.ts`
-- Memory/compaction hooks trước run: `src/auto-reply/reply/agent-runner-memory.ts`
+- Agent run orchestration: `src/auto-reply/reply/agent-runner.ts`
+- Fallback + execution internals: `src/auto-reply/reply/agent-runner-execution.ts`
+- Fallback engine: `src/agents/model-fallback.ts`
+- Pre-run memory/compaction: `src/auto-reply/reply/agent-runner-memory.ts`
+- Queue/followup policies: `src/auto-reply/reply/queue-policy.ts`, `src/auto-reply/reply/queue.ts`
 
-## 2) Agent command prepare -> execute flow
+## 2) Runtime phases (single turn)
+
+```mermaid
+%%{init: {'theme':'base','themeVariables': {'primaryColor':'#E8F0FF','primaryTextColor':'#0B1F3A','primaryBorderColor':'#4B74C9','lineColor':'#6B7DA3','secondaryColor':'#E9FFF4','tertiaryColor':'#FFF4E6','fontFamily':'Inter, system-ui, sans-serif'}}}%%
+flowchart LR
+    P0["Ingress"] --> P1["Queue decision"]
+    P1 --> P2["Typing start"]
+    P2 --> P3["Preflight compaction"]
+    P3 --> P4["Memory flush gate"]
+    P4 --> P5["runAgentTurnWithFallback"]
+    P5 --> P6["Payload assembly + thread/reply mode"]
+    P6 --> P7["Usage/session accounting"]
+    P7 --> P8["Finalize + followup scheduling"]
+```
+
+## 3) Active-run queue policy (chi tiết)
+
+`runReplyAgent()` không luôn chạy model ngay. Nó resolve action qua `resolveActiveRunQueueAction(...)`:
+- `drop`: bỏ turn mới, cleanup typing.
+- `enqueue-followup`: đưa vào queue và trả về sớm.
+- `run-now`: tiếp tục chạy turn hiện tại.
 
 ```mermaid
 %%{init: {'theme':'base','themeVariables': {'primaryColor':'#E8F0FF','primaryTextColor':'#0B1F3A','primaryBorderColor':'#4B74C9','lineColor':'#6B7DA3','secondaryColor':'#E9FFF4','tertiaryColor':'#FFF4E6','fontFamily':'Inter, system-ui, sans-serif'}}}%%
 flowchart TD
-    A0["agent command request"] --> A1["Validate message and target selector"]
-    A1 --> A2["Load config + resolve secret refs + set runtime snapshot"]
-    A2 --> A3["Resolve session info and session store paths"]
-    A3 --> A4["Resolve agent/workspace and ensure workspace files"]
-    A4 --> A5["Resolve model defaults + overrides + allowlist"]
-    A5 --> A6["Resolve timeout, thinking, verbose levels"]
-    A6 --> A7["Resolve transcript file"]
-    A7 --> A8["Execute run with model fallback"]
-    A8 --> A9["Persist usage/session updates + deliver result"]
+    Q0["Incoming turn"] --> Q1{"Another run active?"}
+    Q1 -- "No" --> Q2["run-now"]
+    Q1 -- "Yes" --> Q3["Resolve queue mode + heartbeat/followup flags"]
+    Q3 --> Q4{"Action"}
+    Q4 -- "drop" --> Q5["Return undefined"]
+    Q4 -- "enqueue-followup" --> Q6["enqueueFollowupRun(...)"]
+    Q6 --> Q7{"Original run already ended?"}
+    Q7 -- "Yes" --> Q8["finalizeWithFollowup(...) immediate trigger"]
+    Q7 -- "No" --> Q9["Wait original run finish"]
+    Q4 -- "run-now" --> Q2
 ```
 
-## 3) Main agent loop (reply path)
+## 4) Pre-run stage: compaction + memory flush
+
+Trước khi vào model loop:
+- `runPreflightCompactionIfNeeded(...)`
+- `runMemoryFlushIfNeeded(...)`
+
+Mục đích:
+- giữ session không vượt context budget,
+- flush memory đúng nhịp theo compaction counters,
+- cập nhật session entry trước run chính.
+
+## 5) Fallback execution (core loop)
+
+`runAgentTurnWithFallback(...)` là phần nặng nhất của vòng lặp:
+- tạo `runId`,
+- đăng ký run context cho event stream,
+- dựng callback pipeline cho partial/tool/lifecycle,
+- gọi `runWithModelFallback(...)`,
+- map lỗi sang recovery path phù hợp.
 
 ```mermaid
 %%{init: {'theme':'base','themeVariables': {'primaryColor':'#E8F0FF','primaryTextColor':'#0B1F3A','primaryBorderColor':'#4B74C9','lineColor':'#6B7DA3','secondaryColor':'#E9FFF4','tertiaryColor':'#FFF4E6','fontFamily':'Inter, system-ui, sans-serif'}}}%%
 flowchart TD
-    R0["runReplyAgent() start"] --> R1["Resolve queue mode and active-run policy"]
-    R1 --> R2{"Drop / enqueue / run now?"}
-    R2 -- "drop" --> R3["End quickly, no payload"]
-    R2 -- "enqueue" --> R4["Queue followup run and return"]
-    R2 -- "run now" --> R5["Signal typing start"]
-    R5 --> R6["Preflight compaction if needed"]
-    R6 --> R7["Memory flush if needed"]
-    R7 --> R8["Execute runAgentTurnWithFallback"]
-    R8 --> R9{"Final short-circuit payload?"}
-    R9 -- "Yes" --> R10["Finalize with followup"]
-    R9 -- "No" --> R11["Build reply payloads + dedupe/filter"]
-    R11 --> R12["Apply reminder safeguards + reply threading mode"]
-    R12 --> R13["Persist usage/metrics + verbose notices"]
-    R13 --> R14["Finalize payload(s) and schedule followup run"]
+    F0["runAgentTurnWithFallback start"] --> F1["Setup runId, typing+delivery normalizers"]
+    F1 --> F2["Build blockReply handler + tool callbacks"]
+    F2 --> F3["runWithModelFallback(...)"]
+    F3 --> F4{"Candidate provider type"}
+    F4 -- "CLI provider" --> F5["runCliAgent + lifecycle emission backstop"]
+    F4 -- "Embedded provider" --> F6["runEmbeddedPiAgent with streaming callbacks"]
+    F5 --> F7{"Attempt success?"}
+    F6 --> F7
+    F7 -- "No + candidate remains" --> F3
+    F7 -- "No + exhausted" --> F8["Throw lastError or FallbackSummaryError"]
+    F7 -- "Yes" --> F9["Return runResult + fallback attempts"]
 ```
 
-## 4) Model fallback execution (embedded + CLI)
+## 6) Model fallback engine semantics (`model-fallback.ts`)
+
+- Dựng candidate list từ explicit model + allowlist + fallback candidates.
+- De-dup theo `provider/model`.
+- Với mỗi candidate:
+  - chạy attempt,
+  - normalize failover errors,
+  - phân loại retryable vs terminal.
+- Khi tất cả candidate fail:
+  - 1 attempt duy nhất -> rethrow lỗi gốc,
+  - nhiều attempts -> throw `FallbackSummaryError` với attempt history + cooldown hint.
 
 ```mermaid
 %%{init: {'theme':'base','themeVariables': {'primaryColor':'#E8F0FF','primaryTextColor':'#0B1F3A','primaryBorderColor':'#4B74C9','lineColor':'#6B7DA3','secondaryColor':'#E9FFF4','tertiaryColor':'#FFF4E6','fontFamily':'Inter, system-ui, sans-serif'}}}%%
 flowchart TD
-    F0["Start runWithModelFallback"] --> F1["Try selected provider/model"]
-    F1 --> F2{"Provider type"}
-    F2 -- "CLI backend" --> F3["Run CLI agent and emit lifecycle events"]
-    F2 -- "Embedded runtime" --> F4["Run embedded agent with tool/event callbacks"]
-    F3 --> F5{"Run success?"}
-    F4 --> F5
-    F5 -- "Yes" --> F6["Return result + fallback attempts summary"]
-    F5 -- "No" --> F7{"Fallback candidates remain?"}
-    F7 -- "Yes" --> F8["Try next model/provider"]
-    F8 --> F2
-    F7 -- "No" --> F9["Raise summarized fallback error"]
+    M0["Resolve fallback candidates"] --> M1["Attempt N: run(provider, model)"]
+    M1 --> M2{"Success?"}
+    M2 -- "Yes" --> M3["Return success + attempts metadata"]
+    M2 -- "No" --> M4{"AbortError non-timeout?"}
+    M4 -- "Yes" --> M5["Rethrow immediately"]
+    M4 -- "No" --> M6["Record attempt (reason/status/code)"]
+    M6 --> M7{"Has next candidate?"}
+    M7 -- "Yes" --> M1
+    M7 -- "No" --> M8["Throw fallback failure summary"]
 ```
 
-## 5) Tool/event streaming path inside embedded run
+## 7) Streaming and tool event path
 
 ```mermaid
 %%{init: {'theme':'base','themeVariables': {'primaryColor':'#E8F0FF','primaryTextColor':'#0B1F3A','primaryBorderColor':'#4B74C9','lineColor':'#6B7DA3','secondaryColor':'#E9FFF4','tertiaryColor':'#FFF4E6','fontFamily':'Inter, system-ui, sans-serif'}}}%%
 flowchart TD
-    T0["Embedded run emits events"] --> T1{"Event stream type"}
-    T1 -- "assistant partial" --> T2["Sanitize text + typing delta + partial delivery"]
-    T1 -- "tool start/update" --> T3["Typing tool signal + tool-start callback"]
-    T1 -- "tool result" --> T4["Serialize tool-result delivery to preserve order"]
-    T1 -- "compaction start/end" --> T5["Send compaction notice + update counters"]
-    T1 -- "lifecycle start/end/error" --> T6["Emit lifecycle stream to observers"]
-    T2 --> T7["Continue run loop"]
-    T3 --> T7
-    T4 --> T7
-    T5 --> T7
-    T6 --> T7
+    S0["Model stream event"] --> S1{"Type"}
+    S1 -- "assistant partial" --> S2["sanitize + typing delta + optional block reply emit"]
+    S1 -- "tool start/update" --> S3["tool progress callbacks"]
+    S1 -- "tool result" --> S4["serialize output/result emit; avoid duplication"]
+    S1 -- "compaction notice" --> S5["propagate compaction status and counters"]
+    S1 -- "lifecycle" --> S6["emit lifecycle start/end/error for observers"]
+    S2 --> S7["continue"]
+    S3 --> S7
+    S4 --> S7
+    S5 --> S7
+    S6 --> S7
 ```
 
-## 6) Error recovery matrix trong agent loop
+Các điểm đặc biệt trong code:
+- Lọc token điều khiển (`SILENT_REPLY_TOKEN`, `HEARTBEAT_TOKEN` artifacts).
+- Cho phép payload media-only đi qua dù text rỗng.
+- Giữ `directlySentBlockKeys` để tránh gửi trùng khi vừa pipeline vừa flush trực tiếp.
+- CLI path có lifecycle-event backstop để tránh consumer treo.
+
+## 8) Error and recovery matrix (chi tiết hơn)
 
 ```mermaid
 %%{init: {'theme':'base','themeVariables': {'primaryColor':'#E8F0FF','primaryTextColor':'#0B1F3A','primaryBorderColor':'#4B74C9','lineColor':'#6B7DA3','secondaryColor':'#E9FFF4','tertiaryColor':'#FFF4E6','fontFamily':'Inter, system-ui, sans-serif'}}}%%
 flowchart TD
-    E0["Run error captured"] --> E1{"Error class"}
-    E1 -- "Live model switch" --> E2["Update active model/provider and retry"]
-    E1 -- "Compaction failure / overflow" --> E3["Reset session and return recovery message"]
-    E1 -- "Role ordering conflict" --> E4["Reset session + cleanup transcript, ask retry"]
-    E1 -- "Session corruption pattern" --> E5["Delete corrupt session artifacts, start fresh"]
-    E1 -- "Transient HTTP provider error" --> E6["Single delayed retry"]
-    E1 -- "Rate limit / overload summary" --> E7["Return cooldown message"]
-    E1 -- "Billing" --> E8["Return billing guidance message"]
-    E1 -- "Other fatal" --> E9["Return generic failure + logs hint"]
+    E0["Caught run error"] --> E1{"Classifier"}
+    E1 -- "LiveSessionModelSwitchError" --> E2["patch session provider/model and retry loop"]
+    E1 -- "Compaction failure / context overflow" --> E3{"already reset once?"}
+    E3 -- "No" --> E4["reset session and retry"]
+    E3 -- "Yes" --> E5["return final recovery payload"]
+    E1 -- "Role ordering conflict" --> E6["reset session with transcript cleanup guidance"]
+    E1 -- "Transient HTTP error" --> E7{"already retried?"}
+    E7 -- "No" --> E8["sleep 2.5s then retry once"]
+    E7 -- "Yes" --> E9["fall through final error payload"]
+    E1 -- "Rate limit/overloaded summary" --> E10["cooldown message (with ETA if known)"]
+    E1 -- "Billing error" --> E11["billing guidance message"]
+    E1 -- "Other fatal" --> E12["generic failure payload + logs"]
 ```
 
-## 7) Post-run accounting và session update
+## 9) Post-run accounting and persistence
 
-- Session store được cập nhật usage/model sau mỗi run.
-- Fallback transition được persist để hiển thị notice khi model active khác model selected.
-- `compactionCount` và các trường memory-flush metadata được tăng đồng bộ với session.
-- Queue followup session mapping được refresh nếu sessionId/sessionFile đổi sau compaction.
-- Typing cleanup có backstop để tránh stuck indicator khi dispatcher không callback đủ.
+- Persist usage tokens và metadata model/provider hiện dùng.
+- Persist fallback transition (để UI/notice thể hiện model đã đổi).
+- Cập nhật `compactionCount` + memory flush markers đồng bộ session entry.
+- Refresh queued followup session mapping nếu sessionId/sessionFile đổi sau compaction/reset.
+- Cleanup typing state luôn có backstop để tránh stuck typing indicator.
 
-## 8) Checklist khi sửa agent loop
+## 10) Observability points
 
-- Có giữ đúng semantics của queue mode (`drop`, `enqueue`, `run now`) không.
-- Fallback có giữ đúng order và không nuốt lỗi quan trọng không.
-- Tool-result delivery có còn ordered khi concurrent tools chạy không.
-- Recovery path có reset session/store/transcript nhất quán không.
-- Accounting sau run có cập nhật đủ usage/model/fallback/compaction fields không.
+- Agent event streams: `assistant`, `lifecycle`, tool-related streams.
+- Fallback attempts metadata: provider/model/reason/status/code per attempt.
+- Verbose diagnostics: token stripping, compaction notices, usage lines.
+- Session-level updates: timestamps, usage counters, active model transitions.
+
+## 11) Checklist khi sửa agent loop
+
+- Queue policy vẫn giữ chuẩn `drop/enqueue-followup/run-now`.
+- Pre-run compaction/memory flush không phá session consistency.
+- Fallback loop không rethrow nhầm retryable failure, không nuốt terminal error.
+- Tool/result streaming không duplicate hoặc out-of-order.
+- Session reset paths có cleanup đúng phạm vi (không mất dữ liệu ngoài scope).
+- Post-run accounting vẫn cập nhật đủ usage/fallback/compaction/followup mapping.

@@ -828,3 +828,12 @@ flowchart TD
 - Session runtime: `/architecture/session-runtime`
 - Memory runtime: `/architecture/memory-runtime`
 - Agent loop runtime: `/architecture/agent-loop-runtime`
+- Gateway runtime: `/architecture/gateway-runtime`
+- Runtime glossary: `/architecture/runtime-glossary`
+- Tool runtime: `/architecture/tool-runtime`
+- Plugin runtime: `/architecture/plugin-runtime`
+- Channel runtime: `/architecture/channel-runtime`
+- Runtime dependency map: `/architecture/runtime-dependency-map`
+- Marketing Layer: `/architecture/marketing-layer`
+- Marketing Data Plane: `/architecture/marketing-data-plane`
+- Marketing Operating Model: `/architecture/marketing-operating-model`

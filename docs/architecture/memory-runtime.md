@@ -81,9 +81,11 @@ flowchart LR
 
 ## 6) Quy tắc chống flush lặp
 
-Core rule trong `src/auto-reply/reply/memory-flush.ts`:
+Core rule đang được dùng trong `src/auto-reply/reply/memory-flush.ts`:
 - Không flush lại nếu `memoryFlushCompactionCount` đã bằng `compactionCount` hiện tại.
-- Có `computeContextHash()` để dedupe state-based flush khi cần.
+
+Ghi chú:
+- `computeContextHash()` hiện là helper sẵn có cho dedupe theo nội dung context, nhưng chưa được đưa vào nhánh gating runtime mặc định.
 
 ## 7) Error/safety behavior đáng chú ý
 

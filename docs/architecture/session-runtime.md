@@ -57,7 +57,7 @@ flowchart TD
 
     R2 --> F0{"Parent session fork allowed?"}
     F0 -- "No" --> F1["No fork"]
-    F0 -- "Yes" --> F2{"Parent transcript size under max?"}
+    F0 -- "Yes" --> F2{"Parent token count under max?"}
     F2 -- "No" --> F3["Skip fork, mark forkedFromParent=true"]
     F2 -- "Yes" --> F4["Fork from parent transcript to new session"]
 ```
