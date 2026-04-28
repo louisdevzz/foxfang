@@ -1,0 +1,16 @@
+{
+  "name": "@foxfang/github",
+  "version": "2026.3.27",
+  "private": true,
+  "description": "FoxFang GitHub App plugin — create and manage issues via GitHub App auth",
+  "type": "module",
+  "main": "./index.ts",
+  "foxfang": {
+    "extensions": [
+      "./index.ts"
+    ]
+  },
+  "devDependencies": {
+    "foxfang": "workspace:*"
+  }
+}

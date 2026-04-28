@@ -1,0 +1,12 @@
+{
+  "name": "@foxfang/synthetic-provider",
+  "version": "2026.3.27",
+  "private": true,
+  "description": "FoxFang Synthetic provider plugin",
+  "type": "module",
+  "foxfang": {
+    "extensions": [
+      "./index.ts"
+    ]
+  }
+}

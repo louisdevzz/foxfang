@@ -1,0 +1,12 @@
+{
+  "name": "@foxfang/opencode-provider",
+  "version": "2026.3.27",
+  "private": true,
+  "description": "FoxFang OpenCode Zen provider plugin",
+  "type": "module",
+  "foxfang": {
+    "extensions": [
+      "./index.ts"
+    ]
+  }
+}

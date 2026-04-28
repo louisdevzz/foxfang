@@ -1,0 +1,38 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: foxfang-config
+  labels:
+    app: foxfang
+data:
+  foxfang.json: |
+    {
+      "gateway": {
+        "mode": "local",
+        "bind": "loopback",
+        "port": 18789,
+        "auth": {
+          "mode": "token"
+        },
+        "controlUi": {
+          "enabled": true
+        }
+      },
+      "agents": {
+        "defaults": {
+          "workspace": "~/.foxfang/workspace"
+        },
+        "list": [
+          {
+            "id": "default",
+            "name": "FoxFang Assistant",
+            "workspace": "~/.foxfang/workspace"
+          }
+        ]
+      },
+      "cron": { "enabled": false }
+    }
+  AGENTS.md: |
+    # FoxFang Assistant
+
+    You are a helpful AI assistant running in Kubernetes.

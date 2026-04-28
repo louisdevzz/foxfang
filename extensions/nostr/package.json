@@ -1,0 +1,45 @@
+{
+  "name": "@foxfang/nostr",
+  "version": "2026.3.27",
+  "description": "FoxFang Nostr channel plugin for NIP-04 encrypted DMs",
+  "type": "module",
+  "dependencies": {
+    "nostr-tools": "^2.23.3"
+  },
+  "devDependencies": {
+    "foxfang": "workspace:*"
+  },
+  "peerDependencies": {
+    "foxfang": ">=2026.3.27"
+  },
+  "peerDependenciesMeta": {
+    "foxfang": {
+      "optional": true
+    }
+  },
+  "foxfang": {
+    "extensions": [
+      "./index.ts"
+    ],
+    "setupEntry": "./setup-entry.ts",
+    "channel": {
+      "id": "nostr",
+      "label": "Nostr",
+      "selectionLabel": "Nostr (NIP-04 DMs)",
+      "docsPath": "/channels/nostr",
+      "docsLabel": "nostr",
+      "blurb": "Decentralized protocol; encrypted DMs via NIP-04.",
+      "order": 55,
+      "quickstartAllowFrom": true
+    },
+    "install": {
+      "npmSpec": "@foxfang/nostr",
+      "localPath": "extensions/nostr",
+      "defaultChoice": "npm",
+      "minHostVersion": ">=2026.3.27"
+    },
+    "release": {
+      "publishToNpm": true
+    }
+  }
+}

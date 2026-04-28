@@ -1,0 +1,29 @@
+{
+  "name": "@foxfang/twitch",
+  "version": "2026.3.27",
+  "description": "FoxFang Twitch channel plugin",
+  "type": "module",
+  "dependencies": {
+    "@twurple/api": "^8.0.3",
+    "@twurple/auth": "^8.0.3",
+    "@twurple/chat": "^8.0.3"
+  },
+  "foxfang": {
+    "extensions": [
+      "./index.ts"
+    ],
+    "install": {
+      "minHostVersion": ">=2026.3.27"
+    },
+    "channel": {
+      "id": "twitch",
+      "label": "Twitch",
+      "selectionLabel": "Twitch (Chat)",
+      "docsPath": "/channels/twitch",
+      "blurb": "Twitch chat integration",
+      "aliases": [
+        "twitch-chat"
+      ]
+    }
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "name": "@foxfang/github-copilot-provider",
+  "version": "2026.3.27",
+  "private": true,
+  "description": "FoxFang GitHub Copilot provider plugin",
+  "type": "module",
+  "foxfang": {
+    "extensions": [
+      "./index.ts"
+    ]
+  }
+}

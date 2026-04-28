@@ -1,0 +1,14 @@
+{
+  "name": "@foxfang/acpx",
+  "version": "2026.3.27",
+  "description": "FoxFang ACP runtime backend via acpx",
+  "type": "module",
+  "dependencies": {
+    "acpx": "0.3.1"
+  },
+  "foxfang": {
+    "extensions": [
+      "./index.ts"
+    ]
+  }
+}

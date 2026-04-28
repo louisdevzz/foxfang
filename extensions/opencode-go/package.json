@@ -1,0 +1,12 @@
+{
+  "name": "@foxfang/opencode-go-provider",
+  "version": "2026.3.27",
+  "private": true,
+  "description": "FoxFang OpenCode Go provider plugin",
+  "type": "module",
+  "foxfang": {
+    "extensions": [
+      "./index.ts"
+    ]
+  }
+}

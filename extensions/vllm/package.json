@@ -1,0 +1,12 @@
+{
+  "name": "@foxfang/vllm-provider",
+  "version": "2026.3.27",
+  "private": true,
+  "description": "FoxFang vLLM provider plugin",
+  "type": "module",
+  "foxfang": {
+    "extensions": [
+      "./index.ts"
+    ]
+  }
+}

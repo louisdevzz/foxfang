@@ -1,0 +1,12 @@
+{
+  "name": "@foxfang/sglang-provider",
+  "version": "2026.3.27",
+  "private": true,
+  "description": "FoxFang SGLang provider plugin",
+  "type": "module",
+  "foxfang": {
+    "extensions": [
+      "./index.ts"
+    ]
+  }
+}

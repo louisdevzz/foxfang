@@ -1,0 +1,7 @@
+{
+  "name": "@foxfang/image-generation-core",
+  "version": "2026.3.27",
+  "private": true,
+  "description": "FoxFang image generation runtime package",
+  "type": "module"
+}

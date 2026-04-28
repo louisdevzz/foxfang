@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: foxfang
+    runtime: docker
+    plan: starter
+    healthCheckPath: /health
+    envVars:
+      - key: FOXFANG_GATEWAY_PORT
+        value: "8080"
+      - key: FOXFANG_STATE_DIR
+        value: /data/.foxfang
+      - key: FOXFANG_WORKSPACE_DIR
+        value: /data/workspace
+      - key: FOXFANG_GATEWAY_TOKEN
+        generateValue: true
+    disk:
+      name: foxfang-data
+      mountPath: /data
+      sizeGB: 1

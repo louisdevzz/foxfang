@@ -1,0 +1,12 @@
+{
+  "name": "@foxfang/elevenlabs-speech",
+  "version": "2026.3.27",
+  "private": true,
+  "description": "FoxFang ElevenLabs speech plugin",
+  "type": "module",
+  "foxfang": {
+    "extensions": [
+      "./index.ts"
+    ]
+  }
+}
