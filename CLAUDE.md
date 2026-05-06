@@ -229,3 +229,17 @@
 - For manual `foxfang message send` messages that include `!`, use the heredoc pattern noted below to avoid the Bash tool’s escaping.
 - Release guardrails: do not change version numbers without operator’s explicit consent; always ask permission before running any npm publish/release step.
 - Beta release guardrail: when using a beta Git tag (for example `vYYYY.M.D-beta.N`), publish npm with a matching beta version suffix (for example `YYYY.M.D-beta.N`) rather than a plain version on `--tag beta`; otherwise the plain version name gets consumed/blocked.
+
+## Agent skills
+
+### Issue tracker
+
+Issues are tracked in GitHub Issues for this repository (via `gh`). See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Triage labels use the canonical defaults: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Domain docs are single-context (`CONTEXT.md` + `docs/adr/` at repo root). See `docs/agents/domain.md`.
