@@ -1,5 +1,5 @@
 ---
-summary: "FoxFang is a multi-channel gateway for AI agents that runs on any OS."
+summary: "FoxFang is an autonomous AI marketing agent with multi-channel interfaces that runs on any OS."
 read_when:
   - Introducing FoxFang to newcomers
 title: "FoxFang"
@@ -43,9 +43,11 @@ title: "FoxFang"
 
 ## What is FoxFang?
 
-FoxFang is a **self-hosted gateway** that connects your favorite chat apps — WhatsApp, Telegram, Discord, iMessage, and more — to AI coding agents like Pi. You run a single Gateway process on your own machine (or a server), and it becomes the bridge between your messaging apps and an always-available AI assistant.
+FoxFang is an **autonomous AI marketing agent** that runs on your own machine or server. Unlike a chatbot that waits for prompts, it is goal-driven: you delegate marketing objectives — such as launching a campaign or growing an audience — and the agent breaks them into steps, executes them, and reports results. It learns your style through long-term memory and can run autonomously via standing orders without constant supervision.
 
-**Who is it for?** Developers and power users who want a personal AI assistant they can message from anywhere — without giving up control of their data or relying on a hosted service.
+WhatsApp, Telegram, Discord, iMessage, and other channels are interaction surfaces — places where you issue commands, approve actions, and receive reports. The core of the product is the agent brain: an orchestrator that delegates to specialist sub-agents (Content, Strategy, Growth) using 30+ tools to run marketing operations end-to-end.
+
+**Who is it for?** Developers, marketers, and power users who want an autonomous AI marketing agent they can delegate campaigns to — without giving up control of their data or relying on a hosted service.
 
 **What makes it different?**
 

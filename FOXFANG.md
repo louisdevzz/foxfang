@@ -1,13 +1,14 @@
-# 🦊 FoxFang — Personal AI Marketing Assistant
+# 🦊 FoxFang — Autonomous AI Marketing Agent
 
 <p align="center">
   <strong>Your sharp marketing partner, right in the terminal.</strong>
 </p>
 
-**FoxFang** is a _personal AI marketing assistant_ you run on your own devices.
-It helps you create content, plan campaigns, manage outreach, and coordinate marketing across the channels you already use (Signal, Telegram, Discord, Slack). The Gateway is the control plane — the product is a marketing teammate that learns your style.
+**FoxFang** is an _autonomous AI marketing agent_ that runs on your own devices. Unlike a chatbot that waits for prompts, it plans, executes, and optimizes marketing campaigns end-to-end — from research and content creation to scheduling, outreach, and reporting. It learns your style and preferences through long-term memory, and can operate autonomously via standing orders without requiring constant supervision.
 
-If you want a local, privacy-first marketing assistant that feels fast and always-on, this is it.
+Channels like Signal, Telegram, Discord, and Slack are interfaces for commands, approvals, and reports — the core value is the agent brain that orchestrates specialist sub-agents (Content, Strategy, Growth) to run marketing operations 24/7.
+
+If you want a local, privacy-first autonomous marketing agent that plans, executes, and optimizes campaigns 24/7, this is it.
 
 ## Install (recommended)
 

@@ -18,27 +18,41 @@ wired end-to-end.
 ## Entry points
 
 - Gateway RPC: `agent` and `agent.wait`.
-- CLI: `agent` command.
+- CLI: `agent` command. By default it calls the Gateway; `--local` runs the
+  embedded local path directly, and a failed Gateway call falls back to the
+  embedded path.
+- Channel monitors and HTTP compatibility endpoints also enter through the same
+  ingress boundary before reaching `agentCommand`.
 
 ## How it works (high-level)
 
-1. `agent` RPC validates params, resolves session (sessionKey/sessionId), persists session metadata, returns `{ runId, acceptedAt }` immediately.
+1. `agent` RPC validates params, resolves session (sessionKey/sessionId), persists session metadata, resolves delivery target hints, stores a short-lived idempotency entry, and returns `{ runId, acceptedAt }` immediately.
 2. `agentCommand` runs the agent:
    - resolves model + thinking/verbose defaults
    - loads skills snapshot
-   - calls `runEmbeddedPiAgent` (pi-agent-core runtime)
-   - emits **lifecycle end/error** if the embedded loop does not emit one
-3. `runEmbeddedPiAgent`:
+   - chooses ACP, CLI backend, or embedded runtime based on session/provider
+   - emits **lifecycle end/error** if the selected runtime does not emit one
+3. ACP path:
+   - dispatches the turn through the ACP session manager when a session is bound
+   - emits assistant deltas and persists the transcript through FoxFang's session store
+4. CLI backend path:
+   - runs a configured external CLI backend for providers that are marked as CLI providers
+   - preserves and refreshes provider-specific CLI session bindings when supported
+5. Embedded runtime path (`runEmbeddedPiAgent`):
    - serializes runs via per-session + global queues
-   - resolves model + auth profile and builds the pi session
+   - loads runtime plugins
+   - resolves model + auth profile and builds the Pi session
+   - resolves the active context engine once per run and uses it for assemble/compaction behavior
    - subscribes to pi events and streams assistant/tool deltas
-   - enforces timeout -> aborts run if exceeded
+   - handles model failover, auth-profile rotation, timeout/overflow compaction recovery, and retry limits
    - returns payloads + usage metadata
-4. `subscribeEmbeddedPiSession` bridges pi-agent-core events to FoxFang `agent` stream:
+6. `subscribeEmbeddedPiSession` bridges pi-agent-core events to FoxFang `agent` stream:
    - tool events => `stream: "tool"`
    - assistant deltas => `stream: "assistant"`
    - lifecycle events => `stream: "lifecycle"` (`phase: "start" | "end" | "error"`)
-5. `agent.wait` uses `waitForAgentJob`:
+7. Delivery:
+   - `deliverAgentCommandResult` normalizes reply payloads, applies reply prefixes/channel transforms, resolves the channel/account/thread target, and sends through the channel plugin outbound adapter when delivery is requested
+8. `agent.wait` uses `waitForAgentJob`:
    - waits for **lifecycle end/error** for `runId`
    - returns `{ status: ok|error|timeout, startedAt, endedAt, error? }`
 
@@ -59,6 +73,9 @@ wired end-to-end.
 ## Prompt assembly + system prompt
 
 - System prompt is built from FoxFang’s base prompt, skills prompt, bootstrap context, and per-run overrides.
+- Plugin `before_model_resolve` hooks can deterministically change provider/model before model resolution.
+- Plugin `before_prompt_build` hooks can inject per-turn context or system prompt additions after the session is loaded.
+- A context engine can replace the default context assembly and compaction behavior for the active run.
 - Model-specific limits and compaction reserve tokens are enforced.
 - See [System prompt](/concepts/system-prompt) for what the model sees.
 
@@ -124,6 +141,9 @@ See [Plugin hooks](/plugins/architecture#provider-runtime-hooks) for the hook AP
 - Messaging tool duplicates are removed from the final payload list.
 - If no renderable payloads remain and a tool errored, a fallback tool error reply is emitted
   (unless a messaging tool already sent a user-visible reply).
+- When delivery is requested, core resolves the effective route, validates send
+  policy, then delegates channel-specific sending to the active channel
+  plugin's outbound adapter.
 
 ## Compaction + retries
 

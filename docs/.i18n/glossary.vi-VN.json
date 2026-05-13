@@ -1,0 +1,150 @@
+[
+  {
+    "source": "FoxFang",
+    "target": "FoxFang"
+  },
+  {
+    "source": "Gateway",
+    "target": "Gateway"
+  },
+  {
+    "source": "gateway",
+    "target": "gateway"
+  },
+  {
+    "source": "Pi",
+    "target": "Pi"
+  },
+  {
+    "source": "plugin",
+    "target": "plugin"
+  },
+  {
+    "source": "plugins",
+    "target": "plugin"
+  },
+  {
+    "source": "agent",
+    "target": "agent"
+  },
+  {
+    "source": "agents",
+    "target": "agent"
+  },
+  {
+    "source": "channel",
+    "target": "kênh"
+  },
+  {
+    "source": "channels",
+    "target": "kênh"
+  },
+  {
+    "source": "workspace",
+    "target": "workspace"
+  },
+  {
+    "source": "workspaces",
+    "target": "workspace"
+  },
+  {
+    "source": "session",
+    "target": "phiên"
+  },
+  {
+    "source": "sessions",
+    "target": "phiên"
+  },
+  {
+    "source": "SecretRef",
+    "target": "SecretRef"
+  },
+  {
+    "source": "Control UI",
+    "target": "Control UI"
+  },
+  {
+    "source": "Web Control UI",
+    "target": "Web Control UI"
+  },
+  {
+    "source": "CLI",
+    "target": "CLI"
+  },
+  {
+    "source": "API",
+    "target": "API"
+  },
+  {
+    "source": "MCP",
+    "target": "MCP"
+  },
+  {
+    "source": "OAuth",
+    "target": "OAuth"
+  },
+  {
+    "source": "Tailscale",
+    "target": "Tailscale"
+  },
+  {
+    "source": "Tailnet",
+    "target": "Tailnet"
+  },
+  {
+    "source": "local loopback",
+    "target": "local loopback"
+  },
+  {
+    "source": "sandbox",
+    "target": "sandbox"
+  },
+  {
+    "source": "sandboxing",
+    "target": "sandboxing"
+  },
+  {
+    "source": "provider",
+    "target": "provider"
+  },
+  {
+    "source": "providers",
+    "target": "provider"
+  },
+  {
+    "source": "model",
+    "target": "model"
+  },
+  {
+    "source": "models",
+    "target": "model"
+  },
+  {
+    "source": "node",
+    "target": "node"
+  },
+  {
+    "source": "nodes",
+    "target": "node"
+  },
+  {
+    "source": "Getting Started",
+    "target": "Bắt đầu"
+  },
+  {
+    "source": "Quick start",
+    "target": "Bắt đầu nhanh"
+  },
+  {
+    "source": "Troubleshooting",
+    "target": "Khắc phục sự cố"
+  },
+  {
+    "source": "Configuration",
+    "target": "Cấu hình"
+  },
+  {
+    "source": "Architecture",
+    "target": "Kiến trúc"
+  }
+]

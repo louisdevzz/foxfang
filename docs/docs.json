@@ -1,7 +1,7 @@
 {
   "$schema": "https://mintlify.com/docs.json",
   "name": "FoxFang",
-  "description": "Self-hosted gateway that connects WhatsApp, Telegram, Discord, iMessage, and more to AI coding agents. Run a single Gateway process on your own machine and message your AI assistant from anywhere.",
+  "description": "An autonomous AI marketing agent that plans, executes, and optimizes campaigns across channels with long-term memory and delegated specialist workflows. Run on your own machine and delegate marketing tasks from anywhere.",
   "theme": "mint",
   "icons": {
     "library": "lucide"

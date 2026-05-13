@@ -15,7 +15,7 @@ Run a persistent, always-on FoxFang Gateway on a Raspberry Pi for **~$35-80** on
 
 Perfect for:
 
-- 24/7 personal AI assistant
+- 24/7 autonomous AI marketing agent
 - Home automation hub
 - Low-power, always-available Telegram/WhatsApp bot
 

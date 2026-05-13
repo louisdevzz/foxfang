@@ -9,8 +9,10 @@ title: "Gateway Architecture"
 
 ## Overview
 
-- A single long‑lived **Gateway** owns all messaging surfaces (WhatsApp via
-  Baileys, Telegram via grammY, Slack, Discord, Signal, iMessage, WebChat).
+- A single long‑lived **Gateway** owns the live runtime for messaging surfaces
+  and control-plane access. Built-in and plugin-provided channels are loaded
+  into the Gateway process, so the Gateway is the place that starts monitors,
+  keeps account state, and exposes channel-specific Gateway methods.
 - Control-plane clients (macOS app, CLI, web UI, automations) connect to the
   Gateway over **WebSocket** on the configured bind host (default
   `127.0.0.1:18789`).
@@ -26,16 +28,22 @@ title: "Gateway Architecture"
 
 ### Gateway (daemon)
 
-- Maintains provider connections.
+- Maintains channel connections and plugin service state.
 - Exposes a typed WS API (requests, responses, server‑push events).
 - Validates inbound frames against JSON Schema.
 - Emits events like `agent`, `chat`, `presence`, `health`, `heartbeat`, `cron`.
+- Loads enabled plugins, merges plugin Gateway handlers into the method table,
+  and publishes the active channel registry used by routing, delivery, and
+  tooling.
 
 ### Clients (mac app / CLI / web admin)
 
 - One WS connection per client.
 - Send requests (`health`, `status`, `send`, `agent`, `system-presence`).
 - Subscribe to events (`tick`, `agent`, `presence`, `shutdown`).
+- The CLI `agent` command calls the Gateway by default and falls back to the
+  embedded local runner only when the Gateway call fails, or uses the embedded
+  runner directly with `--local`.
 
 ### Nodes (macOS / iOS / Android / headless)
 
@@ -53,6 +61,27 @@ Protocol details:
 - Static UI that uses the Gateway WS API for chat history and sends.
 - In remote setups, connects through the same SSH/Tailscale tunnel as other
   clients.
+
+### Agent runtime
+
+- The Gateway `agent` method performs the network-facing work: validates the
+  request, resolves sessions and delivery targets, stores run metadata, sends
+  an accepted ACK, and then dispatches the turn.
+- `agentCommand` is the shared local execution boundary. It resolves config,
+  secrets, model selection, thinking defaults, workspace, session transcript,
+  and skills before running the model path.
+- Agent turns can run through ACP, an external CLI backend, or the embedded Pi
+  agent runtime. The embedded path owns the model/tool loop, context engine,
+  auth-profile rotation, model failover, compaction recovery, and event
+  streaming.
+
+### Delivery
+
+- Final payloads are normalized in core, then delivered through the selected
+  channel plugin's outbound adapter.
+- Core owns common concerns such as chunking, plain-text sanitization, media
+  local-root policy, hooks, and transcript mirroring. Channel plugins own the
+  channel-specific send/edit/react/poll behavior.
 
 ## Connection lifecycle (single client)
 
@@ -82,8 +111,10 @@ sequenceDiagram
 - After handshake:
   - Requests: `{type:"req", id, method, params}` → `{type:"res", id, ok, payload|error}`
   - Events: `{type:"event", event, payload, seq?, stateVersion?}`
-- If `FOXFANG_GATEWAY_TOKEN` (or `--token`) is set, `connect.params.auth.token`
-  must match or the socket closes.
+- Gateway auth defaults to token mode. If no token is configured at startup,
+  the Gateway generates a token and persists it when startup owns the config
+  write. Clients must send the active token/password unless auth is explicitly
+  disabled or delegated to trusted-proxy mode.
 - Idempotency keys are required for side‑effecting methods (`send`, `agent`) to
   safely retry; the server keeps a short‑lived dedupe cache.
 - Nodes must include `role: "node"` plus caps/commands/permissions in `connect`.

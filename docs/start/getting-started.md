@@ -8,7 +8,7 @@ title: "Getting Started"
 
 # Getting Started
 
-Install FoxFang, run onboarding, and chat with your AI assistant — all in
+Install FoxFang, run onboarding, and start delegating marketing tasks to your AI agent — all in
 about 5 minutes. By the end you will have a running Gateway, configured auth,
 and a working chat session.
 

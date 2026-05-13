@@ -837,7 +837,7 @@ Quick answers plus deeper troubleshooting for real-world setups (local dev, VPS,
 
 <AccordionGroup>
   <Accordion title="What is FoxFang, in one paragraph?">
-    FoxFang is a personal AI assistant you run on your own devices. It replies on the messaging surfaces you already use (WhatsApp, Telegram, Slack, Mattermost (plugin), Discord, Google Chat, Signal, iMessage, WebChat) and can also do voice + a live Canvas on supported platforms. The **Gateway** is the always-on control plane; the assistant is the product.
+    FoxFang is an autonomous AI marketing agent you run on your own devices. It plans, executes, and optimizes marketing campaigns end-to-end — from research and content creation to outreach and reporting. It learns your style through long-term memory and can operate autonomously via standing orders. Messaging surfaces (WhatsApp, Telegram, Slack, Mattermost, Discord, Google Chat, Signal, iMessage, WebChat) are where you delegate tasks, approve actions, and receive reports; voice and Canvas are available on supported platforms. The **Gateway** is the runtime control plane; the agent is the product.
   </Accordion>
 
   <Accordion title="Value proposition">
@@ -901,7 +901,7 @@ Quick answers plus deeper troubleshooting for real-world setups (local dev, VPS,
   </Accordion>
 
   <Accordion title="What are the advantages vs Claude Code for web development?">
-    FoxFang is a **personal assistant** and coordination layer, not an IDE replacement. Use
+    FoxFang is an **autonomous marketing agent** and coordination layer, not an IDE replacement. Use
     Claude Code or Codex for the fastest direct coding loop inside a repo. Use FoxFang when you
     want durable memory, cross-device access, and tool orchestration.
 
@@ -2842,7 +2842,7 @@ Related: [/concepts/oauth](/concepts/oauth) (OAuth flows, token storage, multi-a
 
   </Accordion>
 
-  <Accordion title="Can I use cheaper models for personal assistant tasks?">
+  <Accordion title="Can I use cheaper models for agent tasks?">
     Yes, **if** the agent is chat-only and the input is trusted. Smaller tiers are
     more susceptible to instruction hijacking, so avoid them for tool-enabled agents
     or when reading untrusted content. If you must use a smaller model, lock down

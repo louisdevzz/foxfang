@@ -1,14 +1,14 @@
 ---
-summary: "End-to-end guide for running FoxFang as a personal assistant with safety cautions"
+summary: "End-to-end guide for running FoxFang as an autonomous marketing agent with safety cautions"
 read_when:
   - Onboarding a new assistant instance
   - Reviewing safety/permission implications
 title: "Personal Assistant Setup"
 ---
 
-# Building a personal assistant with FoxFang
+# Building an autonomous marketing agent with FoxFang
 
-FoxFang is a self-hosted gateway that connects WhatsApp, Telegram, Discord, iMessage, and more to AI agents. This guide covers the "personal assistant" setup: a dedicated WhatsApp number that behaves like your always-on AI assistant.
+FoxFang is an autonomous AI marketing agent that runs on your own hardware and can interact through WhatsApp, Telegram, Discord, iMessage, and more. This guide covers the "agent" setup: a dedicated messaging endpoint that behaves like your always-on marketing teammate.
 
 ## ⚠️ Safety first
 

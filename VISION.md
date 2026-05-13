@@ -12,7 +12,7 @@ FoxFang started as a personal playground to learn AI and build something genuine
 an assistant that can run real tasks on a real computer.
 It evolved through several names and shells: Warelay -> Clawdbot -> Moltbot -> FoxFang.
 
-The goal: a personal assistant that is easy to use, supports a wide range of platforms, and respects privacy and security.
+The goal: an autonomous agent that is easy to use, supports a wide range of platforms, and respects privacy and security.
 
 The current focus is:
 

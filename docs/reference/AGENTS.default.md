@@ -1,12 +1,12 @@
 ---
 title: "Default AGENTS.md"
-summary: "Default FoxFang agent instructions and skills roster for the personal assistant setup"
+summary: "Default FoxFang agent instructions and skills roster for the agent setup"
 read_when:
   - Starting a new FoxFang agent session
   - Enabling or auditing default skills
 ---
 
-# AGENTS.md - FoxFang Personal Assistant (default)
+# AGENTS.md - FoxFang Agent (default)
 
 ## First run (recommended)
 
@@ -26,7 +26,7 @@ cp docs/reference/templates/SOUL.md ~/.foxfang/workspace/SOUL.md
 cp docs/reference/templates/TOOLS.md ~/.foxfang/workspace/TOOLS.md
 ```
 
-3. Optional: if you want the personal assistant skill roster, replace AGENTS.md with this file:
+3. Optional: if you want the agent skill roster, replace AGENTS.md with this file:
 
 ```bash
 cp docs/reference/AGENTS.default.md ~/.foxfang/workspace/AGENTS.md

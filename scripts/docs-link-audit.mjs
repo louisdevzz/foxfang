@@ -67,8 +67,10 @@ for (const item of docsConfig.redirects || []) {
 const allFiles = walk(DOCS_DIR);
 const relAllFiles = new Set(allFiles.map((abs) => normalizeSlashes(path.relative(DOCS_DIR, abs))));
 
+const GENERATED_TRANSLATED_DOC_PREFIXES = ["zh-CN/", "ja-JP/", "vi-VN/"];
+
 function isGeneratedTranslatedDoc(relPath) {
-  return relPath.startsWith("zh-CN/");
+  return GENERATED_TRANSLATED_DOC_PREFIXES.some((prefix) => relPath.startsWith(prefix));
 }
 
 const markdownFiles = allFiles.filter((abs) => {

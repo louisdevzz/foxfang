@@ -28,4 +28,28 @@ Fields:
 ## Notes
 
 - Glossary entries are passed to the model as **prompt guidance** (no deterministic rewrites).
-- The translation memory is updated by `scripts/docs-i18n`.
+- The translation memory is updated by `scripts/docs-i18n.mjs`.
+- Vietnamese docs are generated under `docs/vi-VN/**` from English source docs. The
+  pipeline skips generated locale folders such as `docs/zh-CN/**`, `docs/ja-JP/**`,
+  and `docs/vi-VN/**`.
+
+## Vietnamese pipeline
+
+Dry-run the source file discovery without calling the translation API:
+
+```bash
+pnpm docs:i18n:vi:dry-run
+```
+
+Generate Vietnamese docs and update `docs/docs.json` navigation:
+
+```bash
+OPENAI_API_KEY=... pnpm docs:i18n:vi
+```
+
+Useful narrow runs:
+
+```bash
+OPENAI_API_KEY=... pnpm docs:i18n -- --lang vi-VN --write --file concepts/architecture.md
+OPENAI_API_KEY=... pnpm docs:i18n -- --lang vi-VN --write --limit 5
+```

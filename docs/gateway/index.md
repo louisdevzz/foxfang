@@ -68,12 +68,20 @@ Default mode is `gateway.reload.mode="hybrid"`.
 ## Runtime model
 
 - One always-on process for routing, control plane, and channel connections.
+- Enabled plugins are loaded into the Gateway runtime. Plugin Gateway handlers
+  are merged with core RPC methods, and channel plugin registries drive routing,
+  channel status, tool discovery, and outbound delivery.
 - Single multiplexed port for:
   - WebSocket control/RPC
   - HTTP APIs, OpenAI compatible (`/v1/models`, `/v1/embeddings`, `/v1/chat/completions`, `/v1/responses`, `/tools/invoke`)
   - Control UI and hooks
 - Default bind mode: `loopback`.
-- Auth is required by default (`gateway.auth.token` / `gateway.auth.password`, or `FOXFANG_GATEWAY_TOKEN` / `FOXFANG_GATEWAY_PASSWORD`).
+- Auth defaults to token mode. Use `gateway.auth.token` / `gateway.auth.password`,
+  `FOXFANG_GATEWAY_TOKEN` / `FOXFANG_GATEWAY_PASSWORD`, or trusted-proxy mode.
+  If token mode is active and no token exists at startup, FoxFang generates one
+  and persists it when the Gateway owns the config write.
+- The `agent` RPC is accepted first, then completed asynchronously. The final
+  response and streamed `agent` events use the same run id.
 
 ## OpenAI-compatible endpoints
 
@@ -101,10 +109,10 @@ All of these run on the main Gateway port and use the same trusted operator auth
 
 ### Port and bind precedence
 
-| Setting      | Resolution order                                              |
-| ------------ | ------------------------------------------------------------- |
+| Setting      | Resolution order                                             |
+| ------------ | ------------------------------------------------------------ |
 | Gateway port | `--port` → `FOXFANG_GATEWAY_PORT` → `gateway.port` → `18789` |
-| Bind mode    | CLI/override → `gateway.bind` → `loopback`                    |
+| Bind mode    | CLI/override → `gateway.bind` → `loopback`                   |
 
 ### Hot reload modes
 
@@ -141,7 +149,8 @@ ssh -N -L 18789:127.0.0.1:18789 user@host
 Then connect clients to `ws://127.0.0.1:18789` locally.
 
 <Warning>
-If gateway auth is configured, clients still must send auth (`token`/`password`) even over SSH tunnels.
+Clients must still send the active gateway auth (`token`/`password`) over SSH
+tunnels unless auth is explicitly disabled or delegated to trusted-proxy mode.
 </Warning>
 
 See: [Remote Gateway](/gateway/remote), [Authentication](/gateway/authentication), [Tailscale](/gateway/tailscale).
