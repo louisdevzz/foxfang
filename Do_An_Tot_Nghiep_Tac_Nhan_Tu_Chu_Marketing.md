@@ -253,121 +253,172 @@ Ngoài ra, hệ thống còn góp phần tăng tính nhất quán trong truyền
 
 # CHƯƠNG 2: CƠ SỞ LÝ THUYẾT VÀ TỔNG QUAN
 
-## 2.1. Các khái niệm liên quan
+## 2.1. Các khái niệm nền tảng
+
+Phần này trình bày các khái niệm cơ bản liên quan đến đề tài, bao gồm marketing số, marketing số đa kênh, tự động hóa marketing, mô hình ngôn ngữ lớn, tác nhân tự chủ, ngữ cảnh thương hiệu, bộ nhớ dài hạn và làm việc đa kênh. Các khái niệm này là cơ sở để phân tích yêu cầu và thiết kế hệ thống tác nhân marketing tự chủ ở các chương tiếp theo.
 
 ### 2.1.1. Marketing số
 
-Marketing số là tập hợp các hoạt động tiếp thị sử dụng nền tảng kỹ thuật số để tiếp cận, tương tác và chuyển đổi khách hàng. Các kênh thường gặp gồm website, mạng xã hội, email, ứng dụng nhắn tin, công cụ tìm kiếm và cộng đồng trực tuyến. Một quy trình marketing số thường bao gồm nghiên cứu, lập kế hoạch, sản xuất nội dung, phân phối, tương tác và đo lường.
+Marketing số là tập hợp các hoạt động tiếp thị được thực hiện thông qua các nền tảng và công nghệ kỹ thuật số nhằm tiếp cận, tương tác và tạo giá trị cho khách hàng. Các kênh thường gặp trong marketing số bao gồm website, mạng xã hội, email, công cụ tìm kiếm, ứng dụng nhắn tin và các cộng đồng trực tuyến. Theo Chaffey và Ellis-Chadwick, marketing số không chỉ là hoạt động quảng bá trên môi trường trực tuyến, mà còn bao gồm việc ứng dụng công nghệ số vào toàn bộ quá trình tiếp cận, tương tác và duy trì quan hệ với khách hàng (Chaffey and Ellis-Chadwick, 2019).
 
-Trong đồ án này, marketing số được hiểu là miền ứng dụng chính của hệ thống. Hệ thống không thay thế hoàn toàn chuyên môn của người làm marketing, mà hỗ trợ các công việc có tính lặp lại, cần tổng hợp thông tin, cần duy trì tính nhất quán hoặc cần được thực hiện đều đặn theo kế hoạch.
+Trong phạm vi đồ án, marketing số được xem là miền ứng dụng chính của hệ thống. Hệ thống không nhằm thay thế hoàn toàn vai trò của người làm marketing, mà tập trung hỗ trợ các công việc có tính lặp lại, cần duy trì sự nhất quán hoặc cần được thực hiện thường xuyên theo kế hoạch.
 
-### 2.1.2. Mô hình ngôn ngữ lớn
+### 2.1.2. Marketing số đa kênh
 
-Mô hình ngôn ngữ lớn là mô hình học sâu được huấn luyện trên khối lượng dữ liệu văn bản lớn, có khả năng hiểu ngôn ngữ tự nhiên, sinh văn bản, tóm tắt, phân tích, lập luận và hỗ trợ lập trình. Trong hệ thống đề xuất, LLM đóng vai trò bộ phận suy luận và sinh ngôn ngữ cho tác nhân.
+Marketing số đa kênh là cách triển khai hoạt động marketing trên nhiều nền tảng khác nhau nhằm tiếp cận khách hàng tại nhiều điểm chạm. Một chiến dịch có thể được triển khai đồng thời trên Facebook Fanpage, Instagram, TikTok, LinkedIn, email hoặc các kênh nhắn tin. Theo Neslin và cộng sự, quản lý đa kênh liên quan đến việc thiết kế, triển khai và phối hợp các kênh tương tác với khách hàng nhằm nâng cao hiệu quả tiếp cận và trải nghiệm người dùng (Neslin et al., 2006).
 
-Tuy nhiên, LLM riêng lẻ có một số hạn chế: thường phản hồi theo từng yêu cầu riêng lẻ, không tự theo dõi toàn bộ quy trình marketing dài hạn và có thể tạo ra nội dung chưa phù hợp nếu thiếu thông tin thương hiệu. Vì vậy, khi ứng dụng vào marketing, LLM cần được đặt trong một hệ thống có khả năng giữ ngữ cảnh, hỗ trợ nhiều bước công việc và kiểm soát kết quả đầu ra.
+Đặc điểm quan trọng của marketing đa kênh là mỗi nền tảng có định dạng nội dung, nhóm người dùng và hành vi tương tác khác nhau. Vì vậy, cùng một thông điệp marketing có thể cần được điều chỉnh thành nhiều dạng thể hiện khác nhau như bài viết ngắn, chú thích bài đăng, kịch bản video hoặc nội dung mang tính chuyên nghiệp hơn cho LinkedIn.
 
-### 2.1.3. Tác nhân tự chủ
+### 2.1.3. Tự động hóa marketing
 
-Tác nhân tự chủ là một thực thể phần mềm có khả năng nhận mục tiêu, quan sát ngữ cảnh, quyết định hành động và trả về kết quả sau nhiều bước xử lý. Trong ngữ cảnh AI hiện đại, tác nhân thường sử dụng LLM làm lõi suy luận, nhưng giá trị thực tế của tác nhân nằm ở khả năng hỗ trợ cả một quy trình thay vì chỉ sinh một câu trả lời đơn lẻ.
+Tự động hóa marketing là việc sử dụng công nghệ để hỗ trợ hoặc tự động thực hiện một số công việc trong quy trình marketing, chẳng hạn như lập lịch đăng bài, gửi thông báo, theo dõi chiến dịch, phân loại khách hàng, tạo báo cáo hoặc nhắc người dùng thực hiện các tác vụ định kỳ. Theo Järvinen và Taiminen, tự động hóa marketing có thể hỗ trợ doanh nghiệp trong việc quản lý nội dung, theo dõi khách hàng tiềm năng và cải thiện hiệu quả của các hoạt động marketing dựa trên dữ liệu (Järvinen and Taiminen, 2016).
 
-Một tác nhân tự chủ khác với chatbot ở chỗ nó có thể hỗ trợ chuỗi hành động nhiều bước. Ví dụ, khi người dùng yêu cầu chuẩn bị kế hoạch nội dung cho một chiến dịch, tác nhân có thể phân tích mục tiêu, đề xuất nhóm khách hàng, tạo ý tưởng nội dung, sắp xếp lịch đăng, nhắc người dùng kiểm tra kết quả và tổng hợp báo cáo sau chiến dịch.
+Đối với cá nhân, nhà sáng tạo nội dung, nhóm nhỏ hoặc doanh nghiệp nhỏ, tự động hóa marketing giúp giảm khối lượng công việc thủ công và hạn chế tình trạng bỏ sót các nhiệm vụ lặp lại. Tuy nhiên, các hệ thống tự động hóa truyền thống thường phụ thuộc nhiều vào quy trình được cấu hình sẵn. Vì vậy, đề tài tiếp cận bài toán này theo hướng sử dụng tác nhân tự chủ, trong đó hệ thống có thể tiếp nhận mục tiêu, phân tích ngữ cảnh và hỗ trợ thực hiện nhiều bước trong quy trình marketing.
 
-### 2.1.4. Quy trình tác nhân tự chủ
+### 2.1.4. Mô hình ngôn ngữ lớn
 
-Quy trình tác nhân tự chủ là quy trình trong đó hệ thống AI không chỉ trả lời, mà còn hỗ trợ nhiều bước xử lý để đi từ yêu cầu ban đầu đến kết quả cuối cùng. Quy trình này thường gồm các bước:
+Mô hình ngôn ngữ lớn là mô hình trí tuệ nhân tạo được huấn luyện trên khối lượng dữ liệu văn bản lớn, có khả năng xử lý và sinh ngôn ngữ tự nhiên. Sự phát triển của kiến trúc Transformer đã tạo nền tảng quan trọng cho nhiều mô hình ngôn ngữ hiện đại (Vaswani et al., 2017). Các mô hình ngôn ngữ lớn có thể thực hiện nhiều tác vụ như trả lời câu hỏi, tóm tắt văn bản, phân tích nội dung, tạo văn bản và hỗ trợ lập trình. Nghiên cứu về GPT-3 cũng cho thấy mô hình ngôn ngữ lớn có khả năng thực hiện nhiều tác vụ thông qua cách đưa yêu cầu và ví dụ trong ngữ cảnh đầu vào (Brown et al., 2020).
 
-1. Nhận mục tiêu hoặc yêu cầu từ người dùng.
-2. Phân tích yêu cầu và ngữ cảnh.
-3. Lập kế hoạch hoặc chọn hành động tiếp theo.
-4. Gọi công cụ phù hợp.
-5. Quan sát kết quả trung gian.
-6. Cập nhật thông tin cần ghi nhớ.
-7. Tiếp tục thực hiện cho đến khi đạt mục tiêu.
-8. Trả kết quả hoặc gửi báo cáo qua kênh thích hợp.
+Trong hệ thống đề xuất, mô hình ngôn ngữ lớn đóng vai trò hỗ trợ suy luận và sinh nội dung cho tác nhân. Tuy nhiên, khi sử dụng độc lập, mô hình có thể gặp hạn chế trong việc duy trì ngữ cảnh dài hạn, theo dõi tiến độ công việc hoặc bảo đảm nội dung luôn phù hợp với thông tin thương hiệu. Vì vậy, mô hình cần được đặt trong một hệ thống có khả năng quản lý ngữ cảnh, sử dụng công cụ, ghi nhớ thông tin và kiểm soát kết quả đầu ra.
 
-Trong hệ thống đề xuất, quy trình tác nhân tự chủ được dùng để mô tả cách hệ thống hỗ trợ người dùng đi từ mục tiêu marketing ban đầu đến kết quả cụ thể như kế hoạch nội dung, bản nháp bài đăng, lịch nhắc việc hoặc báo cáo chiến dịch.
+### 2.1.5. Tác nhân tự chủ
 
-### 2.1.5. Duy trì ngữ cảnh thương hiệu
+Tác nhân tự chủ là một thành phần phần mềm có khả năng tiếp nhận mục tiêu, phân tích ngữ cảnh, lựa chọn hành động phù hợp và thực hiện các bước xử lý để tạo ra kết quả mong muốn. Trong trí tuệ nhân tạo, khái niệm tác nhân thường được hiểu là một hệ thống có khả năng quan sát môi trường và thực hiện hành động dựa trên mục tiêu hoặc tiêu chí đánh giá nhất định (Russell and Norvig, 2020). Theo Wooldridge, một tác nhân có thể được xem là hệ thống có khả năng hoạt động trong một môi trường, có tính tự chủ và có thể đưa ra hành động nhằm đạt mục tiêu được giao (Wooldridge, 2009).
 
-Duy trì ngữ cảnh thương hiệu là yêu cầu quan trọng trong marketing số. Một hệ thống hỗ trợ marketing cần biết sản phẩm đang bán là gì, khách hàng mục tiêu là ai, giọng văn thương hiệu như thế nào, các thông điệp nào đã sử dụng trước đó và mục tiêu chiến dịch hiện tại là gì.
+Khác với hệ thống hỏi đáp thông thường, tác nhân tự chủ không chỉ phản hồi một yêu cầu riêng lẻ mà có thể hỗ trợ một chuỗi công việc gồm phân tích mục tiêu, lập kế hoạch, sử dụng công cụ, ghi nhớ thông tin, theo dõi kết quả và điều chỉnh hành động khi cần thiết.
 
-Nếu không duy trì được ngữ cảnh, hệ thống có thể tạo nội dung không nhất quán, lặp lại ý tưởng cũ hoặc đưa ra gợi ý không phù hợp với thương hiệu. Vì vậy, khả năng ghi nhớ và tái sử dụng thông tin quan trọng là một phần cần thiết của hệ thống tác nhân tự chủ.
+### 2.1.6. Tác nhân marketing tự chủ
 
-### 2.1.6. Tự động hóa đa kênh
+Tác nhân marketing tự chủ là tác nhân được định hướng cho các công việc trong lĩnh vực marketing số. Thay vì phục vụ nhiều mục đích chung, tác nhân marketing tập trung vào các nghiệp vụ như nghiên cứu xu hướng, phân tích đối thủ cạnh tranh, lập kế hoạch nội dung, tạo bài đăng, điều chỉnh nội dung theo nền tảng, hỗ trợ phân phối nội dung, theo dõi chiến dịch và tạo báo cáo.
 
-Tự động hóa đa kênh là khả năng hỗ trợ người dùng trên nhiều nền tảng làm việc khác nhau. Đối với marketing số, điều này đặc biệt quan trọng vì hoạt động marketing có thể diễn ra trên mạng xã hội, nhóm trao đổi nội bộ, ứng dụng nhắn tin, email hoặc các công cụ quản lý công việc. Hệ thống cần giúp người dùng gửi yêu cầu và nhận kết quả ở nơi họ đang làm việc, thay vì buộc mọi thao tác diễn ra trên một giao diện duy nhất.
+Khái niệm này được xây dựng trên cơ sở kết hợp giữa lý thuyết về tác nhân tự chủ trong trí tuệ nhân tạo (Russell and Norvig, 2020; Wooldridge, 2009) và các hoạt động trong marketing số (Chaffey and Ellis-Chadwick, 2019). Trong đồ án này, tác nhân marketing tự chủ là trọng tâm của hệ thống, hướng đến việc hỗ trợ người dùng giảm công việc lặp lại, duy trì ngữ cảnh thương hiệu và vận hành marketing số đều đặn hơn.
+
+### 2.1.7. Ngữ cảnh thương hiệu
+
+Ngữ cảnh thương hiệu là tập hợp các thông tin giúp hệ thống hiểu cách một thương hiệu nên được thể hiện trong nội dung truyền thông. Các thông tin này có thể bao gồm tên thương hiệu, sản phẩm, khách hàng mục tiêu, phong cách viết, giọng văn, thông điệp chính, mục tiêu chiến dịch và các nội dung đã sử dụng trước đó. Theo Keller, quản trị thương hiệu cần duy trì sự nhất quán trong nhận diện, liên tưởng và giá trị thương hiệu nhằm xây dựng tài sản thương hiệu bền vững (Keller and Swaminathan, 2020).
+
+Trong hệ thống tác nhân marketing, ngữ cảnh thương hiệu có vai trò quan trọng vì nội dung được tạo ra cần phù hợp với sản phẩm, khách hàng mục tiêu và phong cách truyền thông. Nếu thiếu ngữ cảnh, hệ thống có thể tạo ra nội dung không nhất quán, sai giọng văn hoặc không phù hợp với mục tiêu chiến dịch.
+
+### 2.1.8. Bộ nhớ dài hạn trong hệ thống tác nhân
+
+Bộ nhớ dài hạn là khả năng lưu trữ và sử dụng lại thông tin từ các phiên làm việc trước. Trong hệ thống tác nhân, bộ nhớ dài hạn giúp duy trì các thông tin quan trọng như phong cách viết, thông tin sản phẩm, lịch sử chiến dịch, phản hồi của người dùng và các quyết định đã được đưa ra. Các nghiên cứu về truy xuất tăng cường sinh nội dung cho thấy việc kết hợp mô hình ngôn ngữ với nguồn tri thức bên ngoài có thể giúp cải thiện khả năng sử dụng thông tin và tạo nội dung có căn cứ hơn (Lewis et al., 2020).
+
+Ngoài ra, nghiên cứu về tác nhân sinh mô phỏng hành vi con người cũng nhấn mạnh vai trò của bộ nhớ, phản ánh và lập kế hoạch trong việc giúp tác nhân duy trì hành vi nhất quán theo thời gian (Park et al., 2023). Đối với hệ thống marketing, bộ nhớ dài hạn giúp tác nhân duy trì thông tin thương hiệu, ghi nhớ mục tiêu chiến dịch và tạo nội dung phù hợp hơn trong các lần tương tác tiếp theo.
+
+### 2.1.9. Làm việc đa kênh
+
+Làm việc đa kênh là khả năng cho phép người dùng tương tác với hệ thống thông qua nhiều kênh khác nhau. Đối với một hệ thống tác nhân marketing, các kênh này có thể bao gồm giao diện dòng lệnh, ứng dụng nhắn tin, nhóm làm việc hoặc các nền tảng giao tiếp được cấu hình trong hệ thống. Trong lĩnh vực marketing, việc quản lý nhiều kênh tương tác là một vấn đề quan trọng vì khách hàng và người dùng có thể xuất hiện ở nhiều điểm chạm khác nhau (Neslin et al., 2006; Lemon and Verhoef, 2016).
+
+Trong phạm vi đồ án, làm việc đa kênh được hiểu là khả năng hỗ trợ người dùng gửi yêu cầu, nhận phản hồi, nhận thông báo và theo dõi kết quả thông qua các kênh đã được cấu hình. Khái niệm này khác với phân phối nội dung marketing đa nền tảng, nhưng có mối liên hệ chặt chẽ với mục tiêu tự động hóa quy trình marketing số.
+
+### 2.1.10. Lập lịch tác vụ và báo cáo định kỳ
+
+Lập lịch tác vụ là cơ chế cho phép hệ thống thực hiện một công việc tại một thời điểm xác định hoặc lặp lại theo chu kỳ. Trong marketing số, nhiều công việc cần được thực hiện định kỳ như chuẩn bị lịch nội dung hằng tuần, kiểm tra xu hướng, theo dõi phản hồi, tổng hợp số liệu hoặc gửi báo cáo chiến dịch.
+
+Trong phạm vi đồ án, lập lịch tác vụ và báo cáo định kỳ được xem là một thành phần quan trọng giúp tác nhân không chỉ phản hồi khi người dùng gửi yêu cầu, mà còn hỗ trợ các công việc cần duy trì theo thời gian. Cách tiếp cận này phù hợp với mục tiêu tự động hóa marketing, trong đó hệ thống hỗ trợ giảm bớt thao tác thủ công và duy trì các hoạt động lặp lại một cách ổn định (Järvinen and Taiminen, 2016).
 
 ## 2.2. Cơ sở lý thuyết
 
-### 2.2.1. LLM trong vai trò trợ lý marketing
+### 2.2.1. Mô hình ngôn ngữ lớn trong hệ thống tác nhân
 
-LLM có thể hỗ trợ nhiều công việc marketing như viết nội dung, tóm tắt thông tin, phân tích khách hàng, đề xuất ý tưởng và tạo nhiều biến thể thông điệp. Tuy nhiên, khi dùng LLM trong vai trò trợ lý marketing, cần chú ý đến ba vấn đề: thông tin đầu vào phải đủ rõ, nội dung đầu ra cần phù hợp với thương hiệu và kết quả nên được người dùng kiểm tra trước khi sử dụng trong chiến dịch thật.
+Mô hình ngôn ngữ lớn là một trong những nền tảng quan trọng của các hệ thống trí tuệ nhân tạo hiện đại. Sự ra đời của kiến trúc Transformer đã tạo cơ sở cho nhiều mô hình có khả năng xử lý ngôn ngữ tự nhiên ở quy mô lớn, bao gồm hiểu văn bản, sinh văn bản, tóm tắt, phân tích và trả lời câu hỏi (Vaswani et al., 2017). Các nghiên cứu về mô hình ngôn ngữ lớn cũng cho thấy những mô hình này có khả năng thực hiện nhiều nhiệm vụ khác nhau thông qua yêu cầu bằng ngôn ngữ tự nhiên và ngữ cảnh đầu vào (Brown et al., 2020).
 
-Trong phạm vi đồ án, LLM không chỉ được xem là công cụ viết văn bản, mà là thành phần hỗ trợ suy luận trong một hệ thống lớn hơn. Các chi tiết về cách hệ thống kết nối LLM với các chức năng phần mềm sẽ được trình bày ở Chương 3.
+Trong đồ án này, mô hình ngôn ngữ lớn được sử dụng như thành phần hỗ trợ suy luận và sinh nội dung cho tác nhân marketing. Thông qua mô hình ngôn ngữ lớn, hệ thống có thể tiếp nhận yêu cầu của người dùng, phân tích mục tiêu, tạo bản nháp nội dung, điều chỉnh giọng văn và tổng hợp báo cáo. Tuy nhiên, mô hình ngôn ngữ lớn khi hoạt động độc lập thường khó duy trì ngữ cảnh dài hạn, khó theo dõi tiến độ công việc và khó bảo đảm sự nhất quán của nội dung nếu thiếu thông tin thương hiệu. Vì vậy, mô hình cần được kết hợp với các thành phần khác như bộ nhớ, công cụ hỗ trợ, lập lịch tác vụ và quản lý phiên làm việc.
 
-### 2.2.2. Điều phối đa tác nhân
+### 2.2.2. Tác nhân tự chủ và quy trình xử lý nhiều bước
 
-Điều phối đa tác nhân là mô hình trong đó một tác nhân chính có thể giao việc cho các tác nhân con hoặc khu vực xử lý riêng biệt. Mục đích là chia nhỏ công việc phức tạp, tách ngữ cảnh, chạy song song hoặc duy trì một phần chuyên trách cho một chủ đề.
+Trong trí tuệ nhân tạo, tác nhân được hiểu là một hệ thống có khả năng quan sát môi trường, xử lý thông tin và thực hiện hành động nhằm đạt được mục tiêu nhất định (Russell and Norvig, 2020). Theo Wooldridge, tác nhân có tính tự chủ khi có thể hoạt động mà không cần sự điều khiển trực tiếp liên tục từ con người và có khả năng lựa chọn hành động phù hợp với trạng thái hiện tại của môi trường (Wooldridge, 2009).
 
-Trong marketing, tư duy đa tác nhân có thể được hiểu như việc chia công việc cho nhiều vai trò chuyên môn khác nhau. Điều này phù hợp với các quy trình marketing như:
+Đối với hệ thống trong đồ án, tác nhân tự chủ được hiểu là một thành phần phần mềm có khả năng tiếp nhận mục tiêu từ người dùng, phân tích ngữ cảnh, lập kế hoạch, sử dụng công cụ hỗ trợ và trả về kết quả sau nhiều bước xử lý. Khác với chatbot thông thường chỉ phản hồi từng yêu cầu riêng lẻ, tác nhân tự chủ có thể hỗ trợ một chuỗi công việc như lập kế hoạch nội dung, tạo bài đăng, điều chỉnh nội dung theo nền tảng, nhắc việc và tổng hợp báo cáo.
 
-- Một tác nhân nghiên cứu thị trường.
-- Một tác nhân viết nội dung.
-- Một tác nhân phân tích phản hồi.
-- Một tác nhân theo dõi lịch đăng và báo cáo.
+Cách tiếp cận này phù hợp với bài toán marketing số vì nhiều công việc marketing không diễn ra độc lập, mà thường gồm nhiều bước liên tiếp. Ví dụ, để chuẩn bị một chiến dịch nội dung, hệ thống cần hiểu mục tiêu, xác định đối tượng, đề xuất ý tưởng, tạo bản nháp, điều chỉnh theo từng kênh và hỗ trợ theo dõi kết quả sau khi triển khai.
 
-### 2.2.3. Quản lý ngữ cảnh làm việc
+### 2.2.3. Sử dụng công cụ trong hệ thống tác nhân
 
-Quản lý ngữ cảnh làm việc giúp hệ thống phân biệt các tình huống khác nhau. Ví dụ, một người dùng có thể vừa làm chiến dịch cho sản phẩm A, vừa chuẩn bị nội dung cho sản phẩm B. Nếu hai ngữ cảnh này bị trộn lẫn, hệ thống có thể đưa ra nội dung sai sản phẩm hoặc báo cáo nhầm chiến dịch.
+Một đặc điểm quan trọng của hệ thống tác nhân hiện đại là khả năng kết hợp giữa suy luận và hành động. Thay vì chỉ sinh câu trả lời bằng văn bản, tác nhân có thể lựa chọn và sử dụng các công cụ bên ngoài để thực hiện nhiệm vụ. Cách tiếp cận kết hợp suy luận và hành động được thể hiện trong phương pháp ReAct, trong đó mô hình vừa suy luận về nhiệm vụ vừa thực hiện hành động để thu thập hoặc xử lý thông tin (Yao et al., 2023).
 
-Vì vậy, một hệ thống trợ lý marketing cần có khả năng phân biệt ngữ cảnh theo chiến dịch, kênh làm việc, người dùng hoặc nhóm nội dung. Cơ chế kỹ thuật để thực hiện điều này sẽ được trình bày trong phần thiết kế hệ thống.
+Trong hệ thống tác nhân marketing, công cụ hỗ trợ có thể bao gồm công cụ tìm kiếm thông tin, công cụ quản lý phiên, công cụ lập lịch, công cụ gửi thông báo hoặc công cụ hỗ trợ tích hợp kênh giao tiếp. Nhờ cơ chế sử dụng công cụ, tác nhân không chỉ tạo nội dung mà còn có thể hỗ trợ các tác vụ thực tế hơn như nhắc việc, tạo báo cáo định kỳ, gửi kết quả qua kênh đã cấu hình hoặc hỗ trợ phân phối nội dung trên nhiều nền tảng.
 
-### 2.2.4. Nhắc việc và tác vụ định kỳ
+Về mặt thiết kế, mỗi công cụ cần có chức năng rõ ràng, đầu vào xác định và kết quả trả về có thể được tác nhân sử dụng trong quá trình xử lý. Đây là cơ sở để xây dựng hệ thống có khả năng mở rộng, trong đó có thể bổ sung thêm công cụ hoặc kênh mới mà không cần thay đổi toàn bộ kiến trúc.
 
-Một điểm khác biệt quan trọng giữa chatbot và tác nhân tự chủ là khả năng hỗ trợ các công việc cần thực hiện lặp lại. Trong marketing, nhiều hoạt động không xảy ra một lần mà cần được duy trì theo lịch, ví dụ kiểm tra xu hướng mỗi sáng, chuẩn bị lịch nội dung mỗi tuần hoặc tổng hợp báo cáo vào cuối ngày.
+### 2.2.4. Quản lý ngữ cảnh và bộ nhớ dài hạn
 
-Trong marketing số, cơ chế nhắc việc và tác vụ định kỳ có thể dùng cho:
+Quản lý ngữ cảnh là yêu cầu quan trọng trong các hệ thống tác nhân, đặc biệt khi nhiệm vụ kéo dài qua nhiều lượt tương tác. Trong marketing số, ngữ cảnh có thể bao gồm thông tin sản phẩm, khách hàng mục tiêu, phong cách viết, thông điệp truyền thông, mục tiêu chiến dịch và các nội dung đã tạo trước đó. Nếu thiếu ngữ cảnh, hệ thống có thể sinh nội dung không phù hợp hoặc thiếu nhất quán với thương hiệu.
 
-- Nhắc tạo báo cáo hằng ngày.
-- Theo dõi xu hướng hằng tuần.
-- Chuẩn bị lịch nội dung.
-- Kiểm tra phản hồi từ chiến dịch.
-- Gửi bản tóm tắt qua kênh đã cấu hình.
+Bộ nhớ dài hạn giúp hệ thống lưu trữ và truy xuất lại các thông tin quan trọng từ những phiên làm việc trước. Các nghiên cứu về truy xuất tăng cường sinh nội dung cho thấy việc kết hợp mô hình ngôn ngữ với nguồn tri thức bên ngoài có thể giúp hệ thống sử dụng thông tin phù hợp hơn khi tạo câu trả lời hoặc sinh nội dung (Lewis et al., 2020). Ngoài ra, các nghiên cứu về tác nhân sinh cũng nhấn mạnh vai trò của bộ nhớ và lập kế hoạch trong việc duy trì hành vi nhất quán theo thời gian (Park et al., 2023).
 
-### 2.2.5. Quyền kiểm soát dữ liệu marketing
+Trong phạm vi đồ án, quản lý ngữ cảnh và bộ nhớ dài hạn được sử dụng để giúp tác nhân duy trì thông tin thương hiệu, ghi nhớ mục tiêu người dùng và hỗ trợ tạo nội dung nhất quán hơn. Đây là nền tảng quan trọng để hệ thống có thể hỗ trợ các tác vụ marketing theo ngày, theo tuần hoặc theo từng chiến dịch.
 
-Dữ liệu marketing có thể bao gồm thông tin thương hiệu, phong cách nội dung, danh sách khách hàng, kế hoạch chiến dịch và lịch sử trao đổi. Đây là những dữ liệu có giá trị đối với cá nhân hoặc doanh nghiệp. Vì vậy, hệ thống cần quan tâm đến quyền kiểm soát dữ liệu, hạn chế lộ thông tin nhạy cảm và cho phép người dùng biết dữ liệu của mình được sử dụng như thế nào.
+### 2.2.5. Tự động hóa marketing số đa kênh
 
-## 2.3. Tổng quan các hướng tiếp cận liên quan
+Tự động hóa marketing là việc sử dụng công nghệ để hỗ trợ hoặc tự động thực hiện các công việc lặp lại trong quy trình marketing. Các công việc này có thể bao gồm lập lịch nội dung, gửi thông báo, theo dõi chiến dịch, phân loại thông tin và tổng hợp báo cáo. Järvinen và Taiminen cho rằng tự động hóa marketing có thể hỗ trợ doanh nghiệp trong quản lý nội dung, theo dõi khách hàng tiềm năng và nâng cao hiệu quả hoạt động marketing dựa trên dữ liệu (Järvinen and Taiminen, 2016).
 
-### 2.3.1. Chatbot hỗ trợ marketing
+Trong môi trường đa kênh, hoạt động marketing thường được triển khai trên nhiều nền tảng như Facebook Fanpage, Instagram, TikTok, LinkedIn, email hoặc các kênh nhắn tin. Mỗi nền tảng có đặc điểm riêng về định dạng nội dung, hành vi người dùng và cách tương tác. Vì vậy, cùng một thông điệp có thể cần được điều chỉnh thành nhiều phiên bản phù hợp với từng kênh. Các nghiên cứu về quản lý đa kênh cũng cho thấy việc phối hợp nhiều kênh là một vấn đề quan trọng trong quá trình tiếp cận và tương tác với khách hàng (Neslin et al., 2006; Lemon and Verhoef, 2016).
 
-Chatbot hỗ trợ marketing thường tập trung vào phản hồi câu hỏi, tạo nội dung theo yêu cầu hoặc trả lời khách hàng. Ưu điểm là dễ triển khai, chi phí thấp và thân thiện với người dùng. Tuy nhiên, chatbot thường thiếu khả năng ghi nhớ thông tin dài hạn, thiếu khả năng tự theo dõi công việc định kỳ và khó hỗ trợ các quy trình nhiều bước.
+Trong đồ án này, tự động hóa marketing số đa kênh là cơ sở để xây dựng các chức năng như lập kế hoạch nội dung, tạo bài đăng, điều chỉnh nội dung theo từng nền tảng, hỗ trợ đăng hoặc lên lịch đăng bài, nhắc việc và tạo báo cáo định kỳ. Hệ thống hướng đến việc giảm thao tác thủ công, duy trì sự nhất quán trong truyền thông và hỗ trợ người dùng vận hành hoạt động marketing thường xuyên hơn.
 
-### 2.3.2. Công cụ marketing automation truyền thống
+## 2.3. Tổng quan các công trình và hướng tiếp cận liên quan
 
-Các nền tảng marketing automation truyền thống thường mạnh ở email campaign, CRM, phân khúc khách hàng và báo cáo. Tuy nhiên, chúng thường yêu cầu cấu hình thủ công, quy trình cứng và ít linh hoạt trong việc suy luận ngôn ngữ tự nhiên. Người dùng phải thiết kế workflow trước, thay vì giao mục tiêu cấp cao cho tác nhân.
+Các hướng tiếp cận liên quan đến đề tài có thể được xem xét theo hai phạm vi: trong nước và ngoài nước. Trong phạm vi trong nước, các nội dung liên quan chủ yếu gắn với marketing số, sáng tạo nội dung, truyền thông trên mạng xã hội, phân tích phản hồi khách hàng và nhu cầu ứng dụng AI vào hoạt động marketing. Trong phạm vi ngoài nước, các nghiên cứu tập trung rõ hơn vào tự động hóa marketing, quản lý đa kênh, mô hình ngôn ngữ lớn, tác nhân tự chủ, cơ chế sử dụng công cụ và bộ nhớ dài hạn.
 
-### 2.3.3. Hệ thống tác nhân tự chủ ứng dụng vào marketing
+Trong đồ án này, mô hình ngôn ngữ lớn được sử dụng như một thành phần nền tảng để hỗ trợ hiểu yêu cầu, sinh nội dung, tóm tắt và phân tích ngữ cảnh. Trọng tâm của đề tài là tổ chức các thành phần như quản lý ngữ cảnh, bộ nhớ dài hạn, công cụ hỗ trợ, lập lịch tác vụ và tích hợp kênh giao tiếp để xây dựng một hệ thống tác nhân marketing tự chủ phục vụ quy trình marketing số đa kênh.
 
-Hệ thống tác nhân tự chủ kết hợp ưu điểm của LLM và tự động hóa quy trình. Người dùng có thể mô tả mục tiêu bằng ngôn ngữ tự nhiên, còn hệ thống hỗ trợ chia nhỏ công việc, tạo kết quả trung gian và duy trì tiến độ. Đồ án này đi theo hướng đó, nhưng giới hạn trong phạm vi hỗ trợ quy trình marketing số thay vì xây dựng một nền tảng quảng cáo hoặc CRM thương mại hoàn chỉnh.
+### 2.3.1. Các nghiên cứu và hướng tiếp cận trong nước
+
+Tại Việt Nam, sự phát triển của mạng xã hội, thương mại điện tử và các nền tảng truyền thông trực tuyến đã làm thay đổi cách cá nhân, nhà sáng tạo nội dung, nhóm truyền thông và doanh nghiệp nhỏ triển khai hoạt động marketing. Các công việc như xây dựng ý tưởng, viết bài quảng bá, điều chỉnh nội dung theo nền tảng, phản hồi khách hàng, theo dõi xu hướng và tổng hợp thông tin từ nhiều kênh ngày càng trở nên phổ biến. Điều này tạo ra nhu cầu đối với các công cụ hỗ trợ tạo nội dung, quản lý lịch đăng, theo dõi phản hồi và tự động hóa các tác vụ marketing có tính lặp lại.
+
+Một số nghiên cứu trong nước có liên quan tập trung vào xử lý dữ liệu mạng xã hội tiếng Việt, phân tích phản hồi người dùng, phát hiện nội dung bất thường và khai thác dữ liệu bình luận hoặc đánh giá khách hàng. Các hướng nghiên cứu này có ý nghĩa thực tiễn đối với marketing số vì phản hồi, bình luận và tương tác của người dùng là nguồn thông tin quan trọng để đánh giá nội dung, nhận biết xu hướng và điều chỉnh chiến dịch. Chẳng hạn, các nghiên cứu về dữ liệu mạng xã hội tiếng Việt như ViHSD và ViSoBERT cho thấy nhu cầu xử lý bình luận, cảm xúc, nội dung độc hại hoặc nội dung rác trên mạng xã hội Việt Nam là một hướng nghiên cứu có giá trị thực tiễn (Luu, Nguyen and Nguyen, 2021; Nguyen et al., 2023).
+
+Bên cạnh đó, các công cụ AI hỗ trợ viết nội dung, chatbot chăm sóc khách hàng và hệ thống phân tích phản hồi đang được quan tâm trong hoạt động marketing trực tuyến. Tuy nhiên, phần lớn các công cụ này thường tập trung vào từng tác vụ riêng lẻ như tạo nội dung, trả lời câu hỏi hoặc phân tích bình luận. Chúng chưa tập trung nhiều vào việc hỗ trợ toàn bộ chuỗi công việc marketing như lập kế hoạch nội dung, điều chỉnh nội dung theo nền tảng, nhắc việc, theo dõi chiến dịch và tổng hợp báo cáo. Vì vậy, đồ án hướng đến việc xây dựng một hệ thống tác nhân marketing tự chủ có khả năng kết hợp nhiều chức năng trong cùng một quy trình hỗ trợ marketing số đa kênh.
+
+### 2.3.2. Các nghiên cứu và hướng tiếp cận ngoài nước
+
+Trên thế giới, tự động hóa marketing và quản lý đa kênh đã được nghiên cứu từ nhiều góc độ. Järvinen và Taiminen cho rằng tự động hóa marketing có thể hỗ trợ doanh nghiệp trong việc quản lý nội dung, theo dõi khách hàng tiềm năng và nâng cao hiệu quả marketing dựa trên dữ liệu (Järvinen and Taiminen, 2016). Các nghiên cứu về quản lý đa kênh cũng nhấn mạnh rằng khách hàng có thể tương tác với thương hiệu qua nhiều điểm chạm khác nhau, do đó doanh nghiệp cần phối hợp các kênh để duy trì trải nghiệm và thông điệp nhất quán (Neslin et al., 2006; Lemon and Verhoef, 2016).
+
+Cùng với sự phát triển của trí tuệ nhân tạo, các mô hình ngôn ngữ lớn tạo điều kiện cho việc xây dựng các hệ thống có khả năng hiểu yêu cầu, sinh nội dung, tóm tắt và phân tích thông tin. Các nghiên cứu về tác nhân dựa trên mô hình ngôn ngữ lớn cho thấy xu hướng chuyển từ hệ thống hỏi đáp đơn lẻ sang hệ thống có khả năng lập kế hoạch, ghi nhớ, sử dụng công cụ và thực hiện các tác vụ phức tạp hơn (Wang et al., 2023). Phương pháp ReAct cũng cho thấy việc kết hợp giữa suy luận và hành động giúp mô hình có thể tương tác với công cụ hoặc nguồn thông tin bên ngoài để giải quyết nhiệm vụ (Yao et al., 2023).
+
+Ngoài ra, các nghiên cứu về truy xuất thông tin và bộ nhớ như Retrieval-Augmented Generation cho thấy việc kết hợp mô hình sinh với nguồn tri thức bên ngoài có thể giúp hệ thống sử dụng thông tin phù hợp hơn trong quá trình tạo câu trả lời hoặc nội dung (Lewis et al., 2020). Đây là cơ sở quan trọng cho các hệ thống tác nhân marketing, vì hệ thống cần ghi nhớ thông tin thương hiệu, lịch sử chiến dịch, phản hồi người dùng và các quyết định trước đó.
+
+Từ các nghiên cứu ngoài nước có thể thấy, nhiều thành phần cần thiết cho một hệ thống tác nhân marketing đã được nghiên cứu riêng lẻ, bao gồm tự động hóa marketing, quản lý đa kênh, mô hình ngôn ngữ lớn, suy luận kết hợp hành động, sử dụng công cụ và bộ nhớ. Đồ án này hướng đến việc kết hợp các thành phần đó trong một hệ thống tác nhân marketing tự chủ, tập trung vào các tác vụ thực tế như lập kế hoạch nội dung, tạo nội dung đa nền tảng, nghiên cứu xu hướng, phân tích đối thủ cạnh tranh, nhắc việc và tổng hợp báo cáo.
 
 ## 2.4. Công nghệ sử dụng
 
-Hệ thống được triển khai chủ yếu bằng TypeScript trên nền Node.js. Các thành phần chính gồm:
+Hệ thống được phát triển chủ yếu bằng TypeScript trên nền tảng Node.js. Đây là nhóm công nghệ phù hợp với các hệ thống cần xử lý bất đồng bộ, tích hợp nhiều dịch vụ bên ngoài và tổ chức mã nguồn theo nhiều module. TypeScript giúp tăng tính rõ ràng của mã nguồn thông qua cơ chế kiểu dữ liệu tĩnh, hỗ trợ quá trình phát triển, kiểm thử và bảo trì hệ thống.
 
-- TypeScript: ngôn ngữ chính để xây dựng hệ thống.
-- Node.js: môi trường thực thi.
-- pnpm: quản lý gói và script phát triển.
-- SQLite: lưu trữ cục bộ cho dữ liệu ngữ cảnh, lịch và trạng thái.
-- LLM providers: hỗ trợ nhiều nhà cung cấp mô hình như OpenAI, Anthropic, Gemini, Groq, OpenRouter, Ollama và các provider tương thích.
-- Kiến trúc mở rộng: hỗ trợ bổ sung provider, kênh và chức năng mới mà không sửa lõi hệ thống.
-- Vitest: kiểm thử tự động.
+Về môi trường thực thi, Node.js được sử dụng để vận hành các thành phần chính của hệ thống như giao diện dòng lệnh, lõi xử lý tác nhân, máy chủ trung gian, công cụ hỗ trợ, cơ chế lập lịch và tích hợp kênh giao tiếp. pnpm được sử dụng để quản lý thư viện, cài đặt phụ thuộc, chạy các lệnh phát triển và biên dịch mã nguồn.
+
+Đối với thành phần trí tuệ nhân tạo, hệ thống được thiết kế để hỗ trợ nhiều nhà cung cấp mô hình ngôn ngữ lớn khác nhau như OpenAI, Anthropic, Gemini, Groq, OpenRouter, Ollama và các nhà cung cấp tương thích. Cách tiếp cận này giúp hệ thống không phụ thuộc vào một mô hình duy nhất, đồng thời cho phép lựa chọn mô hình phù hợp theo chất lượng phản hồi, tốc độ xử lý, chi phí sử dụng và điều kiện triển khai thực tế.
+
+Về lưu trữ, hệ thống sử dụng cơ chế lưu trữ cục bộ để quản lý cấu hình, phiên làm việc, bộ nhớ, lịch tác vụ và trạng thái vận hành. SQLite được sử dụng cho các dữ liệu cần lưu trữ và truy vấn có cấu trúc, chẳng hạn như bộ nhớ, lịch tác vụ và trạng thái hệ thống. Bên cạnh đó, một số dữ liệu cấu hình và ngữ cảnh được lưu dưới dạng tệp nhằm thuận tiện cho việc chỉnh sửa, sao lưu và triển khai trên môi trường cá nhân.
+
+Hệ thống cũng sử dụng kiến trúc mở rộng để hỗ trợ bổ sung nhà cung cấp mô hình, công cụ, kênh giao tiếp và chức năng mới. Các thành phần như công cụ hỗ trợ, bộ nhớ, lập lịch, kênh nhắn tin và giao diện điều khiển được tổ chức theo hướng tách biệt, giúp hệ thống dễ bảo trì và có khả năng mở rộng trong tương lai. Ngoài ra, Vitest được sử dụng để hỗ trợ kiểm thử tự động các thành phần chính trong quá trình phát triển.
+
+Bảng 2.1 trình bày tóm tắt các công nghệ và vai trò của chúng trong hệ thống.
+| Công nghệ / Thành phần | Vai trò trong hệ thống |
+| -------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| TypeScript | Ngôn ngữ lập trình chính, hỗ trợ kiểm tra kiểu dữ liệu và tổ chức mã nguồn rõ ràng |
+| Node.js | Môi trường thực thi cho lõi hệ thống, giao diện dòng lệnh, máy chủ trung gian và các công cụ hỗ trợ |
+| pnpm | Quản lý thư viện, cài đặt phụ thuộc, chạy lệnh phát triển và biên dịch mã nguồn |
+| SQLite | Lưu trữ cục bộ cho bộ nhớ, lịch tác vụ, phiên làm việc và trạng thái hệ thống |
+| JSON / tệp cấu hình | Lưu thông tin cấu hình, ngữ cảnh làm việc và dữ liệu cần chỉnh sửa thủ công |
+| Mô hình ngôn ngữ lớn | Hỗ trợ hiểu yêu cầu, sinh nội dung, phân tích ngữ cảnh và tổng hợp báo cáo |
+| Nhiều nhà cung cấp mô hình | Cho phép tích hợp nhiều dịch vụ như OpenAI, Anthropic, Gemini, Groq, OpenRouter, Ollama hoặc nhà cung cấp tương thích |
+| Giao diện dòng lệnh | Cho phép người dùng cấu hình, chạy tác vụ, trò chuyện và kiểm tra trạng thái hệ thống |
+| Gateway | Là lớp trung gian tiếp nhận yêu cầu, xử lý sự kiện và kết nối với các kênh giao tiếp |
+| Công cụ hỗ trợ | Cho phép tác nhân thực hiện các tác vụ như tìm kiếm, lập lịch, gửi thông báo hoặc xử lý dữ liệu |
+| Cơ chế lập lịch | Hỗ trợ nhắc việc, chạy tác vụ định kỳ và tạo báo cáo theo thời gian |
+| Tích hợp kênh giao tiếp | Hỗ trợ người dùng gửi yêu cầu và nhận kết quả qua các kênh đã cấu hình |
+| Cơ chế mở rộng | Hỗ trợ bổ sung nhà cung cấp mô hình, công cụ, kênh hoặc chức năng mới |
+| Vitest | Hỗ trợ kiểm thử tự động trong quá trình phát triển |
+| Docker / Railway | Hỗ trợ đóng gói và triển khai hệ thống khi cần thiết |
 
 ## 2.5. Kết luận chương
 
-Chương 2 đã trình bày nền tảng lý thuyết của đề tài, gồm marketing số, LLM, tác nhân tự chủ, quy trình nhiều bước, quản lý ngữ cảnh, tự động hóa định kỳ và quyền kiểm soát dữ liệu. Các khái niệm này là cơ sở để phân tích yêu cầu và thiết kế hệ thống trong Chương 3.
+Chương 2 đã trình bày các cơ sở lý thuyết và tổng quan những hướng tiếp cận liên quan đến đề tài. Các khái niệm nền tảng như marketing số, marketing số đa kênh, tự động hóa marketing, mô hình ngôn ngữ lớn, tác nhân tự chủ, ngữ cảnh thương hiệu, bộ nhớ dài hạn, lập lịch tác vụ và làm việc đa kênh đã được làm rõ nhằm tạo cơ sở cho quá trình phân tích và thiết kế hệ thống.
+
+Bên cạnh đó, chương này cũng trình bày các hướng nghiên cứu và ứng dụng liên quan trong nước và ngoài nước. Qua đó có thể thấy nhu cầu ứng dụng AI vào hoạt động marketing số ngày càng rõ ràng, đặc biệt trong các công việc như tạo nội dung, quản lý ngữ cảnh thương hiệu, theo dõi xu hướng, phân tích phản hồi, lập lịch và tổng hợp báo cáo. Tuy nhiên, nhiều hướng tiếp cận hiện nay vẫn tập trung vào từng tác vụ riêng lẻ, chưa kết hợp đầy đủ thành một hệ thống tác nhân tự chủ hỗ trợ quy trình marketing số đa kênh.
+
+Từ các nội dung đã phân tích, đồ án xác định trọng tâm nghiên cứu là xây dựng một hệ thống tác nhân marketing tự chủ có khả năng tiếp nhận mục tiêu từ người dùng, duy trì ngữ cảnh thương hiệu, sử dụng công cụ hỗ trợ, thực hiện tác vụ theo lịch và phản hồi qua nhiều kênh giao tiếp. Các cơ sở lý thuyết trong chương này sẽ được sử dụng làm nền tảng cho việc phân tích yêu cầu và thiết kế hệ thống ở Chương 3.
 
 ---
 
@@ -375,51 +426,93 @@ Chương 2 đã trình bày nền tảng lý thuyết của đề tài, gồm ma
 
 ## 3.1. Phương pháp nghiên cứu và cách tiếp cận
 
-Đề tài được triển khai theo hướng phân tích hệ thống tác nhân tự chủ hiện có và hoàn thiện thiết kế đồ án dựa trên các thành phần đã được hiện thực. Thay vì mô tả hệ thống như một chatbot marketing, đồ án xác định lõi kỹ thuật là một nền tảng tác nhân tự chủ. Vì vậy, quá trình thiết kế tập trung vào các câu hỏi:
+Chương này trình bày phương pháp tiếp cận và định hướng thiết kế hệ thống tác nhân tự chủ hỗ trợ tự động hóa quy trình marketing số đa kênh. Khác với chatbot thông thường chỉ phản hồi từng yêu cầu riêng lẻ, hệ thống trong đồ án được tiếp cận theo hướng tác nhân tự chủ, có khả năng tiếp nhận mục tiêu từ người dùng, duy trì ngữ cảnh làm việc, sử dụng công cụ hỗ trợ, thực hiện tác vụ theo nhiều bước và trả kết quả thông qua các kênh giao tiếp phù hợp.
 
-- Hệ thống nhận yêu cầu từ người dùng qua những bề mặt nào?
-- Yêu cầu được ánh xạ vào phiên và tác nhân như thế nào?
-- Tác nhân được cung cấp công cụ nào để thực thi hành động?
-- Hệ thống lưu và truy xuất ngữ cảnh dài hạn như thế nào?
-- Tác vụ tự động theo lịch được tạo, chạy và gửi kết quả ra sao?
-- Plugin và channel adapter được tổ chức thế nào để mở rộng?
-- Cơ chế kiểm soát lỗi, fallback mô hình và bảo mật được xử lý ra sao?
+Về phương pháp nghiên cứu, đồ án kết hợp giữa phân tích nghiệp vụ marketing số và phân tích thiết kế hệ thống phần mềm. Ở góc độ nghiệp vụ, đề tài xác định các công việc phổ biến trong quy trình marketing số như nghiên cứu xu hướng, phân tích đối thủ cạnh tranh, lập kế hoạch nội dung, tạo bản nháp bài đăng, điều chỉnh nội dung theo từng nền tảng, nhắc việc, theo dõi chiến dịch và tổng hợp báo cáo. Các công việc này được xem là cơ sở để xác định yêu cầu chức năng và phạm vi hỗ trợ của hệ thống.
+
+Ở góc độ kỹ thuật, các nhu cầu nghiệp vụ trên được chuyển hóa thành các thành phần chính của hệ thống, bao gồm lõi xử lý tác nhân, quản lý ngữ cảnh, quản lý phiên làm việc, bộ nhớ dài hạn, công cụ hỗ trợ, cơ chế lập lịch tác vụ, tích hợp kênh giao tiếp và cơ chế mở rộng chức năng. Cách phân tách này giúp hệ thống có cấu trúc rõ ràng, dễ bảo trì và có khả năng mở rộng thêm các chức năng mới trong tương lai.
+
+Đồ án được phát triển trên cơ sở kế thừa, điều chỉnh và mở rộng một số thành phần nền tảng có sẵn. Tuy nhiên, hệ thống không giữ nguyên phạm vi tổng quát ban đầu mà được định hướng lại cho bài toán marketing số đa kênh. Quá trình tùy biến tập trung vào việc bổ sung ngữ cảnh thương hiệu, tổ chức các tác vụ theo quy trình marketing, hỗ trợ tạo và điều chỉnh nội dung theo từng nền tảng, thiết lập các tác vụ định kỳ và hỗ trợ người dùng nhận kết quả qua nhiều kênh giao tiếp.
+
+Về thiết kế tổng thể, hệ thống được xây dựng theo hướng mô-đun. Lõi xử lý tác nhân chịu trách nhiệm tiếp nhận yêu cầu, phân tích mục tiêu, chuẩn bị ngữ cảnh, lựa chọn hành động và tạo phản hồi. Bộ nhớ dài hạn giúp lưu lại các thông tin quan trọng như thông tin thương hiệu, phong cách nội dung, mục tiêu chiến dịch và các quyết định đã được người dùng xác nhận. Hệ thống công cụ cho phép tác nhân thực hiện các tác vụ cụ thể như tìm kiếm thông tin, đọc và ghi dữ liệu, lập lịch nhắc việc, gửi thông báo hoặc hỗ trợ tạo báo cáo. Các kênh giao tiếp giúp người dùng gửi yêu cầu và nhận kết quả ở những môi trường làm việc khác nhau.
+
+Cách tiếp cận thiết kế của đồ án nhấn mạnh ba yêu cầu chính. Thứ nhất, hệ thống cần duy trì được ngữ cảnh thương hiệu và lịch sử làm việc để nội dung tạo ra có tính nhất quán. Thứ hai, hệ thống cần hỗ trợ quy trình nhiều bước thay vì chỉ sinh phản hồi văn bản đơn lẻ. Thứ ba, hệ thống cần có khả năng mở rộng để bổ sung thêm mô hình ngôn ngữ, công cụ, kênh giao tiếp hoặc chức năng marketing mới khi cần thiết. Các yêu cầu này là cơ sở cho phần phân tích yêu cầu, thiết kế kiến trúc và xây dựng các luồng xử lý ở những mục tiếp theo của chương.
 
 ## 3.2. Phân tích yêu cầu
 
-### 3.2.1. Yêu cầu chức năng
+Việc phân tích yêu cầu của hệ thống được thực hiện từ hai nguồn chính. Nguồn thứ nhất là nhu cầu thực tế của người dùng trong quy trình marketing số đa kênh, bao gồm nghiên cứu thông tin, lập kế hoạch nội dung, tạo bản nháp, điều chỉnh nội dung theo từng kênh, đăng hoặc lên lịch bài viết trên nhiều nền tảng, theo dõi quảng cáo trả phí, nhắc việc và tổng hợp kết quả. Nguồn thứ hai là khả năng hiện có của hệ thống được phân tích từ mã nguồn, gồm tiếp nhận yêu cầu bằng ngôn ngữ tự nhiên, duy trì phiên làm việc, sử dụng công cụ, lập lịch tác vụ, giao tiếp qua nhiều kênh và mở rộng chức năng khi cần.
+
+Theo các nghiên cứu về tự động hóa marketing và quản lý đa kênh, một hệ thống hỗ trợ marketing cần quan tâm đến quy trình làm việc, nội dung, thông điệp, dữ liệu khách hàng và các điểm chạm trên nhiều kênh khác nhau (Järvinen and Taiminen, 2016; Neslin et al., 2006; Lemon and Verhoef, 2016). Vì vậy, yêu cầu của hệ thống trong đồ án không chỉ dừng ở việc sinh văn bản, mà cần hỗ trợ cả quá trình làm việc có ngữ cảnh, có lịch, có kênh giao tiếp, có khả năng xuất bản nội dung lên các kênh xã hội đã cấu hình và có khả năng tổng hợp kết quả từ dữ liệu chiến dịch.
+
+Tuy nhiên, phạm vi của đồ án cần được xác định rõ. Hệ thống hướng đến vai trò trợ lý tác nhân tự chủ hỗ trợ người dùng thực hiện quy trình marketing, không phải một nền tảng quảng cáo hay phân tích marketing chuyên sâu thay thế hoàn toàn các công cụ thương mại. Các chức năng như nghiên cứu xu hướng, phân tích đối thủ, đăng bài đa nền tảng, theo dõi chiến dịch quảng cáo và báo cáo được hiểu là khả năng hỗ trợ thu thập, tổng hợp, tạo đề xuất, tạo bản nháp, lên lịch và thực hiện một số thao tác qua các kênh đã được cấu hình. Đối với các hành động có ảnh hưởng trực tiếp ra bên ngoài như xuất bản bài viết, sử dụng tài khoản quảng cáo hoặc thay đổi dữ liệu chiến dịch, hệ thống cần ưu tiên cơ chế tạo nháp, yêu cầu xác nhận và giới hạn quyền theo cấu hình của người dùng.
+
+### 3.2.1. Đối tượng sử dụng và nhu cầu chính
+
+Đối tượng sử dụng chính của hệ thống là cá nhân, nhà sáng tạo nội dung, nhóm nhỏ hoặc doanh nghiệp nhỏ có nhu cầu duy trì hoạt động marketing thường xuyên nhưng chưa có đủ nguồn lực để vận hành một đội ngũ marketing chuyên trách. Nhóm người dùng này thường cần một công cụ có thể hỗ trợ nhiều công việc lặp lại, giảm thời gian chuẩn bị nội dung, phân phối nội dung lên nhiều nền tảng và theo dõi hiệu quả chiến dịch ở mức cơ bản, đồng thời vẫn duy trì sự nhất quán về thông tin thương hiệu.
+
+Các nhu cầu chính được xác định gồm:
+
+- Thiết lập thông tin nền tảng cho thương hiệu, sản phẩm, khách hàng mục tiêu, phong cách viết và mục tiêu chiến dịch.
+- Gửi yêu cầu bằng ngôn ngữ tự nhiên thay vì phải thao tác qua nhiều màn hình phức tạp.
+- Nhờ hệ thống hỗ trợ nghiên cứu thông tin, tóm tắt nội dung và đề xuất hướng triển khai.
+- Lập kế hoạch nội dung theo ngày, tuần hoặc theo một chiến dịch cụ thể.
+- Tạo bản nháp bài đăng, chú thích, ý tưởng nội dung hoặc biến thể nội dung phù hợp với từng kênh.
+- Điều chỉnh nội dung theo đặc thù của từng nền tảng như Facebook, Instagram, TikTok, LinkedIn hoặc các kênh xã hội khác.
+- Đăng ngay hoặc lên lịch đăng bài lên nhiều nền tảng mạng xã hội đã được cấu hình, với cơ chế duyệt trước khi xuất bản khi cần.
+- Theo dõi dữ liệu quảng cáo Meta Ads ở mức chiến dịch, nhóm quảng cáo hoặc quảng cáo; từ đó tạo báo cáo ngắn, cảnh báo bất thường và đề xuất hướng tối ưu.
+- Tạo bản nháp nội dung quảng cáo, biến thể thông điệp và gợi ý thử nghiệm A/B dựa trên mục tiêu chiến dịch và ngữ cảnh thương hiệu.
+- Lưu lại ngữ cảnh làm việc để các lần tương tác sau không phải cung cấp lại toàn bộ thông tin.
+- Đặt nhắc việc hoặc tác vụ định kỳ như kiểm tra xu hướng, chuẩn bị lịch nội dung hoặc gửi báo cáo.
+- Nhận kết quả qua kênh phù hợp như giao diện dòng lệnh, giao diện điều khiển hoặc các kênh nhắn tin đã được cấu hình.
+- Kiểm soát các hành động nhạy cảm như gửi nội dung ra bên ngoài, sử dụng khóa API hoặc thực thi công cụ có quyền cao.
+
+### 3.2.2. Yêu cầu chức năng
 
 Bảng 3.1 mô tả các yêu cầu chức năng chính của hệ thống.
 
-| Mã    | Yêu cầu                | Mô tả                                                                                                 |
-| ----- | ---------------------- | ----------------------------------------------------------------------------------------------------- |
-| FR-01 | Khởi tạo hệ thống      | Người dùng có thể cấu hình provider, workspace, channel và agent thông qua CLI hoặc file cấu hình     |
-| FR-02 | Chạy tác nhân qua CLI  | Người dùng có thể gửi yêu cầu đơn lẻ hoặc mở phiên chat tương tác                                     |
-| FR-03 | Chạy gateway           | Hệ thống có thể chạy gateway để nhận yêu cầu từ kênh và bề mặt điều khiển                             |
-| FR-04 | Quản lý phiên          | Hệ thống phân biệt phiên theo agent, kênh, người gửi, nhóm hoặc thread                                |
-| FR-05 | Sử dụng công cụ        | Tác nhân có thể gọi công cụ tìm kiếm, gửi tin nhắn, quản lý session, cron, image, PDF và plugin tools |
-| FR-06 | Bộ nhớ dài hạn         | Hệ thống lưu và truy xuất thông tin người dùng, thương hiệu, phiên làm việc và ngữ cảnh               |
-| FR-07 | Điều phối tác nhân con | Tác nhân có thể tạo phiên con hoặc phiên biệt lập để xử lý tác vụ riêng                               |
-| FR-08 | Tác vụ định kỳ         | Người dùng hoặc tác nhân có thể tạo job chạy một lần hoặc định kỳ                                     |
-| FR-09 | Giao tiếp đa kênh      | Hệ thống có thể nhận và gửi thông điệp qua nhiều channel adapter                                      |
-| FR-10 | Mở rộng plugin         | Hệ thống có thể nạp công cụ và kênh từ plugin                                                         |
-| FR-11 | Theo dõi vận hành      | Hệ thống ghi nhận model, token, chi phí ước lượng, log và trạng thái phiên                            |
-| FR-12 | Hỗ trợ marketing       | Hệ thống hỗ trợ nghiên cứu, lập kế hoạch, tạo nội dung, nhắc lịch và báo cáo marketing                |
+| Mã    | Yêu cầu                                      | Mô tả                                                                                                                                     |
+| ----- | -------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| FR-01 | Thiết lập môi trường làm việc                | Người dùng có thể thiết lập cấu hình ban đầu, chọn mô hình ngôn ngữ, khai báo kênh giao tiếp và tạo không gian làm việc cho tác nhân      |
+| FR-02 | Tiếp nhận yêu cầu bằng ngôn ngữ tự nhiên     | Hệ thống cho phép người dùng gửi yêu cầu như “lập kế hoạch nội dung”, “viết bài đăng”, “tóm tắt xu hướng” hoặc “nhắc tôi báo cáo hằng tuần” |
+| FR-03 | Duy trì ngữ cảnh thương hiệu                 | Hệ thống có thể lưu và sử dụng lại thông tin về thương hiệu, sản phẩm, khách hàng mục tiêu, phong cách viết và mục tiêu nội dung          |
+| FR-04 | Quản lý lịch sử làm việc                     | Hệ thống cần phân biệt các cuộc trò chuyện hoặc nhóm công việc khác nhau để tránh trộn lẫn ngữ cảnh giữa các kênh, nhóm hoặc chủ đề       |
+| FR-05 | Hỗ trợ nghiên cứu và tổng hợp thông tin      | Tác nhân có thể sử dụng công cụ để tìm kiếm, đọc, tóm tắt và tổng hợp thông tin phục vụ nghiên cứu xu hướng, đối thủ hoặc chủ đề nội dung |
+| FR-06 | Hỗ trợ lập kế hoạch nội dung                 | Hệ thống có thể tạo lịch nội dung, dàn ý chiến dịch, danh sách ý tưởng hoặc kế hoạch triển khai theo ngày, tuần hoặc mục tiêu cụ thể      |
+| FR-07 | Hỗ trợ tạo và điều chỉnh nội dung            | Hệ thống có thể tạo bản nháp bài đăng, chú thích, kịch bản ngắn và biến thể nội dung phù hợp với từng nền tảng hoặc giọng văn đã chọn     |
+| FR-08 | Hỗ trợ nhắc việc và tác vụ định kỳ           | Người dùng có thể yêu cầu hệ thống tạo nhắc việc, chạy tác vụ một lần hoặc lặp lại để chuẩn bị nội dung, kiểm tra thông tin hoặc gửi báo cáo |
+| FR-09 | Hỗ trợ báo cáo và tóm tắt kết quả            | Hệ thống có thể tổng hợp lịch sử làm việc, kết quả nghiên cứu hoặc nội dung đã xử lý thành báo cáo ngắn, bản tóm tắt hoặc gợi ý tiếp theo |
+| FR-10 | Giao tiếp qua nhiều kênh                     | Người dùng có thể gửi yêu cầu và nhận kết quả qua giao diện dòng lệnh, giao diện điều khiển hoặc các kênh nhắn tin được cấu hình          |
+| FR-11 | Phối hợp nhiều phiên hoặc tác nhân phụ       | Với tác vụ phức tạp, hệ thống có thể tách công việc thành phiên riêng hoặc tác nhân phụ để hỗ trợ nghiên cứu, tổng hợp hoặc kiểm tra kết quả |
+| FR-12 | Mở rộng năng lực hệ thống                    | Hệ thống có thể bổ sung thêm mô hình ngôn ngữ, công cụ, kênh giao tiếp hoặc chức năng marketing mới thông qua cơ chế mở rộng              |
+| FR-13 | Đăng và lên lịch bài viết đa nền tảng        | Hệ thống có thể tạo nội dung gốc, điều chỉnh theo từng nền tảng xã hội, lưu nháp, đăng ngay hoặc lên lịch đăng bài theo cấu hình của người dùng |
+| FR-14 | Hỗ trợ theo dõi và phân tích Meta Ads        | Hệ thống có thể đọc dữ liệu chiến dịch quảng cáo được cấp quyền, tổng hợp chỉ số, phát hiện dấu hiệu bất thường, tạo báo cáo và đề xuất tối ưu ở mức hỗ trợ |
 
-### 3.2.2. Yêu cầu phi chức năng
+Các yêu cầu trên phù hợp với các thành phần đã được hiện thực trong mã nguồn như lệnh chạy tác nhân, quản lý tác nhân, quản lý kênh, lập lịch tác vụ, công cụ tìm kiếm và đọc web, công cụ gửi tin nhắn, công cụ quản lý phiên, bộ nhớ dài hạn và cơ chế mở rộng. Cách mô tả trong bảng tập trung vào nhu cầu nghiệp vụ để tránh biến phần phân tích yêu cầu thành danh sách tên module kỹ thuật.
+
+### 3.2.3. Yêu cầu phi chức năng
 
 Bảng 3.2 mô tả các yêu cầu phi chức năng.
 
-| Mã     | Yêu cầu           | Mô tả                                                                   |
-| ------ | ----------------- | ----------------------------------------------------------------------- |
-| NFR-01 | Khả năng mở rộng  | Có thể thêm provider, channel hoặc tool thông qua plugin                |
-| NFR-02 | Tính riêng tư     | Ưu tiên lưu dữ liệu trên thiết bị hoặc hạ tầng người dùng kiểm soát     |
-| NFR-03 | Độ tin cậy        | Có fallback mô hình, retry lỗi tạm thời và quản lý lỗi phiên            |
-| NFR-04 | Bảo mật           | Có cơ chế kiểm soát quyền owner, secret reference, sandbox và allowlist |
-| NFR-05 | Khả năng bảo trì  | Mã nguồn phân tách theo module rõ ràng                                  |
-| NFR-06 | Khả năng kiểm thử | Có test cho command, session, channel, cron và runtime                  |
-| NFR-07 | Khả năng quan sát | Có log, usage, trace và trạng thái gateway                              |
-| NFR-08 | Tính tương thích  | Hỗ trợ nhiều provider LLM và nhiều môi trường triển khai                |
+| Mã     | Yêu cầu                        | Mô tả                                                                                                                                 |
+| ------ | ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------- |
+| NFR-01 | Dễ sử dụng                     | Người dùng có thể thiết lập, gửi yêu cầu, xem trạng thái và nhận kết quả mà không cần hiểu sâu về kiến trúc bên trong                 |
+| NFR-02 | Nhất quán ngữ cảnh             | Nội dung được tạo ra cần bám sát thông tin thương hiệu, phong cách viết và lịch sử làm việc đã lưu                                     |
+| NFR-03 | Riêng tư dữ liệu               | Dữ liệu cấu hình, bộ nhớ, phiên làm việc và thông tin nhạy cảm nên được ưu tiên lưu ở môi trường do người dùng kiểm soát              |
+| NFR-04 | Bảo mật và kiểm soát quyền     | Hệ thống cần bảo vệ khóa truy cập, giới hạn hành động nguy hiểm, phân biệt người dùng được phép và kiểm soát việc gửi nội dung ra ngoài |
+| NFR-05 | Độ tin cậy                     | Hệ thống cần xử lý lỗi trong quá trình gọi mô hình, dùng công cụ, chạy tác vụ định kỳ hoặc gửi kết quả qua kênh giao tiếp             |
+| NFR-06 | Khả năng mở rộng               | Hệ thống cần cho phép bổ sung mô hình, công cụ, kênh giao tiếp hoặc chức năng marketing mới mà không phải thay đổi toàn bộ lõi xử lý   |
+| NFR-07 | Khả năng bảo trì               | Mã nguồn cần được tổ chức theo thành phần rõ ràng để thuận lợi cho kiểm thử, sửa lỗi và phát triển thêm                                |
+| NFR-08 | Khả năng kiểm thử              | Các luồng quan trọng như chạy tác nhân, quản lý phiên, kênh giao tiếp, lập lịch và công cụ cần có khả năng kiểm thử tự động            |
+| NFR-09 | Khả năng theo dõi vận hành     | Hệ thống cần có thông tin trạng thái, nhật ký, lịch sử phiên và số liệu sử dụng để hỗ trợ kiểm tra lỗi và đánh giá quá trình vận hành |
+| NFR-10 | Tương thích và triển khai linh hoạt | Hệ thống cần chạy được trong môi trường phát triển cục bộ và có khả năng mở rộng sang môi trường máy chủ hoặc thiết bị khác khi cần   |
+
+### 3.2.4. Phạm vi đáp ứng của hệ thống trong đồ án
+
+Dựa trên mã nguồn hiện tại, hệ thống đáp ứng tốt các yêu cầu nền tảng của một tác nhân tự chủ: tiếp nhận yêu cầu, duy trì phiên làm việc, sử dụng công cụ, truy xuất bộ nhớ, lập lịch tác vụ, gửi kết quả qua kênh giao tiếp và mở rộng chức năng khi cần. Đây là các năng lực cốt lõi để xây dựng một trợ lý marketing có thể hỗ trợ quy trình nhiều bước thay vì chỉ trả lời một câu hỏi đơn lẻ.
+
+Đối với các yêu cầu nghiệp vụ marketing, hệ thống đáp ứng ở mức hỗ trợ quy trình. Cụ thể, hệ thống có thể hỗ trợ người dùng nghiên cứu thông tin, lập kế hoạch nội dung, tạo bản nháp, điều chỉnh giọng văn, đặt nhắc việc, đăng hoặc lên lịch bài viết đa nền tảng và tạo báo cáo dạng tóm tắt. Bên cạnh nhóm công việc nội dung tự nhiên, hệ thống cũng hỗ trợ người dùng theo dõi dữ liệu Meta Ads, tổng hợp các chỉ số quảng cáo cơ bản, phát hiện dấu hiệu bất thường và tạo đề xuất tối ưu ở mức tham khảo. Các khả năng này phù hợp với thực tế của tự động hóa marketing, nơi hệ thống thường được dùng để hỗ trợ quản lý nội dung, theo dõi khách hàng tiềm năng và cải thiện hiệu quả hoạt động dựa trên dữ liệu (Järvinen and Taiminen, 2016).
+
+Hệ thống không tự động thay thế toàn bộ vai trò của người quản trị marketing. Việc xuất bản bài viết, sử dụng tài khoản quảng cáo hoặc thực hiện thao tác có ảnh hưởng trực tiếp đến dữ liệu bên ngoài cần tuân theo quyền truy cập, cấu hình kênh và cơ chế xác nhận của người dùng. Các bài toán như đo lường ROI đầy đủ, dự đoán doanh thu, tự động tối ưu ngân sách quảng cáo hoặc tự động ra quyết định quảng cáo vẫn không được xem là trọng tâm chính của đồ án. Cách xác định phạm vi như vậy giúp hệ thống vừa có khả năng tự động hóa các bước lặp lại trong quy trình marketing số đa kênh, vừa giữ được quyền kiểm soát của người dùng đối với các hành động nhạy cảm.
 
 ## 3.3. Thiết kế hệ thống
 
@@ -1061,41 +1154,37 @@ Chương 5 đã tổng kết kết quả đồ án, nêu các đóng góp, hạn
 
 # TÀI LIỆU THAM KHẢO
 
-## Tiếng Việt
-
-[1] Trường Đại học Tân Tạo, Khoa Công nghệ thông tin. Mẫu cấu trúc luận văn, tiểu luận, báo cáo tốt nghiệp.
-
-[2] Nguyễn Văn A. Giáo trình Trí tuệ nhân tạo. Nhà xuất bản Đại học, 2022.
-
-[3] Trần Thị B. Phân tích và thiết kế hệ thống thông tin. Nhà xuất bản Khoa học và Kỹ thuật, 2021.
-
 ## Tiếng Anh
 
-[4] Russell, S., and Norvig, P. Artificial Intelligence: A Modern Approach. Pearson, 2020.
+[1] Chaffey, D. and Ellis-Chadwick, F. (2019) Digital Marketing. 7th edn. Harlow: Pearson.
 
-[5] Wooldridge, M. An Introduction to MultiAgent Systems. Wiley, 2009.
+[2] Brown, T.B., Mann, B., Ryder, N., Subbiah, M., Kaplan, J., Dhariwal, P. et al. (2020) 'Language Models are Few-Shot Learners', Advances in Neural Information Processing Systems, 33, pp. 1877-1901.
 
-[6] Lewis, P. et al. Retrieval-Augmented Generation for Knowledge-Intensive NLP Tasks. NeurIPS, 2020.
+[3] Järvinen, J. and Taiminen, H. (2016) 'Harnessing marketing automation for B2B content marketing', Industrial Marketing Management, 54, pp. 164-175.
 
-[7] Yao, S. et al. ReAct: Synergizing Reasoning and Acting in Language Models. ICLR, 2023.
+[4] Keller, K.L. and Swaminathan, V. (2020) Strategic Brand Management: Building, Measuring, and Managing Brand Equity. 5th edn. Harlow: Pearson.
 
-[8] Schick, T. et al. Toolformer: Language Models Can Teach Themselves to Use Tools. NeurIPS, 2023.
+[5] Lemon, K.N. and Verhoef, P.C. (2016) 'Understanding Customer Experience Throughout the Customer Journey', Journal of Marketing, 80(6), pp. 69-96.
 
-[9] OpenAI. Function calling and tool use documentation. Truy cập tại: https://platform.openai.com/docs
+[6] Lewis, P., Perez, E., Piktus, A., Petroni, F., Karpukhin, V., Goyal, N. et al. (2020) 'Retrieval-Augmented Generation for Knowledge-Intensive NLP Tasks', Advances in Neural Information Processing Systems, 33, pp. 9459-9474.
 
-[10] Anthropic. Tool use and agent design documentation. Truy cập tại: https://docs.anthropic.com
+[7] Neslin, S.A., Grewal, D., Leghorn, R., Shankar, V., Teerling, M.L., Thomas, J.S. and Verhoef, P.C. (2006) 'Challenges and Opportunities in Multichannel Customer Management', Journal of Service Research, 9(2), pp. 95-112.
 
-## Tài liệu trực tuyến và mã nguồn
+[8] Park, J.S., O'Brien, J.C., Cai, C.J., Morris, M.R., Liang, P. and Bernstein, M.S. (2023) 'Generative Agents: Interactive Simulacra of Human Behavior', Proceedings of the 36th Annual ACM Symposium on User Interface Software and Technology.
 
-[11] Node.js Documentation. Truy cập tại: https://nodejs.org/docs
+[9] Russell, S. and Norvig, P. (2020) Artificial Intelligence: A Modern Approach. 4th edn. Harlow: Pearson.
 
-[12] TypeScript Documentation. Truy cập tại: https://www.typescriptlang.org/docs
+[10] Vaswani, A., Shazeer, N., Parmar, N., Uszkoreit, J., Jones, L., Gomez, A.N. et al. (2017) 'Attention is All You Need', Advances in Neural Information Processing Systems, 30.
 
-[13] SQLite Documentation. Truy cập tại: https://www.sqlite.org/docs.html
+[11] Wooldridge, M. (2009) An Introduction to MultiAgent Systems. 2nd edn. Chichester: John Wiley & Sons.
 
-[14] Vitest Documentation. Truy cập tại: https://vitest.dev
+[12] Yao, S., Zhao, J., Yu, D., Du, N., Shafran, I., Narasimhan, K. and Cao, Y. (2023) 'ReAct: Synergizing Reasoning and Acting in Language Models', International Conference on Learning Representations.
 
-[15] Tài liệu và mã nguồn hệ thống được phân tích trong đồ án, các module `src/agents`, `src/auto-reply`, `src/cron`, `src/gateway`, `src/plugins`, `src/plugin-sdk`, `src/channels` và `extensions/*`.
+[13] Luu, S.T., Nguyen, K.V. and Nguyen, N.L.T. (2021) 'A large-scale dataset for hate speech detection on Vietnamese social media texts', arXiv preprint arXiv:2103.11528. Available at: https://arxiv.org/abs/2103.11528 (Accessed: 16 May 2026).
+
+[14] Nguyen, Q.N., Phan, T.C., Nguyen, D.V. and Nguyen, K.V. (2023) 'ViSoBERT: A pre-trained language model for Vietnamese social media text processing', arXiv preprint arXiv:2310.11166. Available at: https://arxiv.org/abs/2310.11166 (Accessed: 16 May 2026).
+
+[15] Wang, L., Ma, C., Feng, X., Zhang, Z., Yang, H., Zhang, J. et al. (2023) 'A survey on large language model based autonomous agents', arXiv preprint arXiv:2308.11432. Available at: https://arxiv.org/abs/2308.11432 (Accessed: 16 May 2026).
 
 ---
 
